@@ -5,7 +5,7 @@ interface ActionProps {
 
 
 /* =========================
-   BOTÃO DE AÇÃO (BOMBA)
+  BOTÃO DE AÇÃO (BOMBA)
 ========================= */
 export function Action({ onTouchStart }: ActionProps) {
   return (

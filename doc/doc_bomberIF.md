@@ -1393,7 +1393,7 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
 
 **ButtonsContainer**
 
-```ts 
+```css 
 import styled from 'styled-components'
 
 export const ButtonsContainer = styled.div`
@@ -1538,7 +1538,7 @@ export default function GameApp ({myself, setShowGame}:GameAppProps) {
 
 # 'Client' src/game/components/gameApp/style.tsx
 
-```ts 
+```css 
 import styled from 'styled-components'
 
 export const ButtonsContainer = styled.div`
@@ -1575,7 +1575,8 @@ export const Container = styled.div`
 # 'Client' src/game/components/touchControls/assets.tsx
 
 **Action** 
-```ts 
+
+```ts
 
 interface ActionProps {
   onTouchStart: () => void
@@ -1598,7 +1599,7 @@ export function Action({ onTouchStart }: ActionProps) {
     </svg>
   )
 }
-``` 
+```
 
 - Componente do botão virtual de ação para dispositivos móveis.Representa o controle de soltar ou interagir com as bombas na versão sensível ao toque.
 
@@ -1830,7 +1831,7 @@ export default function TouchControls({ isPortrait }: TouchControlsProps) {
 
 **ActionContainer**
 
-```ts 
+```css 
 /* =========================
    BOTÃO DE AÇÃO (BOMBA)
 ========================= */
@@ -1929,7 +1930,7 @@ export const VerticalControls = styled.div`
 
 **image**
 
-```ts 
+```ts
 const image = new Image()
 image.src = `${process.env.PUBLIC_URL}/sprites/stages/block.png`
 export default image
@@ -2034,3 +2035,651 @@ function render (this:Blast, context:CanvasRenderingContext2D, directions:Direct
 
 - **render**: Desenha as chamas no Canvas multiplicando o alcance pelo tamanho do bloco **TILE_SIZE**. Renderiza o centro da explosão com **BLAST_C**, o corpo das chamas horizontais e verticais com **BLAST_H** e **BLAST_V**, e as pontas finais com os sprites direcionais **BLAST_U**, **BLAST_D**, **BLAST_R** e **BLAST_L**.
 
+---
+
+# 'Client' src/game/entities/block.ts
+
+**IMPORTS** 
+
+```ts 
+
+import { SPEED, TILE_SIZE } from '#/constants'
+import { BlockDTO } from '#/dto'
+import { animate, AnimControl } from '~/game/animations/animation'
+import { BLOCK } from '~/game/animations/block'
+import { Bomb } from '~/game/entities/bomb'
+import { Bonus, BonusFactory } from '~/game/entities/bonus'
+import { GameState } from '~/game/entities/state'
+import { Assets } from '~/game/util/assets'
+import { isColliding, stopPlayer } from '~/game/util/collision'
+
+```
+
+- Carrega as dependências necessárias para manipular e renderizar os blocos do mapa. O arquivo importa as constantes físicas **SPEED** e **TILE_SIZE**, os tipos de transferência de dados *BlockDTO*, as configurações de animação **animate**, **AnimControl** e **BLOCK**, as entidades **Bomb** e **BonusFactory**, a gestão de estado **GameState**, o carregador de recursos **Assets** e as funções de verificação de física **isColliding** e **stopPlayer**.
+
+**BlocksFactory**
+
+```ts 
+export interface Blocks {
+  blocks : (Block|Bonus|BombBlock|null)[][]
+  getBlock     : (axes:[number,number]) => Block|Bonus|BombBlock|null
+  destroyBlock : (axes:[number,number]) => void
+  putBlock     : (dto:BlockDTO, axes:[number,number]) => void
+  putBomb      : (bomb:Bomb) => void
+  tick         : (state:GameState) => void
+  render       : (context:CanvasRenderingContext2D, state:GameState) => void
+}
+
+interface Block extends BlockDTO {
+  anim        : AnimControl['anim']
+  axes        : [number, number]
+  destroying  : boolean
+  destroyTime : number
+  destroy : () => void
+  tick    : (state:GameState) => boolean
+  render  : (context:CanvasRenderingContext2D, state:GameState) => void
+}
+
+interface BombBlock {
+  id : string
+  t  : 'O'
+  tick   : () => void
+  render : () => void
+}
+
+const TOLERANCE_UP = 10  
+const TOLERANCE_DOWN = 8
+
+export function BlocksFactory (blocksDto : (BlockDTO|null)[][]) : Blocks {
+  const blocks = blocksDto.map((row,i) => row.map((dto,j) => createBlock(dto, [i,j])))
+  const getBlock = getOneBlock.bind(blocks)
+  const destroyBlock = nullifyBlock.bind(blocks)
+  const putBlock = putOneBlock.bind(blocks)
+  const putBomb = putOneBomb.bind(blocks)
+  const tick = tickPlayer.bind(blocks)
+  const render = renderBlocks.bind(blocks)
+  return { blocks, getBlock, destroyBlock, putBlock, putBomb, tick, render }
+}
+```
+
+- Define as interfaces e constrói a matriz responsável pelo gerenciamento de blocos, bombas e bônus no mapa. O código estrutura a tipagem das entidades do cenário, aplica tolerâncias para desvio de colisão e vincula os métodos de manipulação de blocos.
+
+- **Blocks** e **Block**: Interfaces que especificam a matriz do mapa e os métodos para recuperar, colocar, destruir, atualizar e renderizar blocos, armazenando o estado de destruição com destroying e o tempo do efeito com destroyTime.
+
+- **BombBlock**: Interface simplificada utilizada para representar as bombas como um elemento especial dentro da própria matriz do mapa.
+
+- **TOLERANCE_UP** e **TOLERANCE_DOWN**: Valetas numéricas em pixels que facilitam o deslizamento do jogador ao passar pelas quinas dos blocos.
+
+- **BlocksFactory**: Mapeia a estrutura inicial do mapa recebida em **blocksDto**, converte em uma matriz de instâncias de bloco através de createBlock e exporta os métodos do ciclo de vida vinculados à matriz. 
+
+```ts
+function createBlock (dto:BlockDTO|null, axes:[number,number]) {
+  if (!dto) return null
+  const block:Block = dto as Block
+  block.axes = axes
+  if (block.t === 'D') {
+    block.anim = {frameCurrent:0, lastRender:0, sum:true}
+    block.destroying = false
+    block.destroy = startDestroyBlock.bind(block)
+    block.tick = tickD.bind(block)
+    block.render = renderAndDestroy.bind(block)
+  }
+  else {
+    block.destroy = () => {}
+    block.tick = tickI.bind(block)
+    block.render = () => {}
+  }
+  return block
+}
+
+function getOneBlock (this:Blocks['blocks'], axes:[number,number]) : Block|Bonus|BombBlock|null {
+  return this[axes[0]][axes[1]]
+}
+
+function startDestroyBlock (this:Block) {
+  this.destroying = true
+  this.destroyTime = Date.now() + 600
+  this.tick = () => false
+}
+```
+
+**CreateBlock**
+
+- Gerencia a criação individual de cada bloco e controla a transição para o estado de destruição. O código diferencia a lógica entre blocos destrutíveis e indestrutíveis e disponibiliza a busca por coordenadas na matriz.
+
+- **createBlock:** Instancia os blocos verificando o tipo no BlockDTO. Se o tipo for D, inicializa as propriedades de animação, marca como não destruído e vincula os métodos **startDestroyBlock**, tickD e **renderAndDestroy**. Se for indestrutível, aplica funções vazias de destruição e renderização para economizar processamento.
+
+- **getOneBlock:** Retorna o elemento localizado no índice exato da matriz através do par de coordenadas axes, podendo entregar um Block, Bonus, BombBlock ou null.
+
+- **startDestroyBlock:** Altera a propriedade destroying para verdadeiro e calcula o tempo limite de remoção do bloco com Date.now() + 600, interrompendo a lógica de atualização no tick.
+
+**nullifyBlock**
+
+```ts 
+
+function nullifyBlock (this:Blocks['blocks'], axes:[number,number]) {
+  const block = this[axes[0]][axes[1]] as Block
+  if (block && block.b) {
+    this[axes[0]][axes[1]] = BonusFactory({
+      axes, bonus:block.b, x:block.x, y:block.y
+    })
+  }
+  else {
+    this[axes[0]][axes[1]] = null
+  }
+}
+
+function putOneBlock (this:Blocks['blocks'], dto:BlockDTO, axes:[number,number]) {
+  const block = createBlock(dto, axes) as Block
+  block.render = (context:CanvasRenderingContext2D) => {
+    context.drawImage(Assets.stageSprite, 0, 208, 16, 16, block.x, block.y, 16, 16)
+  }
+  this[axes[0]][axes[1]] = block
+}
+
+function putOneBomb (this:Blocks['blocks'], bomb:Bomb) {
+  const [ax, ay] = bomb.getAxes()
+  const block = this[ax][ay]
+  if (block && block.t === 'I') return
+  const b:BombBlock = {
+    id: bomb.id,
+    t: 'O',
+    tick: () => {},
+    render: () => {}
+  }
+  this[ax][ay] = b
+}
+
+function tickD (this:Block, state:GameState) : boolean {
+  const colliding = isColliding(state.players.myself!, this)
+  if (colliding) stopPlayer(state.players.myself!, this)
+  return colliding
+}
+
+```
+
+- Gerencia a remoção, inserção e colisão física dos blocos destrutíveis e bombas na matriz do jogo. As funções garantem a transformação de blocos em bônus, o posicionamento de novos blocos no mapa e o travamento da movimentação dos jogadores contra os blocos destrutíveis.
+
+- **nullifyBlock**: Destrói o bloco na coordenada especificada da matriz. Caso o bloco possua um bônus associado em block.b, substitui o espaço pelo item gerado via **BonusFactory**, caso contrário, define a posição como null.
+
+- **putOneBlock**: Instancia e insere um novo bloco na matriz a partir do **BlockDTO**, redefinindo seu método render para desenhar o sprite padrão diretamente no Canvas.
+
+- **putOneBomb**: Registra a bomba colocada pelo jogador como um elemento **BombBlock** na matriz do mapa, ignorando a inserção caso a posição coincida com um bloco indestrutível do tipo I.
+
+- **tickD**: Processa a física dos blocos destrutíveis. Verifica a colisão entre o jogador principal e o bloco através de **isColliding** e interrompe a movimentação do personagem invocando **stopPlay**
+
+**tickI**
+
+<!-- HITBOX dos blocos -->
+
+```ts 
+// Basicamente aqui que é criada a hitbox com os blocos
+function tickI (this:Block, state:GameState) : boolean {
+  const colliding = isColliding(state.players.myself!, this)
+  if (colliding) {
+    const p = state.players.myself!
+    const prevX = p.x
+    const prevY = p.y
+    if (p.x + 15 > this.x && p.side === 'R') {
+      p.x = this.x - 15
+      if (p.y + 23 - this.y <= TOLERANCE_UP) {
+        p.y = Math.floor(p.y - SPEED)
+        p.x = Math.floor(p.x + SPEED)
+      }
+      else if (p.y - this.y >= TOLERANCE_DOWN) {
+        const b = state.blocks.getBlock([this.axes[0]+1, this.axes[1]])
+        if (!b || b.t === 'B') {
+          p.y = Math.floor(p.y + SPEED)
+          p.x = Math.floor(p.x + SPEED)
+        }
+        else p.moving = 0
+      }
+      else p.moving = 0
+    }
+    else if (p.x < this.x + TILE_SIZE && p.side === 'L') {
+      p.x = this.x + 16
+      if (p.y + 23 - this.y <= TOLERANCE_UP) {
+        const b = state.blocks.getBlock([this.axes[0]-1, this.axes[1]])
+        if (!b || b.t === 'B') {
+          p.y = Math.floor(p.y - SPEED)
+          p.x = Math.floor(p.x - SPEED)
+        }
+        else p.moving = 0
+      }
+      else if (p.y - this.y >= TOLERANCE_DOWN) {
+        p.y = Math.floor(p.y + SPEED)
+        p.x = Math.floor(p.x - SPEED)
+      }
+      else p.moving = 0
+    }
+    else if (p.y + 23 > this.y && p.side === 'D') {
+      p.y = this.y - 23
+      if (p.x + 15 - this.x <= TOLERANCE_UP) {
+        p.x = Math.floor(p.x - SPEED)
+        p.y = Math.floor(p.y + SPEED)
+      }
+      else if (this.x + TILE_SIZE - p.x <= TOLERANCE_UP) {
+        p.x = Math.floor(p.x + SPEED)
+        p.y = Math.floor(p.y + SPEED)
+      }
+      else p.moving = 0
+    }
+    else if (p.y < this.y + TILE_SIZE && p.side === 'U') {
+      p.y = this.y + 9
+      if (p.x + 16 - this.x <= TOLERANCE_UP) {
+        p.x = Math.floor(p.x - SPEED)
+        p.y = Math.floor(p.y - SPEED)
+      }
+      else if (this.x + TILE_SIZE - p.x <= TOLERANCE_UP) {
+        p.x = Math.floor(p.x + SPEED)
+        p.y = Math.floor(p.y - SPEED)
+      }
+      else p.moving = 0
+    }
+    const deltaX = p.x - prevX
+    const deltaY = p.y - prevY
+    if (!(deltaX > -5 && deltaX < 5)) {
+      p.x = prevX
+    }
+    if (!(deltaY > -5 && deltaY < 5)) {
+      p.y = prevY
+    }
+  }
+  return colliding
+}
+
+```
+
+- Essa função processa a física de colisão e o deslizamento de quina nos blocos indestrutíveis. A função detecta o impacto do jogador contra o bloco do tipo I, ajusta sua posição para não atravessar a estrutura e aplica margens de tolerância para contornar quinas suavemente sem travar a movimentação.
+
+**tickPlayer** 
+
+---
+
+**renderAndDestroy** 
+
+---
+
+**renderBlocks** 
+
+```ts 
+function tickPlayer (this:Blocks['blocks'], state:GameState) { //atualiza (tick) apenas os blocos ao redor do jogador, em vez de atualizar o mapa inteiro. Vamos por partes.
+  const [x, y] = state.players.myself!.getAxes()
+  let i = x - 1 //Atualiza o bloco à esquerda do jogador, garantindo que não saia do mapa.
+  let j = y
+  if (i < 0) i = 0
+  this[i][j] && this[i][j]?.tick(state)
+  j = y + 1
+  this[i][j] && this[i][j]?.tick(state)
+  i = x
+  this[i][j] && this[i][j]?.tick(state)
+  i = x + 1
+  if (i > 10) i = 10
+  this[i][j] && this[i][j]?.tick(state)
+  j = y
+  this[i][j] && this[i][j]?.tick(state)
+  j = y - 1
+  this[i][j] && this[i][j]?.tick(state)
+  i = x
+  this[i][j] && this[i][j]?.tick(state)
+  i = x - 1
+  if (i < 0) i = 0
+  this[i][j] && this[i][j]?.tick(state)
+}
+
+function renderAndDestroy (this:Block, context:CanvasRenderingContext2D, state:GameState) {
+  if (this.destroying) {
+    if (Date.now() > this.destroyTime) {
+      state.blocks.destroyBlock(this.axes)
+    }
+    else {
+      const { sx, sy } = animate(this, BLOCK)
+      context.drawImage(Assets.stageSprite, sx, sy, BLOCK.FRAME_WIDTH, BLOCK.FRAME_HEIGHT, this.x, this.y, BLOCK.FRAME_WIDTH, BLOCK.FRAME_HEIGHT)
+    }
+  }
+  else {
+    context.drawImage(Assets.stageSprite, 16, 208, TILE_SIZE, TILE_SIZE, this.x, this.y, TILE_SIZE, TILE_SIZE)
+  }
+}
+
+function renderBlocks (this:Blocks['blocks'], context:CanvasRenderingContext2D, state:GameState) {
+  this.forEach(row => row.forEach(b => b && b.render(context, state)))
+}
+
+```
+
+- Otimiza a atualização do mapa e controla o ciclo de renderização e destruição dos blocos. As funções executam a verificação de física apenas no entorno do jogador e garantem o desenho dos blocos fixos e em animação de destruição no Canvas.
+
+- **tickPlayer**: Otimiza o processamento executando o ciclo de atualização tick apenas nos 8 blocos adjacentes às coordenadas [x, y] do jogador principal, aplicando validações nos limites da matriz para não acessar índices inválidos.
+
+- **renderAndDestroy**: Controla o estado visual dos blocos destrutíveis. Caso a flag destroying esteja ativa, exibe a animação com animate e remove o bloco do mapa chamando **destroyBlock** após o término do tempo limite **destroyTime**; do contrário, renderiza o sprite do bloco intacto.
+
+- **renderBlocks**: Varre toda a matriz do mapa e invoca o método render de cada bloco ou elemento presente para desenhá-los na tela.
+
+# 'Client' src/game/entities/blockFiller.ts
+
+**IMPORTS** 
+
+```ts 
+import { GameState } from '~/game/entities/state'
+import { playBlockSound } from '~/game/sound/block'
+import { Assets } from '~/game/util/assets'
+import { isOnBlock } from '~/game/util/block'
+``` 
+
+- realiza a importação das dependencias necessárias para manipulação das entidades no jogo
+
+---
+
+**BlockFiller**
+
+---
+
+**createBlocks** 
+
+
+```ts
+interface Block {
+  axes   : [number, number]
+  x      : number
+  y      : number
+  finalY : number
+}
+
+export interface BlockFiller {
+  blocks       : Block[]
+  currentBlock : number
+  id           : string
+  tick   : (state:GameState) => void
+  render : (context:CanvasRenderingContext2D) => void
+}
+
+const SPEED = 4
+
+export function BlockFillerFactory () : BlockFiller {
+  const blockFiller:BlockFiller = {
+    blocks: createBlocks(),
+    currentBlock: 0,
+    id: 'blockFiller'
+  } as unknown as BlockFiller
+  blockFiller.tick = tick.bind(blockFiller)
+  blockFiller.render = render.bind(blockFiller)
+  return blockFiller
+}
+
+function createBlocks(): Block[] {
+  const blocks = [
+    // Preenche a linha de cima no sentido horário
+    {axes:[0,0], x:16, finalY:16}, {axes:[0,1], x:32, finalY:16}, {axes:[0,2], x:48, finalY:16}, {axes:[0,3], x:64, finalY:16}, {axes:[0,4], x:80, finalY:16}, {axes:[0,5], x:96, finalY:16}, {axes:[0,6], x:112, finalY:16}, {axes:[0,7], x:128, finalY:16}, {axes:[0,8], x:144, finalY:16}, {axes:[0,9], x:160, finalY:16}, {axes:[0,10], x:176, finalY:16}, {axes:[0,11], x:192, finalY:16}, {axes:[0,12], x:208, finalY:16},
+    // Preenche a coluna da direita no sentido horário
+    {axes:[1,12], x:208, finalY:32}, {axes:[2,12], x:208, finalY:48}, {axes:[3,12], x:208, finalY:64}, {axes:[4,12], x:208, finalY:80}, {axes:[5,12], x:208, finalY:96}, {axes:[6,12], x:208, finalY:112}, {axes:[7,12], x:208, finalY:128}, {axes:[8,12], x:208, finalY:144}, {axes:[9,12], x:208, finalY:160}, {axes:[10,12], x:208, finalY:176},
+    // Preenche a linha de baixo no sentido horário
+    {axes:[10,11], x:192, finalY:176}, {axes:[10,10], x:176, finalY:176}, {axes:[10,9], x:160, finalY:176}, {axes:[10,8], x:144, finalY:176}, {axes:[10,7], x:128, finalY:176}, {axes:[10,6], x:112, finalY:176}, {axes:[10,5], x:96, finalY:176}, {axes:[10,4], x:80, finalY:176}, {axes:[10,3], x:64, finalY:176}, {axes:[10,2], x:48, finalY:176}, {axes:[10,1], x:32, finalY:176}, {axes:[10,0], x:16, finalY:176},
+    // Preenche a coluna da esquerda no sentido horário
+    {axes:[9,0], x:16, finalY:160}, {axes:[8,0], x:16, finalY:144}, {axes:[7,0], x:16, finalY:128}, {axes:[6,0], x:16, finalY:112}, {axes:[5,0], x:16, finalY:96}, {axes:[4,0], x:16, finalY:80}, {axes:[3,0], x:16, finalY:64}, {axes:[2,0], x:16, finalY:48}, {axes:[1,0], x:16, finalY:32},
+    // Preenche o quadrado interno no sentido horário
+    {axes:[1,1], x:32, finalY:32}, {axes:[1,2], x:48, finalY:32}, {axes:[1,3], x:64, finalY:32}, {axes:[1,4], x:80, finalY:32}, {axes:[1,5], x:96, finalY:32}, {axes:[1,6], x:112, finalY:32}, {axes:[1,7], x:128, finalY:32}, {axes:[1,8], x:144, finalY:32}, {axes:[1,9], x:160, finalY:32}, {axes:[1,10], x:176, finalY:32}, {axes:[1,11], x:192, finalY:32},
+    // Preenche a coluna interna direita no sentido horário
+    {axes:[2,11], x:192, finalY:48}, {axes:[3,11], x:192, finalY:64}, {axes:[4,11], x:192, finalY:80}, {axes:[5,11], x:192, finalY:96}, {axes:[6,11], x:192, finalY:112}, {axes:[7,11], x:192, finalY:128}, {axes:[8,11], x:192, finalY:144}, {axes:[9,11], x:192, finalY:160},
+    // Preenche a linha interna de baixo no sentido horário
+    {axes:[9,10], x:176, finalY:160}, {axes:[9,9], x:160, finalY:160}, {axes:[9,8], x:144, finalY:160}, {axes:[9,7], x:128, finalY:160}, {axes:[9,6], x:112, finalY:160}, {axes:[9,5], x:96, finalY:160}, {axes:[9,4], x:80, finalY:160}, {axes:[9,3], x:64, finalY:160}, {axes:[9,2], x:48, finalY:160}, {axes:[9,1], x:32, finalY:160},
+    // Preenche a coluna interna esquerda no sentido horário
+    {axes:[8,1], x:32, finalY:144}, {axes:[7,1], x:32, finalY:128}, {axes:[6,1], x:32, finalY:112}, {axes:[5,1], x:32, finalY:96}, {axes:[4,1], x:32, finalY:80}, {axes:[3,1], x:32, finalY:64}, {axes:[2,1], x:32, finalY:48}
+  ] as Block[]
+  for (const i in blocks) {
+    blocks[i].y = -16
+  }
+  return blocks
+}
+
+
+```
+
+- Define a estrutura de dados e a fila de posições para o preenchimento do mapa ao final da partida. O código estabelece as interfaces necessárias e cria a sequência em espiral de blocos caindo no cenário.
+
+- **Block e BlockFiller:** Interfaces que especificam a posição física x, y, a coordenada alvo finalY e a matriz de coordenadas axes, além da lista de blocos e métodos de controle do processo de fechamento do mapa.
+
+- **BlockFillerFactory**: Função Factory responsável por instanciar o objeto de preenchimento, montar a lista inicial de blocos e vincular os métodos de execução tick e renderização render.
+
+- **createBlocks**: Mapeia toda a trajetória em formato de espiral sentido horário, cobrindo as bordas externas e avançando para os anéis internos do mapa, definindo a posição inicial **y = -16** acima da tela para o efeito de queda.
+
+
+```ts 
+function tick (this:BlockFiller, state:GameState) {
+  if (this.currentBlock === this.blocks.length) {
+    state.entities.remove(this)
+    if (isOnBlock(state)) {
+      state.players.myself!.kill(true)
+    }
+    return
+  }
+  const block = this.blocks[this.currentBlock]
+  block.y += SPEED
+  if (block.y > block.finalY) {
+    playBlockSound()
+    state.blocks.putBlock({t:'I', x:block.x, y:block.finalY}, block.axes)
+    this.currentBlock++
+    const playerAxes = state.players.myself!.getAxes()
+    if (block.axes[0] === playerAxes[0] && block.axes[1] === playerAxes[1]) {
+      state.players.myself?.kill(true)
+    }
+  }
+}
+
+```
+
+- Essa função é responsável por processar a movimentação individual dos blocos caindo e verifica se o jogador foi esmagado. A função incrementa a posição vertical do bloco atual até atingir a coordenada destino, insere o bloco indestrutível na matriz do mapa e encerra a vida do personagem se houver sobreposição.
+
+**render**
+
+```ts 
+function render (this:BlockFiller, context:CanvasRenderingContext2D) {
+  const block = this.blocks[this.currentBlock]
+  if (!block) return
+  context.drawImage(Assets.stageSprite, 0, 208, 16, 16, block.x, block.y, 16, 16)
+}
+
+```
+
+- Desenha o bloco atual no durante a animação de queda no mapa. A função recupera o elemento correspondente ao índice **currentBlock** da fila e renderiza o sprite do bloco no cenário utilizando suas coordenadas dinâmicas.
+
+# 'Client' src/game/entities/bomb.ts
+
+**IMPORTS**
+
+```ts 
+import { BOMB_MOVE, BOMB_SPEED, TILE_SIZE } from '#/constants'
+import { SIDES } from '#/dto'
+import { animate, AnimControl } from '~/game/animations/animation'
+import { BOMB } from '~/game/animations/bomb'
+import { Blast, BlastFactory, Directions } from '~/game/entities/blast'
+import { Player } from '~/game/entities/player'
+import { GameState } from '~/game/entities/state'
+import { playBlastSound } from '~/game/sound/blast'
+import { playFlingSound } from '~/game/sound/fling'
+import { playKickSound } from '~/game/sound/kick'
+import { Assets } from '~/game/util/assets'
+import { isColliding, stopPlayer } from '~/game/util/collision'
+import { emitMoveBomb } from '~/services/socket'
+```
+
+- Carrega as dependências necessárias para gerenciar o comportamento, física, áudio e sincronização das bombas. O arquivo importa as constantes de movimento e física **BOMB_MOVE**, **BOMB_SPEED** e **TILE_SIZE**, as direções do jogo SIDES, o controle de animações animate, **AnimControl** e **BOMB**, as entidades Blast, **BlastFactory**, Directions e Player, os efeitos sonoros do disparo, chutar e arremessar **playBlastSound**, **playFlingSound** e **playKickSound**, o estado do jogo **GameState**, o gerenciador de sprites **Assets**, as funções de colisão **isColliding** e **stopPlayer**, além da comunicação via Socket **emitMoveBomb**.
+
+**interface** 
+
+```ts
+interface BombProps {
+  axes        : [number, number]
+  id         ?: string
+  player     ?: Player
+  playerIndex : number
+  reach       : number
+  x          ?: number
+  y          ?: number
+}
+
+export interface Bomb {
+  anim          : AnimControl['anim']
+  armed         : boolean
+  blast         : Blast
+  collidable    : boolean
+  detonated     : boolean
+  detonateTime  : number
+  directions    : Directions
+  finalPosition : number
+  flinging      : boolean
+  holding       : boolean
+  id            : string
+  moving        : boolean
+  player       ?: Player
+  playerIndex   : number
+  reach         : number
+  removeTime    : number
+  side          : SIDES
+  x             : number
+  y             : number
+  moves  : {[key in SIDES]:(state:GameState) => void}
+  flings : {[key in SIDES]:(state:GameState) => void}
+  getAxes              : () => [number, number]
+  setDetonation        : (multiplier?:number) => void
+  detonate             : (state:GameState) => void
+  checkPlayerCollision : (state:GameState) => void
+  startMove            : (side:SIDES, state:GameState) => void
+  stopMove             : (state:GameState) => void
+  setHolding           : (playerIndex:number, state:GameState) => void
+  startFling           : (side:SIDES) => void
+  tick                 : (state:GameState) => void
+  render               : (context:CanvasRenderingContext2D) => void
+} 
+```
+
+- Define os contratos de dados e as propriedades de estado necessárias para a criação e manipulação da bomba. As interfaces estabelecem os parâmetros de inicialização e a estrutura completa de propriedades físicas, temporais, lógicas e métodos do ciclo de vida do objeto no jogo.
+
+```ts
+export function BombFactory (props : BombProps) : Bomb {
+  const bomb:Bomb = props as unknown as Bomb
+  if (props.player) {
+    bomb.id = `O${Math.floor(Math.random() * 9999999)}`
+    bomb.x = (props.axes[1] + 1) * TILE_SIZE || TILE_SIZE
+    bomb.y = (props.axes[0] + 1) * TILE_SIZE || TILE_SIZE
+  }
+  bomb.anim = {frameCurrent:0, lastRender:0, sum:true}
+  bomb.armed = true
+  bomb.detonated = false
+  bomb.blast = BlastFactory()
+  bomb.collidable = false
+  bomb.directions = {up:0, right:0, down:0, left:0}
+  bomb.holding = false
+  bomb.moving = false
+  bomb.moves = {'D':moveDown.bind(bomb), 'U':moveUp.bind(bomb), 'R':moveRight.bind(bomb), 'L':moveLeft.bind(bomb)}
+  bomb.flings = {'D':flingDown.bind(bomb), 'U':flingUp.bind(bomb), 'R':flingRight.bind(bomb), 'L':flingLeft.bind(bomb)}
+  bomb.getAxes = getAxes.bind(bomb)
+  bomb.setDetonation = setDetonation.bind(bomb)
+  bomb.detonate = detonate.bind(bomb)
+  bomb.checkPlayerCollision = checkPlayerCollision.bind(bomb)
+  bomb.startMove = startMove.bind(bomb)
+  bomb.stopMove = stopMove.bind(bomb)
+  bomb.setHolding = setHolding.bind(bomb)
+  bomb.startFling = startFling.bind(bomb)
+  bomb.tick = tick.bind(bomb)
+  bomb.render = render.bind(bomb)
+  bomb.setDetonation()
+  return bomb
+}
+```
+
+- Instancia a bomba, inicializa seus estados internos e vincula seus métodos de ação. A função gera o identificador único do objeto, posiciona a bomba no mapa com base no tamanho das células e estabelece os comportamentos de física, movimentação, arremesso e detonação.
+
+**getAxes** 
+
+**setDetonation**
+
+```ts 
+function getAxes (this:Bomb) : [number, number] {
+  const x = Math.round(this.y / TILE_SIZE) - 1
+  const y = Math.round(this.x / TILE_SIZE) - 1
+  return [x, y]
+}
+
+function setDetonation (this:Bomb, multiplier=1) {
+  this.detonateTime = Date.now() + (3000 * multiplier)
+  this.removeTime = this.detonateTime + 1000
+}
+```
+
+- Calcula a posição em células da matriz e gerencia os cronômetros de detonação da bomba. O código mapeia a posição física em pixels para os índices do mapa e define o tempo de permanência da bomba no jogo.
+
+- **getAxes**: Converte as coordenadas em pixels x e y para a posição na matriz do mapa dividindo por TILE_SIZE, retornando o par de eixos [x, y].
+
+- **setDetonation**: Configura o tempo de explosão em detonateTime adicionando 3 segundos por padrão ao horário atual, e define o tempo limite de remoção da bomba do mapa em removeTime.
+
+```ts
+function detonate (this:Bomb, state:GameState) {
+  playBlastSound()
+  if (this.holding) {
+    if (this.playerIndex === state.players.myself!.index) {
+      state.players.myself!.kill(true)
+    }
+    this.stopMove(state)
+  }
+  this.armed = false
+  this.detonated = true
+  const [ax, ay] = this.getAxes()
+  for (let i = ax; i > -1; i--) {
+    if (this.directions.up === this.reach) break
+    const b = state.blocks.getBlock([i, ay])
+    if (!b) this.directions.up++
+    else if (b.t === 'D') {
+      b.destroy()
+      break
+    }
+    else if (b.t === 'I') break
+    else {
+      this.directions.up++
+      state.blocks.destroyBlock([i, ay])
+    }
+  }
+  for (let i = ay; i < 13; i++) {
+    if (this.directions.right === this.reach) break
+    const b = state.blocks.getBlock([ax, i])
+    if (!b) this.directions.right++
+    else if (b.t === 'D') {
+      b.destroy()
+      break
+    }
+    else if (b.t === 'I') break
+    else {
+      this.directions.right++
+      state.blocks.destroyBlock([ax, i])
+    }
+  }
+  for (let i = ax; i < 11; i++) {
+    if (this.directions.down === this.reach) break
+    const b = state.blocks.getBlock([i, ay])
+    if (!b) this.directions.down++
+    else if (b.t === 'D') {
+      b.destroy()
+      break
+    }
+    else if (b.t === 'I') break
+    else {
+      this.directions.down++
+      state.blocks.destroyBlock([i, ay])
+    }
+  }
+  for (let i = ay; i > -1; i--) {
+    if (this.directions.left === this.reach) break
+    const b = state.blocks.getBlock([ax, i])
+    if (!b) this.directions.left++
+    else if (b.t === 'D') {
+      b.destroy()
+      break
+    }
+    else if (b.t === 'I') break
+    else {
+      this.directions.left++
+      state.blocks.destroyBlock([ax, i])
+    }
+  }
+}
+``` 

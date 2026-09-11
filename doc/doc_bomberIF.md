@@ -2613,6 +2613,8 @@ function setDetonation (this:Bomb, multiplier=1) {
 
 - **setDetonation**: Configura o tempo de explosão em detonateTime adicionando 3 segundos por padrão ao horário atual, e define o tempo limite de remoção da bomba do mapa em removeTime.
 
+**detonate**
+
 ```ts
 function detonate (this:Bomb, state:GameState) {
   playBlastSound()
@@ -2683,3 +2685,2136 @@ function detonate (this:Bomb, state:GameState) {
   }
 }
 ``` 
+
+Processa o disparo da bomba, aplica o dano e calcula a alcance da explosão nas quatro direções. A função executa o som de detonação, lida com jogadores segurando a bomba e propaga o alcance do fogo destruindo blocos destrutíveis e parando ao encontrar paredes indestrutíveis.
+
+- Efeitos e Estado: Toca o efeito sonoro **playBlastSound**, verifica se a bomba está sendo segurada por algum jogador para eliminá-lo caso necessário, desativa o estado armed e marca o objeto como detonated = true.
+
+- Cálculo de Propagação: Percorre os eixos do mapa nas quatro direções (up, right, down, left) até atingir o limite definido por reach.
+
+- Interação com Elementos: Em células vazias, expande o alcance da explosão; em blocos destrutíveis do tipo **D**, dispara o método **destroy()** e interrompe o avanço naquela direção; em blocos indestrutíveis do tipo **I**, bloqueia imediatamente a propagação do fogo sem causar destruição.
+
+**checkPlayerCollision**
+
+```ts 
+function checkPlayerCollision (this:Bomb, state:GameState) {
+  const [px, py] = state.players.myself!.getAxes()
+  const [ax, ay] = this.getAxes()
+  for (let i = this.directions.up - 1; i > -1; i--) {
+    if (px === ax - i && py === ay) {
+      state.players.myself!.kill(true)
+      return
+    }
+  }
+  for (let i = this.directions.down - 1; i > -1; i--) {
+    if (px === ax + i && py === ay) {
+      state.players.myself!.kill(true)
+      return
+    }
+  }
+  for (let i = this.directions.left - 1; i > -1; i--) {
+    if (px === ax && py === ay - i) {
+      state.players.myself!.kill(true)
+      return
+    }
+  }
+  for (let i = this.directions.right - 1; i > -1; i--) {
+    if (px === ax && py === ay + i) {
+      state.players.myself!.kill(true)
+      return
+    }
+  }
+}
+```
+
+Verifica se o jogador foi atingido pelo alcance da explosão. A função percorre as células afetadas pelo fogo nas quatro direções a partir do centro da bomba e elimina o jogador caso sua posição coincida com o raio de dano.
+
+- Verificação Vetorial: Varre individualmente os eixos atingidos pelas direções up, down, left e right comparando as coordenadas do jogador **[px, py]** com o alcance da detonação **[ax, ay]**.
+
+- Eliminação Direta: Invoca o método **kill(true)** do jogador principal e interrompe a checagem imediatamente ao confirmar o impacto com o fogo.
+
+```ts 
+function startMove (this:Bomb, side:SIDES, state:GameState) {
+  const [ax, ay] = this.getAxes()
+  let move = 0
+  try {
+    if (side === 'D') {
+      for (let i = 1; i < BOMB_MOVE; i++) {
+        const b = state.blocks.getBlock([ax + i, ay])
+        if (b && b.t !== 'B') break
+        move++
+      }
+    }
+    else if (side === 'U') {
+      for (let i = 1; i < BOMB_MOVE; i++) {
+        const b = state.blocks.getBlock([ax - i, ay])
+        if (b && b.t !== 'B') break
+        move++
+      }
+    }
+    else if (side === 'R') {
+      for (let i = 1; i < BOMB_MOVE; i++) {
+        const b = state.blocks.getBlock([ax, ay + i])
+        if (b && b.t !== 'B') break
+        move++
+      }
+    }
+    else if (side === 'L') {
+      for (let i = 1; i < BOMB_MOVE; i++) {
+        const b = state.blocks.getBlock([ax, ay - i])
+        if (b && b.t !== 'B') break
+        move++
+      }
+    }
+  }
+  catch {}
+  if (move) {
+    playKickSound()
+    state.blocks.destroyBlock([ax, ay])
+    this.collidable = false
+    this.side = side
+    this.moving = true
+    if (side === 'D') {
+      this.finalPosition = this.y + (TILE_SIZE * move)
+      this.setDetonation()
+    }
+    else if (side === 'U') {
+      this.finalPosition = this.y - (TILE_SIZE * move)
+      this.setDetonation()
+    }
+    else if (side === 'R') {
+      this.finalPosition = this.x + (TILE_SIZE * move)
+      if (this.finalPosition < 208) this.setDetonation()
+    }
+    else if (side === 'L') {
+      this.finalPosition = this.x - (TILE_SIZE * move)
+      if (this.finalPosition > 16) this.setDetonation()
+    }
+  }
+}
+```
+
+Calcula o trajeto livre e inicia o movimento da bomba ao ser chutada. A função varre as células no sentido do impacto para determinar a distância máxima de deslize, desativa a colisão temporária e define a posição final.
+
+- Cálculo de Percurso: Itera na direção informada até o limite BOMB_MOVE, verificando se há blocos no caminho para interromper o trajeto antes de colidir com obstáculos.
+
+- Ativação Física: Dispara o som **playKickSound**, marca moving = true, atualiza o destino em **finalPosition** multiplicando as células por **TILE_SIZE** e aciona o envio de evento de rede via socket.
+
+**stopMove**
+
+```ts 
+function stopMove (this:Bomb, state:GameState) {
+  if (this.holding) this.y += 12
+  this.moving = false
+  this.flinging = false
+  this.holding = false
+  this.x = Math.round(this.x / TILE_SIZE) * TILE_SIZE
+  this.y = Math.round(this.y / TILE_SIZE) * TILE_SIZE
+  state.blocks.putBomb(this)
+}
+```
+
+Interrompe o deslocamento da bomba e alinha sua posição à grade do mapa. A função encerra os estados de movimento, arremesso ou carregamento, ajusta as coordenadas para o tile mais próximo e insere o objeto de volta na matriz de blocos.
+
+- Reset de Sinalizadores: Configura moving, flinging e holding como false e restaura a colisão no mapa.
+
+- Alinhamento e Fixação: Arredonda as posições físicas x e y usando Math.round com base em TILE_SIZE e registra a bomba no estado global via putBomb.
+
+**moveDown, moveUp, moveRight e moveLeft** 
+
+```ts 
+function moveDown (this:Bomb, state:GameState) {
+  this.y += BOMB_SPEED
+  if (this.y >= this.finalPosition)
+    this.stopMove(state)
+}
+
+function moveUp (this:Bomb, state:GameState) {
+  this.y -= BOMB_SPEED
+  if (this.y <= this.finalPosition)
+    this.stopMove(state)
+}
+
+function moveRight (this:Bomb, state:GameState) {
+  this.x += BOMB_SPEED
+  if (this.x >= this.finalPosition) {
+    this.stopMove(state)
+  }
+  else if (this.x > 208) {
+    this.x = 208
+    this.stopMove(state)
+  }
+}
+
+function moveLeft (this:Bomb, state:GameState) {
+  this.x -= BOMB_SPEED
+  if (this.x <= this.finalPosition) {
+    this.stopMove(state)
+  }
+  else if (this.x < 16) {
+    this.x = 16
+    this.stopMove(state)
+  }
+}
+
+```
+
+Atualiza a posição da bomba quadro a quadro durante o deslizamento pelo mapa. O conjunto de funções desloca as coordenadas da bomba de acordo com a constante BOMB_SPEED até atingir o destino final ou os limites externos da arena.
+
+- Incremento Posicional: Soma ou subtrai BOMB_SPEED dos eixos x ou y conforme a direção do movimento.
+
+- Limite de Arena: Interrompe a transição invocando stopMove assim que o objeto alcança ou ultrapassa a coordenada finalPosition ou os limites físicos do cenário.
+
+**setHolding**
+
+```ts 
+function setHolding (this:Bomb, playerIndex:number, state:GameState) {
+  state.blocks.destroyBlock(this.getAxes())
+  this.playerIndex = playerIndex
+  this.collidable = false
+  this.holding = true
+  this.setDetonation(2)
+}
+```
+
+Configura a bomba para o estado de carregamento por um jogador. A função remove a bomba da matriz física do mapa, vincula-a ao jogador que a segurou e dobra seu tempo restante de detonação.
+
+- Remoção Física: Executa destroyBlock nos eixos atuais para desocupar a célula da grade do mapa.
+
+- Associação de Estado: Marca holding = true, atualiza playerIndex e estende o temporizador chamando setDetonation(2).
+
+**startFling** 
+
+```ts
+function startFling (this:Bomb, side:SIDES) {
+  playFlingSound()
+  this.holding = false
+  this.collidable = false
+  this.side = side
+  this.flinging = true
+  if (side === 'D') {
+    this.finalPosition = this.y + (TILE_SIZE * 3)
+  }
+  else if (side === 'U') {
+    this.finalPosition = this.y - TILE_SIZE
+  }
+  else if (side === 'R') {
+    this.y += 12
+    this.finalPosition = this.x + (TILE_SIZE * 2)
+  }
+  else if (side === 'L') {
+    this.y += 12
+    this.finalPosition = this.x - (TILE_SIZE * 2)
+  }
+  this.setDetonation()
+}
+```
+
+Inicia a trajetória aérea da bomba quando arremessada por um jogador. A função ativa a física de lançamento, toca o efeito sonoro correspondente e calcula a posição de queda a uma distância fixa de blocos.
+
+- Ativação do Arremesso: Executa playFlingSound, desativa o estado holding e define o sinalizador flinging = true.
+
+- Projeção de Queda: Define a coordenada de destino finalPosition deslocando entre 1 e 3 células de acordo com o lado apontado em side.
+
+**flingDown, flingUp, flingRight e flingLeft** 
+
+```ts 
+function flingDown (this:Bomb, state:GameState) {
+  this.y += BOMB_SPEED
+  if (this.y > 180) {
+    this.y = 0
+    this.finalPosition = 16
+  }
+  else if (this.y >= this.finalPosition) {
+    if (!state.blocks.getBlock(this.getAxes())) {
+      this.stopMove(state)
+    }
+  }
+}
+
+function flingUp (this:Bomb, state:GameState) {
+  this.y -= BOMB_SPEED
+  if (this.y < 8) {
+    this.y = 192
+    this.finalPosition = 176
+  }
+  else if (this.y <= this.finalPosition) {
+    if (!state.blocks.getBlock(this.getAxes())) {
+      this.stopMove(state)
+    }
+  }
+}
+
+function flingRight (this:Bomb, state:GameState) {
+  this.x += BOMB_SPEED
+  if (this.x > 212) {
+    this.x = 0
+    this.finalPosition = 16
+  }
+  else if (this.x >= this.finalPosition) {
+    if (!state.blocks.getBlock(this.getAxes())) {
+      this.stopMove(state)
+    }
+  }
+}
+
+function flingLeft (this:Bomb, state:GameState) {
+  this.x -= BOMB_SPEED
+  if (this.x < 12) {
+    this.x = 224
+    this.finalPosition = 208
+  }
+  else if (this.x <= this.finalPosition) {
+    if (!state.blocks.getBlock(this.getAxes())) {
+      this.stopMove(state)
+    }
+  }
+}
+```
+
+Controla a movimentação no ar e a transição pelas bordas do mapa durante o lançamento. As funções atualizam a posição voadora da bomba, aplicam o efeito de rotação de borda (wrap-around) se o objeto sair da tela e verificam a aterrissagem em células livres.
+
+- Deslocamento Aéreo: Incrementa as posições usando **BOMB_SPEED** na direção do arremesso.
+
+- Teleporte de Borda: Redireciona a bomba para o lado oposto da tela caso ela ultrapasse os limites do Canvas, mantendo a continuidade do arremesso.
+
+- Aterrissagem: Invoca stopMove ao alcançar finalPosition, desde que a célula alvo na matriz esteja desocupada.
+
+**tick** 
+
+```ts
+function tick (this:Bomb, state:GameState) {
+  if (this.detonated) {
+    this.checkPlayerCollision(state)
+  }
+  if (Date.now() > this.removeTime) {
+    state.entities.remove(this)
+  }
+  else if (this.moving) {
+    this.moves[this.side](state)
+  }
+  else if (this.flinging) {
+    this.flings[this.side](state)
+  }
+  else if (this.holding) {
+    this.x = state.players.players[this.playerIndex].x
+    this.y = state.players.players[this.playerIndex].y - 9
+  }
+  if (this.armed) {
+    if (this.collidable) {
+      if (isColliding(state.players.myself!, this)) {
+        if (state.players.myself!.kick) {
+          emitMoveBomb({i:this.id,p:this.playerIndex,s:state.players.myself!.side})
+          this.startMove(state.players.myself!.side, state)
+        }
+        stopPlayer(state.players.myself!, this)
+      }
+    }
+    else if (!isColliding(state.players.myself!, this)) {
+      if (!this.moving && !this.flinging) {
+        this.collidable = true
+      }
+    }
+    if (Date.now() > this.detonateTime) {
+      if (this.player) this.player.bombs++
+      this.detonate(state)
+    }
+  }
+}
+
+```
+
+Gerencia o estado geral, temporizadores, movimentações e interações físicas da bomba. A função é executada a cada ciclo do jogo para processar colisões com jogadores, movimentação, tempo de explosão e remoção da entidade.
+
+- Verificações do Ciclo: Controla o tempo limite de remoção pós-explosão em removeTime, atualiza o movimento correspondente em moves ou flings e fixa a posição sobre a cabeça do jogador se holding = true.
+
+- Interação de Chute: Detecta colisão com o jogador principal e aciona startMove caso a habilidade de chutar esteja ativa (kick = true).
+
+- Gatilho de Explosão: Invoca o método detonate assim que o horário atual ultrapassa detonateTime.
+
+**render** 
+
+```ts
+function render (this:Bomb, context:CanvasRenderingContext2D) {
+  if (this.armed) {
+    const { sx, sy } = animate(this, BOMB)
+    context.drawImage(Assets.bombSprite, sx, sy, BOMB.FRAME_WIDTH, BOMB.FRAME_HEIGHT, this.x, this.y, BOMB.FRAME_WIDTH, BOMB.FRAME_HEIGHT)
+  }
+  else {
+    this.blast.render(context, this.directions, this.x, this.y)
+  }
+}
+```
+
+Desenha o sprite da bomba armada ou a animação do fogo de explosão no Canvas. A função alterna a exibição visual dependendo do estado interno da entidade.
+
+- Renderização Armada: Enquanto armed = true, calcula o quadro de animação usando animate e desenha o sprite vindo de Assets.bombSprite.
+
+- Renderização de Detonação: Após a explosão, transfere a responsabilidade de desenho para a instância blast.render, passando as direções e o alcance calculados.
+
+# 'Client' src/game/entities/bonus.ts
+
+**IMPORTS/Interface** 
+
+```ts 
+import { MAX_SPEED, SPEED, TILE_SIZE } from '#/constants'
+import { PassFactory } from '~/game/entities/pass'
+import { GameState } from '~/game/entities/state'
+import { playBonusSound } from '~/game/sound/bonus'
+import { Assets } from '~/game/util/assets'
+import { isCollidingForced } from '~/game/util/collision'
+import { emitNullifyBlock } from '~/services/socket'
+
+interface BonusProps {
+  axes  : [number, number]
+  bonus : keyof typeof BONUS
+  x     : number
+  y     : number
+}
+
+export interface Bonus {
+  axes  : [number, number]
+  bonus : keyof typeof BONUS
+  t     : 'B'
+  x     : number
+  y     : number
+  tick   : (state:GameState) => void
+  render : (context:CanvasRenderingContext2D) => void
+}
+
+
+```
+
+Carrega dependências e estabelece os contratos de tipagem para os power-ups do jogo. Define os parâmetros necessários para criação, posições em matriz, tipo de identificador de bloco e assinaturas dos métodos de ciclo de vida tick e render.
+
+- Importações: Traz as constantes de velocidade e tamanho **MAX_SPEED**, **SPEED**, **TILE_SIZE**, instanciador **PassFactory**, utilitários de som playBonusSound, colisão **isCollidingForced** e serviços de comunicação socket **emitNullifyBlock**.
+
+- BonusProps e Bonus: Definem os parâmetros de inicialização (posição física, eixos e tipo de bônus) e a estrutura final da entidade com tipo fixo de bloco t: 'B'.
+
+**BONUS/BonusFactory**
+
+
+```ts
+const BONUS = {
+  1:BombBonus,
+  2:BlastBonus,
+  3:HoldBonus,
+  4:KickBonus,
+  5:SpeedBonus,
+  6:SlowBonus,
+  7:PassBonus,
+  8:InvertBonus,
+  9:KillBonus
+}
+
+export function BonusFactory (props:BonusProps) : Bonus {
+  return BONUS[props.bonus](props)
+}
+
+``` 
+
+Gerencia a instanciação dinâmica dos power-ups com base em um dicionário de coleções. A estrutura associa IDs numéricos a funções construtoras específicas de bônus.
+
+- Dicionário **BONUS:** Mapeia chaves numéricas 1 a 9 para as respectivas funções construtoras de cada efeito.
+
+- **BonusFactory:** Recebe as propriedades, consulta a tabela **BONUS** pela chave props.bonus e retorna a instância montada.
+
+**BombBonus**
+
+```ts
+function BombBonus (props:BonusProps) : Bonus {
+  const bomb:Bonus = {
+    axes : props.axes,
+    bonus: props.bonus,
+    t    : 'B',
+    x    : props.x,
+    y    : props.y,
+    tick: (state:GameState) => {
+      collided(state, bomb, () => {
+        state.players.myself!.bombs++
+      })
+    },
+    render: (context:CanvasRenderingContext2D) => {
+      context.drawImage(Assets.bombSprite, 0, 0, TILE_SIZE, TILE_SIZE, bomb.x, bomb.y, TILE_SIZE, TILE_SIZE)
+    }
+  }
+  return bomb
+}
+```
+
+- Aumenta a quantidade máxima de bombas que o jogador pode colocar simultaneamente. Ao colidir, incrementa a propriedade bombs do personagem e renderiza o sprite correspondente.
+
+**BlastBonus**
+
+```ts
+function BlastBonus (props:BonusProps) : Bonus {
+  const blast:Bonus = {
+    axes : props.axes,
+    bonus: props.bonus,
+    t    : 'B',
+    x    : props.x,
+    y    : props.y,
+    tick: (state:GameState) => {
+      collided(state, blast, () => {
+        state.players.myself!.bombReach++
+      })
+    },
+    render: (context:CanvasRenderingContext2D) => {
+      context.drawImage(Assets.bonusSprite, 0, 0, TILE_SIZE, TILE_SIZE, blast.x, blast.y, TILE_SIZE, TILE_SIZE)
+    }
+  }
+  return blast
+}
+```
+
+- Expande o raio do fogo gerado pelas bombas do jogador. Incrementa o atributo bombReach ao ser coletado e desenha o sprite no Canvas.
+
+**HoldBonus**
+
+```ts
+function HoldBonus (props:BonusProps) : Bonus {
+  const hold:Bonus = {
+    axes : props.axes,
+    bonus: props.bonus,
+    t    : 'B',
+    x    : props.x,
+    y    : props.y,
+    tick: (state:GameState) => {
+      collided(state, hold, () => {
+        state.players.myself!.hold = true
+      })
+    },
+    render: (context:CanvasRenderingContext2D) => {
+      context.drawImage(Assets.bonusSprite, 0, 16, TILE_SIZE, TILE_SIZE, hold.x, hold.y, TILE_SIZE, TILE_SIZE)
+    }
+  }
+  return hold
+}
+```
+
+- Concede ao jogador a habilidade de carregar e segurar bombas. Define o sinalizador hold = true no estado do personagem.
+
+**KickBonus**
+
+```ts
+function KickBonus (props:BonusProps) : Bonus {
+  const kick:Bonus = {
+    axes : props.axes,
+    bonus: props.bonus,
+    t    : 'B',
+    x    : props.x,
+    y    : props.y,
+    tick: (state:GameState) => {
+      collided(state, kick, () => {
+        state.players.myself!.kick = true
+      })
+    },
+    render: (context:CanvasRenderingContext2D) => {
+      context.drawImage(Assets.bonusSprite, 0, 32, TILE_SIZE, TILE_SIZE, kick.x, kick.y, TILE_SIZE, TILE_SIZE)
+    }
+  }
+  return kick
+}
+```
+
+- Permite que o jogador desloque bombas ao andar contra elas. Ativa a flag kick = true no perfil do jogador.
+
+**SpeedBonus**
+
+```ts
+function SpeedBonus (props:BonusProps) : Bonus {
+  const speed:Bonus = {
+    axes : props.axes,
+    bonus: props.bonus,
+    t    : 'B',
+    x    : props.x,
+    y    : props.y,
+    tick: (state:GameState) => {
+      collided(state, speed, () => {
+        if (state.players.myself!.speed < MAX_SPEED) state.players.myself!.speed += 0.1
+      })
+    },
+    render: (context:CanvasRenderingContext2D) => {
+      context.drawImage(Assets.bonusSprite, 0, 48, TILE_SIZE, TILE_SIZE, speed.x, speed.y, TILE_SIZE, TILE_SIZE)
+    }
+  }
+  return speed
+}
+```
+
+- Incrementa a velocidade de movimentação do jogador até o limite permitido. Soma 0.1 à propriedade speed caso seja inferior a **MAX_SPEED**.
+
+**SlowBonus** 
+
+```ts 
+function SlowBonus (props:BonusProps) : Bonus {
+  const slow:Bonus = {
+    axes : props.axes,
+    bonus: props.bonus,
+    t    : 'B',
+    x    : props.x,
+    y    : props.y,
+    tick: (state:GameState) => {
+      collided(state, slow, () => {
+        state.players.myself!.speed = SPEED - 0.1
+      })
+    },
+    render: (context:CanvasRenderingContext2D) => {
+      context.drawImage(Assets.bonusSprite, 0, 64, TILE_SIZE, TILE_SIZE, slow.x, slow.y, TILE_SIZE, TILE_SIZE)
+    }
+  }
+  return slow
+}
+``` 
+
+
+    Aplica uma penalidade reduzindo a velocidade do personagem. Reconfigura o atributo speed para o valor base SPEED - 0.1.
+
+
+**PassBonus**
+
+```ts
+function PassBonus (props:BonusProps) : Bonus {
+  const pass:Bonus = {
+    axes : props.axes,
+    bonus: props.bonus,
+    t    : 'B',
+    x    : props.x,
+    y    : props.y,
+    tick: (state:GameState) => {
+      collided(state, pass, () => {
+        state.entities.add(PassFactory({state}))
+      })
+    },
+    render: (context:CanvasRenderingContext2D) => {
+      context.drawImage(Assets.bonusSprite, 0, 80, TILE_SIZE, TILE_SIZE, pass.x, pass.y, TILE_SIZE, TILE_SIZE)
+    }
+  }
+  return pass
+}
+```
+
+- Permite ao jogador caminhar através de estruturas no mapa. Cria e insere uma nova entidade gerenciadora no jogo usando PassFactory.
+
+**InvertBonus**
+
+```ts
+function InvertBonus (props:BonusProps) : Bonus {
+  const invert:Bonus = {
+    axes : props.axes,
+    bonus: props.bonus,
+    t    : 'B',
+    x    : props.x,
+    y    : props.y,
+    tick: (state:GameState) => {
+      collided(state, invert, () => {
+        state.players.myself!.invertControls()
+        state.entities.entities.forEach(e => {
+          e['invertControls'] && e['invertControls']()
+        })
+        //adicionado um tempo na função de inverter os controles ft Moreira
+        setTimeout(() => {
+          state.players.myself!.invertControls()
+        }, 10000)
+      })
+    },
+    render: (context:CanvasRenderingContext2D) => {
+      context.drawImage(Assets.bonusSprite, 0, 96, TILE_SIZE, TILE_SIZE, invert.x, invert.y, TILE_SIZE, TILE_SIZE)
+    }
+  }
+  return invert
+}
+```
+
+Inverte temporariamente os comandos do jogador e de entidades compatíveis por 10 segundos. A função aplica a alteração de controles imediatamente na coleta e agenda o retorno ao estado original via setTimeout.
+
+- Efeito Imediato: Ao detectar a colisão, invoca **invertControls()** no jogador principal e varre o repositório state.entities.entities executando o método em qualquer entidade que possua a função registrada.
+
+- Reversão Temporizada: Configura um **setTimeout** para rodar após 10.000 milissegundos (10 segundos), reexecutando invertControls() para restaurar o mapeamento padrão de teclas do jogador.
+
+- Renderização Visual: Desenha o sprite do item no Canvas utilizando as coordenadas de corte específicas de Assets.bonusSprite enquanto a entidade estiver presente no mapa.
+
+
+**KillBonus** 
+
+```ts
+function KillBonus (props:BonusProps) : Bonus {
+  const kill:Bonus = {
+    axes : props.axes,
+    bonus: props.bonus,
+    t    : 'B',
+    x    : props.x,
+    y    : props.y,
+    tick: (state:GameState) => {
+      collided(state, kill, () => {
+        state.players.myself!.kill(true)
+      })
+    },
+    render: (context:CanvasRenderingContext2D) => {
+      context.drawImage(Assets.bonusSprite, 0, 112, TILE_SIZE, TILE_SIZE, kill.x, kill.y, TILE_SIZE, TILE_SIZE)
+    }
+  }
+  return kill
+}
+```
+
+- Elimina o jogador imediatamente ao ser coletado. Executa a função kill no jogador principal assim que a colisão ocorre.
+
+**collided**
+
+```ts
+function collided (state:GameState, bonus:Bonus, callback:()=>void) {
+  if (isCollidingForced(state.players.myself!, bonus)) {
+    emitNullifyBlock({a:bonus.axes})
+    playBonusSound(bonus.bonus)
+    state.blocks.destroyBlock(bonus.axes)
+    callback()
+  }
+}
+```
+
+Processa a coleta do bônus pelo jogador, emissão de evento de rede, áudio e destruição do item. Executa o efeito individual repassado via callback quando uma colisão forçada é confirmada.
+
+- Detecção: Utiliza isCollidingForced comparando o jogador principal com a entidade de bônus.
+
+- Ações de Coleta: Notifica o servidor com **emitNullifyBlock**, toca o efeito sonoro via **playBonusSound**, remove o item do mapa com destroyBlock e executa a lógica específica no callback.
+
+# 'Client' src/game/entities/factory.ts
+
+**Entity** 
+
+```ts  
+export interface Entities {
+  entities : Map<string,Entity>
+  add      : (entity:Entity) => void
+  get      : (id:string) => Entity|undefined
+  has      : (id:string) => boolean
+  remove   : (entity:Entity) => void
+  tick     : (state:GameState) => void
+  render   : (context:CanvasRenderingContext2D) => void
+}
+
+export function EntitiesFactory () : Entities {
+  const entities : Entities = {
+    entities: new Map()
+  } as Entities
+  entities.add = add.bind(entities)
+  entities.get = get.bind(entities)
+  entities.has = has.bind(entities)
+  entities.remove = remove.bind(entities)
+  entities.tick = tick.bind(entities)
+  entities.render = render.bind(entities)
+  return entities
+}
+```
+
+Especificam os contratos de dados para os objetos do jogo e a API de controle da coleção. Definem a estrutura mínima que qualquer entidade precisa ter e as operações do repositório.
+
+- Entity: Contrato base que exige um identificador único id, os métodos de ciclo de vida tick e render, além da função opcional invertControls para efeitos de alteração de comandos.
+
+- Entities: Interface do gerenciador que armazena a estrutura interna entities do tipo Map<string, Entity> e expõe os métodos de inserção, busca, remoção, atualização e desenho.
+
+**EntitiesFactory**
+
+```ts 
+export function EntitiesFactory () : Entities {
+  const entities : Entities = {
+    entities: new Map()
+  } as Entities
+  entities.add = add.bind(entities)
+  entities.get = get.bind(entities)
+  entities.has = has.bind(entities)
+  entities.remove = remove.bind(entities)
+  entities.tick = tick.bind(entities)
+  entities.render = render.bind(entities)
+  return entities
+}
+```
+
+Instancia a coleção base e vincula as funções de manipulação e ciclo de vida. Cria o repositório interno e faz o bind dos métodos de controle à instância retornada.
+
+- Inicialização: Instancia o mapa interno new Map() para armazenamento otimizado de entidades por chave única.
+
+- Vínculo de Funções: Associa os métodos auxiliares de inclusão, remoção, busca e atualização do loop principal (add, get, has, remove, tick, render).
+
+**add/get/has/remove/tick**
+
+```ts
+function add (this:Entities, entity:Entity) {
+  this.entities.set(entity.id, entity)
+}
+
+function get (this:Entities, id:string) {
+  return this.entities.get(id)
+}
+
+function has (this:Entities, id:string) {
+  return this.entities.has(id)
+}
+
+function remove (this:Entities, entity:Entity) {
+  this.entities.delete(entity.id)
+}
+
+function tick (this:Entities, state:GameState) {
+  for (const [_,entity] of this.entities) {
+    entity.tick(state)
+  }
+}
+
+function render (this:Entities, context:CanvasRenderingContext2D) {
+  for (const [_,entity] of this.entities) {
+    entity.render(context)
+  }
+}
+```
+
+Executam a inclusão, consulta e exclusão direta de entidades no mapa interno. Utilizam os métodos nativos da coleção para gerenciar o ciclo de permanência dos objetos em memória.
+
+- **add**: Registra uma nova entidade no mapa utilizando this.entities.set(entity.id, entity).
+
+- **get**: Recupera e retorna uma entidade existente pela sua chave identificadora através de this.entities.get(id).
+
+- **has**: Retorna um booleano indicando se a entidade informada existe no mapa chamando this.entities.has(id).
+
+- **remove**: Deleta o registro do repositório utilizando this.entities.delete(entity.id).
+
+# 'Client' src/game/entities/gamepad.ts
+
+**GamepadProps/GamepadHost**
+
+```ts 
+import { PRESS_INTERVAL } from '#/constants'
+import { SIDES } from '#/dto'
+import { Player } from '~/game/entities/player'
+import { GameState } from '~/game/entities/state'
+
+interface GamepadProps {
+  id     : string
+  index  : number
+  player : Player
+}
+
+interface GamepadHost {
+  bombKeys  : {[key:number]:'B'}
+  id        : string
+  index     : number
+  lastPress : LastPress
+  moveKeys  : {[key:number]:SIDES}
+  player    : Player
+  invertControls : () => void
+  tick           : (state:GameState) => void
+  render         : () => void
+}
+
+interface LastPress {
+  bomb : number
+}
+```
+
+Especificam a estrutura do adaptador de controle e o registro de cooldown para ações. Definem os mapeamentos padrão de botões e analógicos para o jogador vinculado.
+
+- **GamepadProps e GamepadHost:** Guardam o índice do dispositivo na API do navegador, referências do jogador (player), mapeamentos de botões de bomba **bombKeys** e direções **moveKeys**.
+
+- LastPress: Armazena o registro de tempo da última bomba plantada para evitar acionamentos múltiplos indesejados.
+
+**GamepadFactory**
+
+```ts
+export function GamepadFactory (props:GamepadProps) : GamepadHost {
+  const host:GamepadHost = {
+    bombKeys: {0:'B', 1:'B', 2:'B', 3:'B'},
+    id: props.id,
+    index: props.index,
+    lastPress: {bomb:0},
+    moveKeys: {12:'U', 13:'D', 14:'L', 15:'R'},
+    player: props.player,
+    render: () => {}
+  } as unknown as GamepadHost
+  host.invertControls = invertControls.bind(host)
+  host.tick = tick.bind(host)
+  return host
+}
+```
+Instancia o gerenciador de controle e atribui o mapeamento padrão de botões. Inicializa os direcionais digitais (D-Pad) nos índices 12 a 15, os botões de ação nos índices 0 a 3 e vincula os métodos de ciclo de vida.
+
+- Atribuição de Mapeamento: Mapeia 12 para cima ('U'), 13 para baixo ('D'), 14 para esquerda ('L') e 15 para direita ('R').
+
+- Vínculo de Métodos: Vincula as funções locais tick e invertControls à instância retornada.
+
+**tick** 
+
+```ts 
+function tick (this:GamepadHost, state:GameState) {
+  if (!this.player.active) return
+  const gamepad = navigator.getGamepads()[this.index]
+  if (!gamepad) return
+  let useAxes = true
+  for (const key in this.moveKeys) {
+    if (gamepad.buttons[key].pressed) {
+      this.player.startMove(this.moveKeys[key])
+      useAxes = false
+    }
+    else {
+      this.player.stopMove(this.moveKeys[key])
+    }
+  }
+  if (useAxes) {
+    if      (gamepad.axes[1] > 0.3)  this.player.startMove(this.moveKeys[13])
+    else if (gamepad.axes[1] < -0.3) this.player.startMove(this.moveKeys[12])
+    else if (gamepad.axes[0] > 0.2)  this.player.startMove(this.moveKeys[15])
+    else if (gamepad.axes[0] < -0.2) this.player.startMove(this.moveKeys[14])
+    else                             this.player.stopMove(this.player.side)
+  }
+  for (const key in this.bombKeys) {
+    if (gamepad.buttons[key].pressed) {
+      if (Date.now() > this.lastPress.bomb) {
+        this.lastPress.bomb = Date.now() + PRESS_INTERVAL
+        this.player.handleBomb(state)
+      }
+    }
+  }
+}
+```
+
+Captura o estado dos botões e eixos analógicos do Gamepad a cada quadro do jogo. Lê os dados do controle via navigator.getGamepads() e aciona as ações do personagem.
+
+- Verificação de Atividade: Interrompe a execução caso o jogador esteja inativo (player.active = false) ou o controle não seja detectado.
+
+- Prioridade **D-Pad:** Varre as direções digitais, se algum botão direcional estiver pressionado, aciona startMove e ignora a leitura analógica.
+
+- Leitura Analógica: Caso nenhum botão do D-Pad seja detectado, avalia os eixos **axes[0]** (horizontal) e **axes[1]** (vertical) com margens de deadzone (0.2 e 0.3) para movimentar o jogador.
+
+- Disparo de Bomba: Monitora os botões de ação e dispara handleBomb respeitando o intervalo limite definido por **PRESS_INTERVAL**.
+
+**invertControls** 
+
+```ts
+function invertControls (this:GamepadHost) {
+  this.moveKeys[12] = 'D'
+  this.moveKeys[13] = 'U'
+  this.moveKeys[14] = 'R'
+  this.moveKeys[15] = 'L'
+}
+```
+
+- Essa função inverte as teclas do teclas do jogador, definindo.
+
+# 'Client' src/game/entities/pass.ts
+
+**Interfaces** 
+
+```ts 
+import { GameState } from '~/game/entities/state'
+import { isOnBlock } from '~/game/util/block'
+
+interface PassProps {
+  state : GameState
+}
+
+interface Pass {
+  id         : string
+  removeTime : number
+  tick   : (state:GameState) => void
+  render : () => void
+}
+``` 
+
+Definem o contrato de dados e os atributos do temporizador do efeito. Especificam a propriedade de remoção temporal removeTime, o identificador único id e os métodos de ciclo de vida.
+
+- PassProps: Recebe a referência do estado global state para modificações físicas imediatas.
+
+- Pass: Interface da entidade que armazena a chave única id, o horário limite de expiração removeTime e as funções do loop (tick, render).
+
+
+**PassFactory**
+
+```ts
+export function PassFactory (props:PassProps) : Pass {
+  props.state.players.myself!.collidable = false
+  const pass:Pass = {
+    id: `P${Math.floor(Math.random() * 9999999)}`,
+    render: () => {}
+  } as Pass
+  pass.tick = tick.bind(pass)
+  pass.removeTime = Date.now() + 6000
+  return pass
+}
+```
+
+Instancia a entidade temporizada e desativa a colisão do jogador principal. Configura o estado inicial do bônus, gera um identificador aleatório e estabelece a duração do efeito em 6 segundos.
+
+- Desativação de Colisão: Define **state.players.myself.collidable = false** imediatamente no momento da criação.
+
+- Agendamento de Remoção: Gera um identificador único em id e marca a expiração configurando removeTime = Date.now() + 6000.
+
+**tick** 
+
+```ts 
+function tick (this:Pass, state:GameState) {
+  if (Date.now() > this.removeTime) {
+    state.entities.remove(this)
+    state.players.myself!.collidable = true
+    if (isOnBlock(state)) {
+      state.players.myself!.kill(true)
+    }
+  }
+}
+
+```
+
+Monitora o tempo restante da habilidade e restaura as físicas originais de colisão. Processa a expiração do temporizador e verifica se a área de restauração da colisão é segura para o jogador.
+
+- Restauração de Física: Reativa **state.players.myself.collidable = true** assim que o horário atual ultrapassa removeTime e remove a entidade da coleção global com **remove(this)**.
+
+- Eliminação por Sufocamento: Verifica se o jogador está sobreposto a um bloco usando **isOnBlock(state)** no exato momento da reativação da colisão; em caso positivo, executa **kill(true)** para eliminar o personagem.
+
+# 'Client' src/game/entities/player.ts
+
+**Imports**
+
+```ts 
+import { PRESS_INTERVAL, TILE_SIZE } from '#/constants'
+import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
+import { animate, AnimControl } from '~/game/animations/animation'
+import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
+import { Bomb, BombFactory } from '~/game/entities/bomb'
+import { GamepadFactory } from '~/game/entities/gamepad'
+import { GameState } from '~/game/entities/state'
+import { playBombSound } from '~/game/sound/bomb'
+import { playKillSound } from '~/game/sound/kill'
+import { emitFlingBomb, emitHoldBomb, emitKill, emitMove, emitPlaceBomb } from '~/services/socket'
+```
+
+- Carrega as dependências de Animação, Mapeamentos Físicos, Efeitos Sonoros e Comunicação de Rede. Traz as definições de tamanho de célula, tipos de movimentação **DTOs**, conjuntos de quadros de sprites por estado e métodos de propagação de socket para sincronização multiplayer.
+
+**Interfaces: LastPress/PlayerProps/Player**
+
+```ts 
+interface LastPress {
+  bomb : number
+}
+
+interface PlayerProps extends PlayerDTO {
+  index : number
+  speed : number
+  x     : number
+  y     : number
+}
+
+export interface Player {
+  active     : boolean
+  anim       : AnimControl['anim']
+  bombId     : string
+  bombKeys   : {[key:string]:'B'}
+  bombReach  : number
+  bombs      : number
+  collidable : boolean
+  hold       : boolean
+  holding    : 0|1
+  index      : number
+  kick       : boolean
+  lastPress  : LastPress
+  moveKeys   : {[key:string]:SIDES}
+  moving     : 0|1
+  movingSide : {[key in SIDES]:boolean}
+  myself     : boolean
+  nick       : PlayerDTO['nick']
+  removeTime : number
+  side       : SIDES
+  sprite     : HTMLImageElement
+  speed      : number
+  x          : number
+  y          : number
+  setMyself            : () => void
+  getAxes              : () => [number, number]
+  addInputListener     : (state:GameState) => void
+  removeInputListener  : () => void
+  onVisibilityChange   : () => void
+  keydownListener      : (event:KeyboardEvent) => void
+  keyupListener        : (event:KeyboardEvent) => void
+  removeGamepadSupport : () => void
+  addGamepadSupport    : () => void
+  startMove            : (side:SIDES) => void
+  moveTick             : (state:GameState) => void
+  moves                : {[key in SIDES] : () => void}
+  onMove               : (dto:MoveDTO) => void
+  stopMove             : (side:SIDES) => void
+  invertControls       : () => void
+  handleBomb           : (state:GameState) => void
+  placeBomb            : (state:GameState) => void
+  holdBomb             : (state:GameState) => void
+  flingBomb            : (state:GameState) => void
+  kill                 : (emit:boolean) => void
+  tick                 : (state:GameState) => void
+  render               : (context:CanvasRenderingContext2D) => void
+}
+```
+
+- Estabelecem as estruturas de dados, atributos físicos, estados e contratos de métodos da entidade do jogador. Definem propriedades de velocidade, limite de bombas, sinalizadores de habilidades, dados de rede e a API completa de ciclo de vida, renderização e controle de entradas.
+
+**PlayerFactory**
+
+```ts
+export function PlayerFactory (props:PlayerProps) : Player {
+  const player : Player = {
+    active: false,
+    anim: {frameCurrent:0, lastRender:0, sum:true},
+    bombKeys: {
+      'Z': 'B',
+      'X': 'B',
+      'C': 'B',
+      ' ': 'B'
+    },
+    bombReach: 2,
+    bombs: 1,
+    collidable: true,
+    hold: false,
+    holding: 0,
+    index: props.index,
+    kick: false,
+    lastPress: {bomb:0},
+    moveKeys: {
+      'W': 'U',
+      'A': 'L',
+      'S': 'D',
+      'D': 'R',
+      'ARROWUP': 'U',
+      'ARROWLEFT': 'L',
+      'ARROWDOWN': 'D',
+      'ARROWRIGHT': 'R'
+    },
+    moving: 0,
+    movingSide: {U:false, L:false, D:false, R:false},
+    myself: false,
+    nick: props.nick,
+    side: 'D',
+    speed: props.speed,
+    x: props.x,
+    y: props.y,
+    sprite: new Image()
+  } as unknown as Player
+  player.sprite.src = `${process.env.PUBLIC_URL}/sprites/chars/${props.sprite}.png`
+  player.setMyself = setMyself.bind(player)
+  player.getAxes = getAxes.bind(player)
+  player.addInputListener = addInputListener.bind(player)
+  player.removeInputListener = removeInputListener.bind(player)
+  player.startMove = startMove.bind(player)
+  player.moveTick = moveTick.bind(player)
+  player.moves = {D:moveDown.bind(player), L:moveLeft.bind(player), R:moveRight.bind(player), U:moveUp.bind(player)}
+  player.onMove = onMove.bind(player)
+  player.stopMove = stopMove.bind(player)
+  player.invertControls = invertControls.bind(player)
+  player.handleBomb = handleBomb.bind(player)
+  player.placeBomb = placeBomb.bind(player)
+  player.holdBomb = holdBomb.bind(player)
+  player.flingBomb = flingBomb.bind(player)
+  player.kill = kill.bind(player)
+  player.tick = tick.bind(player)
+  player.render = render.bind(player)
+  return player
+}
+```
+
+- Instancia a estrutura do jogador, carrega seus sprites visuais e vincula todos os seus métodos operacionais. Configura os atributos iniciais de movimento, teclas de atalho padrão (WASD, Setas, Z, X, C, Espaço), capacidade de bombas e faz o bind das funções de física, teclado, gamepad e combate à instância.
+
+**setMyself/getAxes**
+
+
+```ts
+function setMyself (this:Player) {
+  this.myself = true
+}
+
+function getAxes (this:Player) : [number, number] {
+  const x = Math.floor(this.y / TILE_SIZE)
+  const y = Math.floor(((this.x - 1) / TILE_SIZE) - 0.5)
+  return [x, y]
+}
+```
+
+Identifica se o jogador é o cliente local e calcula sua posição na grade do mapa.
+
+- **setMyself**: Define a flag myself = true, marcando a instância como o jogador controlado na máquina local.
+
+- **getAxes**: Mapeia as posições físicas em pixels x e y para a matriz de células da grade do mapa, retornando o par de eixos.
+
+**addInputListener**
+
+``` ts
+function addInputListener (this:Player, state:GameState) {
+  this.onVisibilityChange = () => onVisibilityChange.call(this)
+  document.addEventListener('visibilitychange', this.onVisibilityChange)
+  this.keydownListener = event => keydownListener.call(this, event, state)
+  document.addEventListener('keydown', this.keydownListener)
+  this.keyupListener = event => keyupListener.call(this, event)
+  document.addEventListener('keyup', this.keyupListener)
+  this.removeGamepadSupport = () => removeGamepadSupport.call(this, state)
+  window.addEventListener('gamepaddisconnected', this.removeGamepadSupport)
+  this.addGamepadSupport = () => addGamepadSupport.call(this, state)
+  window.addEventListener('gamepadconnected', this.addGamepadSupport)
+  this.addGamepadSupport()
+}
+
+```
+
+- Inscreve o jogador nos eventos de teclado, foco de janela e conexões de Gamepad. Registra os ouvintes globais para escutar teclas pressionadas (**keydown**), soltas (**keyup**), trocas de aba (**visibilitychange**) e a conexão ou desconexão de controles físicos.
+
+**removeInputListener** 
+
+```ts 
+function removeInputListener (this:Player) {
+  document.removeEventListener('visibilitychange', this.onVisibilityChange)
+  document.removeEventListener('keydown', this.keydownListener)
+  document.removeEventListener('keyup', this.keyupListener)
+  window.removeEventListener('gamepaddisconnected', this.removeGamepadSupport)
+  window.removeEventListener('gamepadconnected', this.addGamepadSupport)
+}
+```
+
+- Cancela as inscrições dos eventos globais de entrada e janela do jogador. Remove os ouvintes registrados no document e na window para prevenir vazamentos de memória e leituras desnecessárias quando a entidade for destruída.
+
+**onVisibilityChange/keydownListener/keyupListener** 
+
+```ts
+
+function onVisibilityChange (this:Player) {
+  if (document.hidden && this.active) this.kill(true)
+}
+
+function keydownListener (this:Player, event:KeyboardEvent, state:GameState) {
+  event.preventDefault()
+  if (!this.active) return
+  const key = event.key.toUpperCase()
+  if (this.moveKeys[key]) {
+    this.startMove(this.moveKeys[key])
+  }
+  if (this.bombKeys[key]) {
+    if (Date.now() > this.lastPress.bomb) {
+      this.lastPress.bomb = Date.now() + PRESS_INTERVAL
+      this.handleBomb(state)
+    }
+  }
+}
+
+function keyupListener (this:Player, event:KeyboardEvent) {
+  event.preventDefault()
+  if (!this.active) return
+  const key = event.key.toUpperCase()
+  if (this.moveKeys[key]) this.stopMove(this.moveKeys[key])
+}
+```
+
+Processa o foco da aplicação e a captura das teclas para movimento e ações.
+
+- **onVisibilityChange:** Elimina o jogador local invocando kill(true) caso a aba do navegador perca o foco ou seja ocultada durante a partida.
+
+- **keydownListener:** Intercepta as teclas pressionadas para ativar o movimento em startMove ou plantar bombas via handleBomb, respeitando o intervalo de tempo PRESS_INTERVAL.
+
+- **keyupListener:** Detecta a liberação das teclas direcionais e chama o método stopMove para interromper ou recalcular o deslocamento.
+
+**addGamepadSupport** 
+
+```ts 
+function addGamepadSupport (this:Player, state:GameState) {
+  const index = 0
+  const hasGamepad = navigator.getGamepads()[index]
+  if (!hasGamepad) return
+  const id = `G${this.index}`
+  if (state.entities.has(id)) return
+  const gamepad = GamepadFactory({id, index, player:this})
+  //if (this.moveKeys['W'] === 'D') gamepad.invertControls() funcao comentada por conta do bug 
+  state.entities.add(gamepad)
+}
+```
+
+- **addGamepadSupport:** Verifica a existência de um Gamepad conectado via API do navegador, instancia o adaptador com GamepadFactory e o adiciona ao repositório de entidades globais.
+
+**removeGamepadSupport** 
+
+```ts 
+function removeGamepadSupport (this:Player, state:GameState) {
+  const gamepad = state.entities.get(`G${this.index}`)
+  if (!gamepad) return
+  state.entities.remove(gamepad)
+}
+```
+
+- **removeGamepadSupport:** Busca a entidade de Gamepad associada ao índice do jogador e a remove do gerenciador de entidades quando o controle for desconectado.
+
+
+**startMove**
+
+```ts 
+function startMove (this:Player, side:SIDES) {
+  this.movingSide[side] = true
+  this.side = side
+  this.moving = 1
+}
+```
+
+- Sinaliza o início do deslocamento e atualiza a orientação do personagem. Marca o lado correspondente em movingSide como ativo, define a direção atual em side e altera o indicador moving para 1.
+
+
+**moveTick** 
+
+```ts
+function moveTick (this:Player, state:GameState) {
+  if (!this.moving) return
+  this.moves[this.side]()
+  if (!this.myself) return
+  state.blocks.tick(state)
+  emitMove({h:this.holding, m:this.moving, p:this.index, s:this.side, x:this.x, y:this.y})
+}
+```
+
+Executa o deslocamento quadro a quadro e transmite a posição atualizada para a rede.
+
+- Processamento Local: Dispara a função de movimento mapeada em moves **this.side** caso o sinalizador moving esteja ativo.
+
+- Sincronização Multiplayer: Executa verificações de blocos e emite o evento emitMove via socket para sincronizar as coordenadas e o estado do jogador local com os outros clientes.
+
+
+**move: UP/DOWN/RIGHT/LEFT** 
+
+```ts
+function moveDown (this:Player) {
+  this.y += this.speed
+  if (this.y > 169) {
+    if (this.collidable) {
+      this.y = 169
+      this.moving = 0
+    }
+    else if (this.y > 175) {
+      this.y = 2
+    }
+  }
+}
+
+function moveUp (this:Player) {
+  this.y -= this.speed
+  if (this.y < 9) {
+    if (this.collidable) {
+      this.y = 9
+      this.moving = 0
+    }
+    else if (this.y < 2) {
+      this.y = 175
+    }
+  }
+}
+
+function moveRight (this:Player) {
+  this.x += this.speed
+  if (this.x > 209) {
+    if (this.collidable) {
+      this.x = 209
+      this.moving = 0
+    }
+    else if (this.x > 217) {
+      this.x = 7
+    }
+  }
+}
+
+function moveLeft (this:Player) {
+  this.x -= this.speed
+  if (this.x < 17) {
+    if (this.collidable) {
+      this.x = 17
+      this.moving = 0
+    }
+    else if (this.x < 7) {
+      this.x = 217
+    }
+  }
+}
+```
+
+- Atualiza as posições físicas em pixels e aplica colisões de borda ou teleporte. Incrementa ou decreta os eixos x ou y com base em speed. Caso o jogador seja colidível, trava a movimentação nos limites da arena; caso esteja intangível (como no efeito Pass), permite o atravessamento da borda reaparecendo no lado oposto (wrap-around).
+
+**onMove** 
+
+```ts
+function onMove (this:Player, dto:MoveDTO) {
+  this.holding = dto.h
+  this.moving = dto.m
+  this.side = dto.s
+  this.x = dto.x
+  this.y = dto.y
+}
+```
+
+- Atualiza o estado do jogador remoto com base nos dados recebidos do servidor. Sobrescreve as posições x e y, orientação side, status de carregamento de bomba holding e sinalizador de movimento moving vindos do objeto MoveDTO.
+
+**stopMove** 
+
+```ts
+function stopMove (this:Player, side:SIDES) {
+  this.movingSide[side] = false
+  this.moving = 0
+  for (const side in this.movingSide) {
+    if (this.movingSide[side as SIDES]) {
+      this.side = side as SIDES
+      this.moving = 1
+      break
+    }
+  }
+  emitMove({h:this.holding, m:this.moving, p:this.index, s:this.side, x:this.x, y:this.y})
+}
+```
+
+- Esta função Atualiza o estado do jogador remoto com base nos dados recebidos do servidor. Sobrescreve as posições x e y, orientação side, status de carregamento de bomba holding e sinalizador de movimento moving vindos do objeto **MoveDTO**.
+
+**InvertControls**
+
+```ts 
+//alteracao na função de inverter os controles (adicionar um tmepo para o bonus)
+function invertControls (this:Player) {
+  this.moveKeys['W'] = (this.moveKeys['W'] == 'U') ? 'D' : 'U'
+  this.moveKeys['A'] = (this.moveKeys['A'] == 'L') ? 'R' : 'L'
+  this.moveKeys['S'] = (this.moveKeys['W'] == 'D') ? 'U' : 'D'
+  this.moveKeys['D'] = (this.moveKeys['D'] == 'R') ? 'L' : 'R'
+  this.moveKeys['ARROWUP'] = 'D'
+  this.moveKeys['ARROWLEFT'] = 'R'
+  this.moveKeys['ARROWDOWN'] = 'U'
+  this.moveKeys['ARROWRIGHT'] = 'L'
+}
+
+```
+
+- Inverte ou restaura os mapeamentos direcionais do teclado. A função alterna os valores atribuídos às teclas WASD e às setas direcionais em moveKeys, trocando Cima/Baixo e Esquerda/Direita para aplicar ou remover o efeito de controle invertido. OBS: essa função foi modificada para cancelar a inversão dos grafos através de um **setTimeout** adicionado na função de bonus.
+
+**handleBomb** 
+
+```ts 
+function handleBomb (this:Player, state:GameState) {
+  if (this.hold) {
+    if (this.holding) {
+      this.flingBomb(state)
+    }
+    else {
+      this.holdBomb(state)
+    }
+  }
+  else {
+    this.placeBomb(state)
+  }
+}
+```
+
+- Avalia as condições do jogador e aciona a ação de combate apropriada. Caso a habilidade de carregar esteja ativa, o método decide entre arremessar a bomba segurada **flingBomb** ou pegar/posicionar uma nova **holdBomb**; caso contrário, executa o plantio padrão **placeBomb**
+
+**placeBomb**
+
+```ts 
+function placeBomb (this:Player, state:GameState) {
+  if (!this.bombs) return
+  const axes = this.getAxes()
+  const block = state.blocks.getBlock(axes)
+  if (block) return
+  this.bombs--
+  const bomb = BombFactory({
+    axes,
+    player     : this,
+    playerIndex: this.index,
+    reach      : this.bombReach
+  })
+  state.blocks.putBomb(bomb)
+  emitPlaceBomb({
+    a: axes,
+    i: bomb.id,
+    p: bomb.playerIndex,
+    r: bomb.reach,
+    x: bomb.x,
+    y: bomb.y
+  })
+  state.entities.add(bomb)
+  playBombSound()
+}
+```
+
+Instancia uma nova bomba no mapa e propaga a ação via rede.
+
+- Validação: Verifica se o jogador tem bombas disponíveis (bombs > 0) e se a célula atual obtida por getAxes não está ocupada por blocos.
+
+- Criação e Registro: Decrementa a contagem do jogador, gera a entidade usando BombFactory, armazena-a no mapa de blocos em putBomb e adiciona à coleção global state.entities.
+
+- Efeitos e Rede: Dispara a emissão de socket emitPlaceBomb e executa o áudio playBombSound.
+
+**holdBomb**
+
+```ts 
+function holdBomb (this:Player, state:GameState) {
+  const block = state.blocks.getBlock(this.getAxes())
+  if (block && block.t === 'O') {
+    this.holding = 1
+    this.bombId = block.id
+    const bomb = state.entities.get(block.id) as Bomb
+    emitHoldBomb({i:bomb.id,p:this.index})
+    bomb.setHolding(this.index, state)
+  }
+  else {
+    this.placeBomb(state)
+  }
+}
+```
+
+- Captura: Verifica se existe uma bomba (tipo 'O') na posição atual. Se confirmado, atualiza o status para holding = 1, registra o bombId, notifica a rede com emitHoldBomb e invoca o método de carregamento da bomba (setHolding).
+
+- Fallback: Se nenhuma bomba for encontrada na célula, executa placeBomb como ação alternativa.
+
+**flingBomb**
+
+```ts
+function flingBomb (this:Player, state:GameState) {
+  this.holding = 0
+  const bomb = state.entities.get(this.bombId) as Bomb
+  emitFlingBomb({i:bomb.id,p:this.index,s:this.side,x:this.x,y:this.y-9})
+  bomb.startFling(this.side)
+}
+```
+
+- Lança a bomba que está sendo segurada na direção atual do personagem. Cancela o estado holding = 0, obtém a instância da bomba pelo bombId, emite o evento emitFlingBomb para sincronização em rede e inicia a trajetória aérea chamando startFling.
+
+**kill**
+
+```ts 
+function kill (this:Player, emit:boolean) {
+  if (this.removeTime) return
+  this.removeTime = Date.now() + 350
+  this.active = false
+  this.moving = 0
+  this.holding = 0
+  this.collidable = false
+  this.tick = () => {
+    if (Date.now() > this.removeTime) {
+      this.tick = () => {}
+      this.render = () => {}
+    }
+  }
+  this.render = (context:CanvasRenderingContext2D) => {
+    const { sx, sy } = animate(this, PLAYER_K)
+    context.drawImage(this.sprite, sx, sy, PLAYER_K.FRAME_WIDTH, PLAYER_K.FRAME_HEIGHT, this.x, this.y, PLAYER_K.FRAME_WIDTH, PLAYER_K.FRAME_HEIGHT)
+  }
+  playKillSound()
+  if (!emit) return
+  this.removeGamepadSupport()
+  emitKill({p:this.index})
+}
+```
+
+Gerencia a eliminação do personagem, interrompe físicas e toca a animação de morte.
+
+- Trava de Execução: Interrompe o processo caso removeTime já esteja preenchido.
+
+- Desativação: Define a duração do efeito em 350ms, desativa a atividade **active = false**, cancela movimentação/carregamento e remove a colisão física **collidable = false**.
+
+- Sobrescrita do Ciclo: Substitui temporariamente as funções tick e render para executar o sprite de eliminação **PLAYER_K** até o fim do tempo limite, quando ambas são zeradas.
+
+- Rede e Limpeza: Executa **playKillSound**, remove a integração com o controle através de **removeGamepadSupport** e notifica o servidor com emitKill.
+
+**tick**
+
+```ts
+
+function tick (this:Player, state:GameState) {
+  this.moveTick(state)
+}
+
+```
+
+- Executa o ciclo de movimentação do jogador no game loop. Chame o método **moveTick(state)** para atualizar os passos e sincronizar o estado no Canvas.
+
+**render** 
+
+```ts 
+
+function render (this:Player, context:CanvasRenderingContext2D) {
+  if (this.side === 'D') {
+    if (this.holding) {
+      if (this.moving) {
+        const { sx, sy } = animate(this, PLAYER_DH)
+        context.drawImage(this.sprite, sx, sy, PLAYER_DH.FRAME_WIDTH, PLAYER_DH.FRAME_HEIGHT, this.x, this.y, PLAYER_DH.FRAME_WIDTH, PLAYER_DH.FRAME_HEIGHT)
+      }
+      else {
+        context.drawImage(this.sprite, PLAYER_DH.FRAME_WIDTH*4, PLAYER_DH.ROW, PLAYER_DH.FRAME_WIDTH, PLAYER_DH.FRAME_HEIGHT, this.x, this.y, PLAYER_DH.FRAME_WIDTH, PLAYER_DH.FRAME_HEIGHT)
+      }
+    }
+    else if (this.moving) {
+      const { sx, sy } = animate(this, PLAYER_D)
+      context.drawImage(this.sprite, sx, sy, PLAYER_D.FRAME_WIDTH, PLAYER_D.FRAME_HEIGHT, this.x, this.y, PLAYER_D.FRAME_WIDTH, PLAYER_D.FRAME_HEIGHT)
+    }
+    else {
+      context.drawImage(this.sprite, PLAYER_D.FRAME_WIDTH, PLAYER_D.ROW, PLAYER_D.FRAME_WIDTH, PLAYER_D.FRAME_HEIGHT, this.x, this.y, PLAYER_D.FRAME_WIDTH, PLAYER_D.FRAME_HEIGHT)
+    }
+  }
+  else if (this.side === 'U') {
+    if (this.holding) {
+      if (this.moving) {
+        const { sx, sy } = animate(this, PLAYER_UH)
+        context.drawImage(this.sprite, sx, sy, PLAYER_UH.FRAME_WIDTH, PLAYER_UH.FRAME_HEIGHT, this.x, this.y, PLAYER_UH.FRAME_WIDTH, PLAYER_UH.FRAME_HEIGHT)
+      }
+      else {
+        context.drawImage(this.sprite, PLAYER_UH.FRAME_WIDTH*4, PLAYER_UH.FRAME_HEIGHT, PLAYER_UH.FRAME_WIDTH, PLAYER_UH.FRAME_HEIGHT, this.x, this.y, PLAYER_UH.FRAME_WIDTH, PLAYER_UH.FRAME_HEIGHT)
+      }
+    }
+    else if (this.moving) {
+      const { sx, sy } = animate(this, PLAYER_U)
+      context.drawImage(this.sprite, sx, sy, PLAYER_U.FRAME_WIDTH, PLAYER_U.FRAME_HEIGHT, this.x, this.y, PLAYER_U.FRAME_WIDTH, PLAYER_U.FRAME_HEIGHT)
+    }
+    else {
+      context.drawImage(this.sprite, PLAYER_U.FRAME_WIDTH, PLAYER_U.FRAME_HEIGHT, PLAYER_U.FRAME_WIDTH, PLAYER_U.FRAME_HEIGHT, this.x, this.y, PLAYER_U.FRAME_WIDTH, PLAYER_U.FRAME_HEIGHT)
+    }
+  }
+  else if (this.side === 'R') {
+    if (this.holding) {
+      if (this.moving) {
+        const { sx, sy } = animate(this, PLAYER_RH)
+        context.drawImage(this.sprite, sx, sy, PLAYER_RH.FRAME_WIDTH, PLAYER_RH.FRAME_HEIGHT, this.x, this.y, PLAYER_RH.FRAME_WIDTH, PLAYER_RH.FRAME_HEIGHT)
+      }
+      else {
+        context.drawImage(this.sprite, PLAYER_RH.FRAME_WIDTH*4, PLAYER_RH.FRAME_HEIGHT*PLAYER_RH.ROW, PLAYER_RH.FRAME_WIDTH, PLAYER_RH.FRAME_HEIGHT, this.x, this.y, PLAYER_RH.FRAME_WIDTH, PLAYER_RH.FRAME_HEIGHT)
+      }
+    }
+    else if (this.moving) {
+      const { sx, sy } = animate(this, PLAYER_R)
+      context.drawImage(this.sprite, sx, sy, PLAYER_R.FRAME_WIDTH, PLAYER_R.FRAME_HEIGHT, this.x, this.y, PLAYER_R.FRAME_WIDTH, PLAYER_R.FRAME_HEIGHT)
+    }
+    else {
+      context.drawImage(this.sprite, PLAYER_R.FRAME_WIDTH, PLAYER_R.FRAME_HEIGHT*PLAYER_R.ROW, PLAYER_R.FRAME_WIDTH, PLAYER_R.FRAME_HEIGHT, this.x, this.y, PLAYER_R.FRAME_WIDTH, PLAYER_R.FRAME_HEIGHT)
+    }
+  }
+  else {
+    if (this.holding) {
+      if (this.moving) {
+        const { sx, sy } = animate(this, PLAYER_LH)
+        context.drawImage(this.sprite, sx, sy, PLAYER_LH.FRAME_WIDTH, PLAYER_LH.FRAME_HEIGHT, this.x, this.y, PLAYER_LH.FRAME_WIDTH, PLAYER_LH.FRAME_HEIGHT)
+      }
+      else {
+        context.drawImage(this.sprite, PLAYER_LH.FRAME_WIDTH*4, PLAYER_LH.FRAME_HEIGHT*PLAYER_LH.ROW, PLAYER_LH.FRAME_WIDTH, PLAYER_LH.FRAME_HEIGHT, this.x, this.y, PLAYER_LH.FRAME_WIDTH, PLAYER_LH.FRAME_HEIGHT)
+      }
+    }
+    else if (this.moving) {
+      const { sx, sy } = animate(this, PLAYER_L)
+      context.drawImage(this.sprite, sx, sy, PLAYER_L.FRAME_WIDTH, PLAYER_L.FRAME_HEIGHT, this.x, this.y, PLAYER_L.FRAME_WIDTH, PLAYER_L.FRAME_HEIGHT)
+    }
+    else {
+      context.drawImage(this.sprite, PLAYER_L.FRAME_WIDTH, PLAYER_L.FRAME_HEIGHT*PLAYER_L.ROW, PLAYER_L.FRAME_WIDTH, PLAYER_L.FRAME_HEIGHT, this.x, this.y, PLAYER_L.FRAME_WIDTH, PLAYER_L.FRAME_HEIGHT)
+    }
+  }
+}
+
+```
+
+Desenha o quadro visual do personagem no Canvas de acordo com seu estado de movimento, direção e carregamento.
+
+- Orientação: Avalia a direção atual em side **('D', 'U', 'R', 'L')**.
+
+- Estados de Animação: Alterna o desenho entre os conjuntos de sprites para quando o jogador está segurando algo **PLAYER_*H** ou livre **PLAYER_**. Se o jogador estiver em movimento (moving), invoca animate para alternar os quadros; caso esteja parado, desenha o quadro estático correspondente.
+
+# 'Client' src/game/entities/players.ts
+
+**IMPORTS**
+```ts 
+import { INITIAL_POSITION, SPEED } from '#/constants'
+import { PlayerDTO } from '#/dto'
+import { Player, PlayerFactory } from '~/game/entities/player'
+import { GameState} from '~/game/entities/state'
+```
+
+- Importa posições iniciais, constantes de velocidade e o construtor individual de jogadores. Traz as configurações padrão para posicionar os participantes na arena e as referências de tipagem para a lista global.
+
+**interface**
+
+```ts 
+export interface Players {
+  myself ?: Player
+  players : Player[]
+  setMyself : (index:number) => void
+  tick      : (state:GameState) => void
+  render    : (context:CanvasRenderingContext2D) => void
+}
+
+```
+
+- Define o contrato da coleção que agrupa todos os participantes da partida. Especifica o ponteiro para o jogador local myself, a lista com todas as instâncias players e os métodos de atribuição e ciclo de vida.
+
+**PlayersFactory**
+
+```ts 
+export function PlayersFactory (playerDto:PlayerDTO[]) : Players {
+  const players:Player[] = playerDto.map((dto,index) => PlayerFactory({
+    ...dto,
+    index,
+    speed: SPEED,
+    x: INITIAL_POSITION[index][0],
+    y: INITIAL_POSITION[index][1]
+  }))
+  return {players, setMyself, tick, render}
+}
+```
+
+- Mapeia a lista de DTOs inicializando cada jogador em sua posição de nascimento. Percorre o array recebido, atribui as posições iniciais em pixels de **INITIAL_POSITION**, define a velocidade padrão **SPEED** e instancia os objetos via PlayerFactory.
+
+**setMyself/tick/render** 
+
+```ts
+function setMyself (this:Players, index:number) {
+  this.myself = this.players[index]
+  this.myself.setMyself()
+}
+
+function tick (this:Players, state:GameState) {
+  this.players.forEach(p => p.tick(state))
+}
+
+function render (this:Players, context:CanvasRenderingContext2D) {
+  this.players.forEach(p => p.render(context))
+}
+```
+
+Vincula o cliente principal ao seu personagem e repassa as chamadas do game loop para a lista de jogadores.
+
+- **setMyself:** Localiza o jogador pelo índice retornado pelo servidor, atribui a referência à propriedade myself e dispara seu método setMyself().
+
+- **tick:** Percorre o array players e executa o tick individual de cada participante a cada quadro.
+
+- **render:** Itera sobre todos os jogadores invocando render para desenhá-los sequencialmente no Canvas.
+
+# 'Client' src/game/entities/stage.ts
+
+**interfaces: Stage/StageProps**
+
+```ts
+
+interface StageProps {
+  name : number
+}
+
+export interface Stage {
+  name : number
+  render : (context:CanvasRenderingContext2D) => void
+}
+
+```
+
+- Definem a estrutura de dados e a assinatura de renderização da arena de jogo. Especificam o identificador da fase e o contrato do método visual de desenho no Canvas.
+
+**StageFactory**
+
+```ts 
+export function StageFactory (props:StageProps) : Stage {
+  const stage:Stage = {
+    name: props.name
+  } as Stage
+  stage.render = render.bind(stage)
+  return stage
+}
+```
+
+- Instancia a estrutura da fase e vincula a função de renderização. Atribui a propriedade **name** recebida nas opções e faz o bind da função de desenho à instância do estágio.
+
+```ts 
+function render (this:Stage, context:CanvasRenderingContext2D) {
+  context.drawImage(Assets.stageSprite, 0, 0, 240, 224)
+
+  //240x224 pixels
+}
+```
+
+- Desenha o sprite base da arena no contexto do Canvas. Projeta a imagem do cenário contida em **Assets.stageSprite** cobrindo a dimensão total de 240x224 pixels da tela de jogo.
+
+# 'Client' src/game/entities/stage.ts
+
+**GameState**
+
+```ts
+
+import { Blocks } from './block'
+import { Entities } from './factory'
+import { Players } from './players'
+import { Stage } from './stage'
+
+export interface GameState {
+  blast    : number
+  blocks   : Blocks
+  bomb     : number
+  bonus    : number
+  entities : Entities
+  players  : Players
+  stage    : Stage
+}
+
+```
+
+Encapsula a árvore de estado completa da partida para sincronização entre sistemas. O módulo serve como ponto central de acesso para todos os subsistemas do jogo (players, matriz de blocos, entidades temporárias e cenário), permitindo que métodos de física, colisão e lógica acessem qualquer elemento ativo.
+
+- Sistemas de Entidades: Mantém as referências para os gerenciadores de blocos blocks, coleção de jogadores players, mapa de entidades temporárias entities e o cenário ativo stage.
+
+- Métricas do Jogo: Armazena contadores e identificadores numéricos das bombas, explosões e bônus em execução no estado blast, bomb e bonus.
+
+# 'Client' src/game/entities/timer.ts
+
+**Imports** 
+
+```ts
+import { GameState } from '~/game/entities/state'
+import { playTimerSound } from '~/game/sound/timer'
+import { BlockFillerFactory } from './blockFiller'
+```
+
+Carrega dependências para manipulação do estado, áudio de encerramento e inicialização do fechamento de mapa. Importa o tipo GameState, o utilitário de som playTimerSound e o construtor BlockFillerFactory acionado ao fim da contagem.
+
+**interface/Timer**
+
+```ts 
+
+export interface Timer {
+  elapsedTime   : number
+  element       : HTMLDivElement
+  id            : string
+  minutes       : number
+  remainingTime : number
+  seconds       : number
+  startTime     : number
+  totalTime     : number
+  start  : () => void
+  tick   : (state:GameState) => void
+  render : () => void
+}
+
+```
+
+Define o contrato de dados e os métodos de controle de tempo da partida. Especifica o elemento DOM visual, marcas temporais em milissegundos **totalTime**, **startTime**, **remainingTime**, minutos e segundos calculados, além dos métodos de início e atualização do loop.
+
+**TimerFactory/ start**
+
+```ts 
+
+export function TimerFactory () : Timer {
+  const timer:Timer = {
+    element: document.getElementById('timer'),
+    id: 'timer',
+    totalTime: 2 * 60 * 1000 // 2 minutes
+  } as Timer
+  timer.start = start.bind(timer)
+  timer.tick = tick.bind(timer)
+  timer.render = render.bind(timer)
+  return timer
+}
+
+function start (this:Timer) {
+  this.startTime = Date.now()
+  this.remainingTime = this.totalTime
+}
+
+```
+
+Instancia a estrutura do cronômetro, vincula os métodos e inicia a contagem da partida.
+
+- **TimerFactory:** Captura a referência do elemento HTML, estabelece o limite da partida em 2 minutos e faz o bind das funções **start**, **tick** e **render**.
+
+- **start:** Registra o horário de início em startTime usando o timestamp atual e define o tempo restante inicial.
+
+**tick/render** 
+
+```ts 
+
+function tick (this:Timer, state:GameState) {
+  this.elapsedTime = Date.now() - this.startTime
+  this.remainingTime = this.totalTime - this.elapsedTime
+  if (this.remainingTime < 800) {
+    state.entities.remove(this)
+    playTimerSound(() => state.entities.add(BlockFillerFactory()))
+  }
+}
+
+function render (this:Timer) {
+  this.minutes = Math.floor(this.remainingTime / 60000)
+  this.seconds = Math.floor((this.remainingTime % 60000) / 1000)
+  this.element.innerText = `${this.minutes}:${this.seconds < 10 ? '0' : ''}${this.seconds}`
+}
+
+```
+
+Calcula o tempo restante, dispara o evento de fechamento de mapa e atualiza a interface.
+
+- **tick:** Atualiza o tempo restante e, quando faltarem menos de 800 ms, remove a entidade do estado, toca o som limite via playTimerSound e adiciona o preenchedor de blocos BlockFillerFactory para fechar a arena.
+
+- **render:** Converte os milissegundos restantes em formato de minutos e segundos (MM:SS) com preenchimento de zero à esquerda e injeta o texto no elemento DOM.
+
+# 'Client' src/game/sound/blast.ts
+
+**PlayBlastSound**
+
+```ts
+const SOUND = new Audio(`${process.env.PUBLIC_URL}/sound/blast/0.wav`)
+
+export function playBlastSound () {
+  SOUND.currentTime = 0
+  SOUND.play().catch(()=>{})
+}
+
+```
+
+- **playBlastSound:** Executa o áudio de explosão da bomba (blast/0.wav).
+
+# 'Client' src/game/sound/block.
+
+**playBlockSound**
+
+```ts
+const SOUND = new Audio(`${process.env.PUBLIC_URL}/sound/block/0.wav`)
+
+export function playBlockSound () {
+  SOUND.currentTime = 0
+  SOUND.play().catch(()=>{})
+}
+
+```
+
+- **playBlockSound:** Toca o efeito sonoro de destruição ou impacto em blocos (block/0.wav).
+
+
+# 'Client' src/game/sound/bomb.ts
+
+**playBombSound**
+
+```ts
+
+const SOUND = new Audio(`${process.env.PUBLIC_URL}/sound/bomb/0.wav`)
+
+export function playBombSound () {
+  SOUND.currentTime = 0
+  SOUND.play().catch(()=>{})
+}
+
+```
+
+- **playBombSound:** Aciona o áudio de posicionamento de bomba no mapa (bomb/0.wav).
+
+# 'Client' src/game/sound/bonus.ts*
+
+**CONSTS**
+
+```ts 
+import { Bonus } from '~/game/entities/bonus'
+
+const PATH = `${process.env.PUBLIC_URL}/sound/bonus/`
+
+const EXT = '.mp3'
+
+const SOUNDS = {
+  1:new Audio(`${PATH}1${EXT}`),
+  2:new Audio(`${PATH}2${EXT}`),
+  3:new Audio(`${PATH}3${EXT}`),
+  4:new Audio(`${PATH}4${EXT}`),
+  5:new Audio(`${PATH}5${EXT}`),
+  6:new Audio(`${PATH}6${EXT}`),
+  7:new Audio(`${PATH}7${EXT}`),
+  8:new Audio(`${PATH}8${EXT}`)
+}
+```
+
+Realiza a importação do modulo do bonus no jogo e define as constantes **PATH**, **EXT** e **SOUNDS**.
+
+- **SOUNDS:** Dicionário com as instâncias de HTMLAudioElement indexadas do ID 1 ao 8 (**sound/bonus/[1-8].mp3)**.
+
+
+
+**PlayBonusSound**
+
+```ts
+export function playBonusSound (bonus:Bonus['bonus']) {
+  const sound:HTMLAudioElement|undefined = SOUNDS[bonus as keyof typeof SOUNDS]
+  if (!sound) return
+  if ((sound.currentTime > 0 && sound.ended) || (sound.currentTime === 0)) {
+    sound.play().catch(()=>{})
+  }
+}
+
+```
+
+Mapeia e executa os efeitos sonoros específicos para cada tipo de power-up. Mantém uma coleção com as faixas de 1 a 8 e valida o estado de execução antes de iniciar uma nova reprodução.
+
+
+- **playBonusSound:** Localiza o áudio da chave fornecida e aciona a reprodução apenas se o som estiver no início ou se a execução anterior já tiver sido concluída.
+
+# 'Client' src/game/sound/fling.ts
+
+
+**playFlingSound**
+
+```ts
+const SOUND = new Audio(`${process.env.PUBLIC_URL}/sound/fling/0.wav`)
+
+export function playFlingSound () {
+  SOUND.currentTime = 0
+  SOUND.play().catch(()=>{})
+}
+
+```
+
+- **playFlingSound:** Toca o efeito de arremesso aéreo de bomba (fling/0.wav).
+
+# 'Client' src/game/sound/kick.ts
+
+
+```ts
+const SOUND = new Audio(`${process.env.PUBLIC_URL}/sound/kick/0.wav`)
+
+export function playKickSound () {
+  SOUND.currentTime = 0
+  SOUND.play().catch(()=>{})
+}
+
+
+```
+
+- *playKickSound:* Executa o som de impacto ao chutar uma bomba (kick/0.wav).
+
+
+# 'Client' src/game/sound/kill.ts
+
+**playKillSound:**
+
+```ts
+const SOUND = new Audio(`${process.env.PUBLIC_URL}/sound/kill/0.mp3`)
+
+export function playKillSound () {
+  SOUND.currentTime = 0
+  SOUND.play().catch(()=>{})
+}
+```
+
+- **playKillSound:** Aciona o áudio de eliminação do jogador (kill/0.mp3).
+
+
+# 'Client' src/game/sound/lobby.ts
+
+**PlayLobbySound**
+
+```ts
+import { isWinPlaying } from './win'
+
+const SOUND = new Audio(`${process.env.PUBLIC_URL}/sound/lobby/0.mp3`)
+SOUND.loop = true
+
+export function playLobbySound () {
+  if (isWinPlaying()) return // verifica e bloqueia o audio do lobby durante vitória
+
+  SOUND.currentTime = 0
+  SOUND.play().catch(() => {})
+}
+```
+
+Controla a trilha sonora do ambiente do lobby em reprodução contínua (loop). O módulo gerencia a pausa automática ao trocar de aba no navegador e bloqueia a execução caso a música de vitória esteja ativa.
+
+- **playLobbySound:** Inicia a trilha em loop **(lobby/0.mp3)** zerando o tempo atual, desde que **isWinPlaying()** retorne falso.
+
+**stopLobbySound**
+
+```ts 
+export function stopLobbySound () {
+  SOUND.pause()
+  SOUND.currentTime = 0
+}
+
+// pausa musica quando troca de aba
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    SOUND.pause()
+  }
+})
+```
+
+Pausa a musica e tambem a trilha sonora quando a aba estiver oculta
+
+**stopLobbySound:** Pausa a música e reseta o ponteiro de tempo para o início.
+
+- **Ouvinte de Visibilidade:** Assina o evento **visibilitychange** do documento para pausar a trilha sonora quando a aba estiver oculta (document.hidden).
+
+
+# 'Client' src/game/sound/timer.ts
+
+**PlayTimeSound**
+
+```ts 
+import { Assets } from '~/game/util/assets'
+
+const SOUND = new Audio(`${process.env.PUBLIC_URL}/sound/timer/0.mp3`)
+
+export function playTimerSound (callback:()=>void) {
+  const onEnd = () => {
+    SOUND.onerror = null
+    SOUND.onended = null
+    if (Assets.bgSound) {
+      Assets.bgSound.playbackRate = 1.1
+      Assets.bgSound.volume = bgSoundVolume
+    }
+    callback()
+  }
+  SOUND.currentTime = 0
+  SOUND.onerror = onEnd
+  SOUND.onended = onEnd
+  let bgSoundVolume:number
+  if (Assets.bgSound) {
+    bgSoundVolume = Assets.bgSound.volume
+    Assets.bgSound.volume = bgSoundVolume * 0.5
+  }
+  SOUND.play().catch(()=>{})
+}
+```
+
+Executa o sinal sonoro de alerta de tempo limite e ajusta o áudio de fundo da partida. Reduz temporariamente o volume da música principal durante o aviso e acelera seu ritmo após a conclusão.
+
+- **playTimerSound:** Toca o áudio de alerta **(timer/0.mp3)**, reduz o volume de **Assets.bgSound** pela metade durante a execução e, ao finalizar ou falhar, ajusta a velocidade do fundo para **playbackRate = 1.1**, restaurando o volume original e acionando o callback.
+
+# 'Client' src/game/sound/win.ts
+
+**winPlaying/playWinSound**
+
+```ts 
+
+let winPlaying = false
+
+const SOUND = new Audio(`${process.env.PUBLIC_URL}/sound/win/0.mp3`)
+
+export function isWinPlaying () {
+  return winPlaying
+}
+
+export function playWinSound (callback: () => void) {
+  winPlaying = true
+
+export function playWinSound (callback: () => void) {
+  winPlaying = true
+
+  const onEnd = () => {
+    stopWinSound()
+    winPlaying = false
+    callback()
+  }
+
+  SOUND.currentTime = 0
+  SOUND.onended = onEnd
+  SOUND.onerror = onEnd
+  SOUND.play().catch(() => {})
+}
+
+export function stopWinSound () {
+  SOUND.onended = null
+  SOUND.onerror = null
+  SOUND.pause()
+  SOUND.currentTime = 0
+}
+```
+
+Controla o áudio do tema de vitória e expõe o estado de execução para outros módulos. Impede o encavalamento com sons de menu enquanto a celebração estiver ativa.
+
+- **isWinPlaying:** Retorna o estado da variável booleana winPlaying, sinalizando se o áudio de vitória está em reprodução.
+
+- **playWinSound:** Define winPlaying = true, inicia o áudio (win/0.mp3) e registra os eventos onended e onerror para redefinir o estado, parar a faixa e executar a função de callback.
+
+- **stopWinSound:** Remove os ouvintes do elemento de áudio, interrompe a execução e reseta a posição da faixa.

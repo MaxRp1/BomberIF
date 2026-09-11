@@ -231,6 +231,10 @@ function InvertBonus (props:BonusProps) : Bonus {
         state.entities.entities.forEach(e => {
           e['invertControls'] && e['invertControls']()
         })
+        //adicionado um tempo na função de inverter os controles ft Moreira
+        setTimeout(() => {
+          state.players.myself!.invertControls()
+        }, 10000)
       })
     },
     render: (context:CanvasRenderingContext2D) => {

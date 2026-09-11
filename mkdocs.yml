@@ -1,6 +1,6 @@
 site_name: BomberIF
 docs_dir: doc
-use_directory_urls: false
+
 
 theme:
   name: material

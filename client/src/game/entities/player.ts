@@ -73,8 +73,6 @@ global.socket = socket
 buffer = buffer_create(20000, buffer_grow, 1)
 connect = network_connect(socket, "127.0.0.1", PORT)
 
-
-
 endidades = ds_map_create() */
 
 export function PlayerFactory (props:PlayerProps) : Player {
@@ -201,7 +199,7 @@ function addGamepadSupport (this:Player, state:GameState) {
   const id = `G${this.index}`
   if (state.entities.has(id)) return
   const gamepad = GamepadFactory({id, index, player:this})
-  if (this.moveKeys['W'] === 'D') gamepad.invertControls()
+  //if (this.moveKeys['W'] === 'D') gamepad.invertControls() funcao comentada por conta do bug 
   state.entities.add(gamepad)
 }
 
@@ -298,11 +296,12 @@ function stopMove (this:Player, side:SIDES) {
   emitMove({h:this.holding, m:this.moving, p:this.index, s:this.side, x:this.x, y:this.y})
 }
 
+//alteracao na função de inverter os controles (adicionar um tmepo para o bonus)
 function invertControls (this:Player) {
-  this.moveKeys['W'] = 'D'
-  this.moveKeys['A'] = 'R'
-  this.moveKeys['S'] = 'U'
-  this.moveKeys['D'] = 'L'
+  this.moveKeys['W'] = (this.moveKeys['W'] == 'U') ? 'D' : 'U'
+  this.moveKeys['A'] = (this.moveKeys['A'] == 'L') ? 'R' : 'L'
+  this.moveKeys['S'] = (this.moveKeys['W'] == 'D') ? 'U' : 'D'
+  this.moveKeys['D'] = (this.moveKeys['D'] == 'R') ? 'L' : 'R'
   this.moveKeys['ARROWUP'] = 'D'
   this.moveKeys['ARROWLEFT'] = 'R'
   this.moveKeys['ARROWDOWN'] = 'U'

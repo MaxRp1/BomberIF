@@ -195,6 +195,36 @@ function checkPlayerCollision (this:Bomb, state:GameState) {
     }
   }
 }
+/* 
+function checkBombCollision (this:Bomb, state:GameState) {
+  const [px, py] = state.blocks.getBlock(this.getAxes())
+  const [ax, ay] = this.getAxes()
+  for (let i = this.directions.up - 1; i > -1; i--) {
+    if (px === ax - i && py === ay) {
+      state.players.myself!.kill(true)
+      return
+    }
+  }
+  for (let i = this.directions.down - 1; i > -1; i--) {
+    if (px === ax + i && py === ay) {
+      state.players.myself!.kill(true)
+      return
+    }
+  }
+  for (let i = this.directions.left - 1; i > -1; i--) {
+    if (px === ax && py === ay - i) {
+      state.players.myself!.kill(true)
+      return
+    }
+  }
+  for (let i = this.directions.right - 1; i > -1; i--) {
+    if (px === ax && py === ay + i) {
+      state.players.myself!.kill(true)
+      return
+    }
+  }
+}
+*/
 
 function startMove (this:Bomb, side:SIDES, state:GameState) {
   const [ax, ay] = this.getAxes()

@@ -17,6 +17,7 @@ interface GamepadHost {
   moveKeys  : {[key:number]:SIDES}
   player    : Player
   invertControls : () => void
+  //revertControls : () => void
   tick           : (state:GameState) => void
   render         : () => void
 }
@@ -36,6 +37,7 @@ export function GamepadFactory (props:GamepadProps) : GamepadHost {
     render: () => {}
   } as unknown as GamepadHost
   host.invertControls = invertControls.bind(host)
+  //host.revertControls = revertControls.bind(host)
   host.tick = tick.bind(host)
   return host
 }
@@ -72,8 +74,16 @@ function tick (this:GamepadHost, state:GameState) {
 }
 
 function invertControls (this:GamepadHost) {
-  this.moveKeys[12] = 'D'
+  this.moveKeys[12] = 'D' 
   this.moveKeys[13] = 'U'
   this.moveKeys[14] = 'R'
   this.moveKeys[15] = 'L'
 }
+
+/*reverter os controles 
+function revertControls(this: GamepadHost){
+  this.moveKeys[12] = 'U'
+  this.moveKeys[13] = 'D'
+  this.moveKeys[14] = 'L'
+  this.moveKeys[15] = 'R'
+}*/

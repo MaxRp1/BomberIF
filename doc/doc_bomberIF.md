@@ -4818,3 +4818,255 @@ Controla o áudio do tema de vitória e expõe o estado de execução para outro
 - **playWinSound:** Define winPlaying = true, inicia o áudio (win/0.mp3) e registra os eventos onended e onerror para redefinir o estado, parar a faixa e executar a função de callback.
 
 - **stopWinSound:** Remove os ouvintes do elemento de áudio, interrompe a execução e reseta a posição da faixa.
+
+# 'Client' src/game/util/assets.ts
+
+**IMPORTS**
+```ts 
+import { GameState } from '~/game/entities/state'
+import { getBgSound } from '~/game/util/bgSound'
+import { emitReady } from '~/services/socket'
+import { isInternetSlow } from '~/site/util/net'
+```
+**import { GameState } from '~/game/entities/state'**: Carrega a tipagem do estado global da partida. É usado para ler os identificadores numéricos das texturas que precisam ser baixadas.
+
+**import { getBgSound } from '~/game/util/bgSound'**: Traz o utilitário que recebe o ID da fase atual e retorna o caminho (URL) exato do arquivo de áudio da música tema correspondente.
+
+**import { emitReady } from '~/services/socket'**: Importa o disparador de eventos do Socket.io. É a função responsável por avisar ao servidor: "Este cliente já terminou de baixar as imagens e sons e está pronto para começar".
+
+**import { isInternetSlow } from '~/site/util/net'**: Carrega o verificador de qualidade de conexão. Serve como um interruptor para a otimização de rede: se a internet estiver lenta, o jogo ignora o carregamento da música de fundo para não travar o início da partida.
+
+ **EXPORT**
+
+ ```ts
+ export class Assets {
+
+  public static bgSound     : HTMLAudioElement|null
+  public static blastSprite : HTMLImageElement
+  public static bombSprite  : HTMLImageElement
+  public static bonusSprite : HTMLImageElement
+  public static stageSprite : HTMLImageElement
+
+  public static set (state:GameState) {
+    this.blastSprite = new Image()
+    this.blastSprite.src = `${process.env.PUBLIC_URL}/sprites/blasts/${state.blast}.png`
+
+    this.bombSprite = new Image()
+    this.bombSprite.src = `${process.env.PUBLIC_URL}/sprites/bombs/${state.bomb}.png`
+
+    this.bonusSprite = new Image()
+    this.bonusSprite.src = `${process.env.PUBLIC_URL}/sprites/bonus/${state.bonus}.png`
+
+    this.stageSprite = new Image()
+    this.stageSprite.src = `${process.env.PUBLIC_URL}/sprites/stages/${state.stage.name}.png`
+
+    if (isInternetSlow()) {
+      this.bgSound = null
+      this.stageSprite.onload = this.emitReady.bind(this)
+    }
+    else {
+      this.bgSound = new Audio(getBgSound(state.stage.name))
+      this.bgSound.oncanplaythrough = this.emitReady.bind(this)
+    }
+  }
+```
+**bgSound**: armazena o elemento de audio da musica de fundo
+
+**blastSprite; bombSprite; bonusSprite; stageSprite**: guardam as instâncias de HTMLImageElement que serão desenhadas no Canvas durante a partida.
+
+**public static set (state:GameState)**: Gera as instâncias de imagem baseadas no estado da partida e aplica as regras de rede (fallback para conexões lentas).
+
+**if (isInternetSlow())**: se verdadeiro, o jogador com a internet lenta fica sem som de fundo, se falso, o som toca normalmente
+
+**OUTRAS FUNÇÕES**
+```ts
+public static emitReady () {
+    this.stageSprite.onload = null
+    if (this.bgSound) {
+      this.bgSound.oncanplaythrough = null
+    }
+    emitReady()
+  }
+
+  public static start () {
+    this.playBgSound()
+  }
+
+  public static stop () {
+    this.stopBgSound()
+  }
+
+  public static playBgSound () {
+    if (!this.bgSound) return
+    this.bgSound.loop = true
+    this.bgSound.play()
+  }
+
+  public static stopBgSound () {
+    if (!this.bgSound) return
+    this.bgSound.pause()
+    this.bgSound.playbackRate = 1.0
+    this.bgSound.currentTime = 0
+  }
+
+}
+```
+
+**emitReady**: Confirma o término dos downloads para o servidor e previne vazamentos de memória limpando os ouvintes de carregamento.
+
+**start e stop**: Encapsulam as ações de inicialização e encerramento dos ativos da partida, funcionam como wrappers que são chamados pelos gerenciadores de estado superior da partida, rmandando o comando direto pro playBgSound e stopBgSound. 
+
+**playBgSound**: Valida se a música foi instanciada (ignorando se estiver em conexão lenta), ativa a repetição contínua configurando loop = true e inicia a reprodução pelo método play().
+
+**stopBgSound**: Interrompe a faixa via pause() e realiza a restauração do estado original da música. Ele redefine a velocidade com playbackRate = 1.0 (desfazendo acelerações aplicadas pelo alerta do temporizador da partida) e retrocede a faixa para o marco zero em currentTime = 0.
+
+
+# 'Client' src/game/util/bgSounds.ts
+
+**SOUNDS**
+```ts
+/*
+  key:   stage name
+  value: possible sounds
+*/
+const SOUNDS:{[key:number]:number[]} = {
+  0: [0,1,2],
+  1: [3,4,5],
+  2: [0,2,4],
+}
+
+export function getBgSound (name:number) {
+  return `${process.env.PUBLIC_URL}/sound/stages/${SOUNDS[name].getRandom()}.mp3`
+}
+```
+**SOUNDS**: Dicionário que associa cada cenário a uma coleção de faixas musicais possíveis, relaciona a chave numérica correspondente ao ID da fase com um array de números que representam os arquivos de áudio válidos.
+
+Essa estrutura garante variação na trilha sonora (por exemplo, a fase 0 pode tocar os arquivos 0.mp3, 1.mp3 ou 2.mp3), evitando repetição auditiva quando os jogadores repetem o mesmo mapa consecutivamente.
+
+**getBgSound**: Recebe o identificador do mapa (name) e acessa o array correspondente na constante SOUNDS, usa o getRandom() estendido no protótipo de Array para selecionar um identificador aleatório da lista.
+
+Concatena o número sorteado com a raiz dos arquivos estáticos (PUBLIC_URL) e a extensão .mp3, retornando a string pronta para ser consumida pela classe genérica de Assets.
+
+
+# 'Client' src/game/util/block.ts
+
+**IMPORTS**
+```ts
+import { Bomb } from '~/game/entities/bomb'
+import { GameState } from '~/game/entities/state'
+```
+
+**import { Bomb } from '~/game/entities/bomb'**: Carrega a interface da entidade Bomba. 
+
+**import { GameState } from '~/game/entities/state'**: Importa o contrato completo da árvore de estado da partida. 
+
+**EXPORT**
+```ts
+export function isOnBlock (state:GameState) {
+  if (state.players.myself!.collidable) {
+    const block = state.blocks.getBlock(state.players.myself!.getAxes())
+    if (block) {
+      if (block.t === 'D' || block.t === 'I') {
+        return true
+      }
+      if (block.t === 'O') {
+        const bomb = state.entities.get(block.id) as Bomb
+        bomb.collidable = false
+      }
+    }
+  }
+  return false
+}
+```
+**isOnBlock**: Inspeciona a posição atual do jogador na matriz de blocos e aplica as regras de colisão correspondentes ao tipo de objeto encontrado.
+
+# 'Client' src/game/util/collisions.ts
+
+**IMPORT**
+```ts
+import { TILE_SIZE } from '#/constants'
+import { Player } from '~/game/entities/player'
+import { emitMove } from '~/services/socket'
+```
+**import { TILE_SIZE } from '#/constants**': Traz a constante que define a largura e altura exata em pixels de cada célula da grade do mapa (ex: 32x32). É a base matemática para converter coordenadas de tela em posições na matriz do jogo.
+
+**import { Player } from '~/game/entities/player'**: Importa o contrato estrutural do personagem. É usado para tipar o parâmetro do jogador nas funções lógicas, permitindo ler sua posição, velocidade e estado com segurança.
+
+**import { emitMove } from '~/services/socket'**: Carrega o disparador de eventos do Socket.io responsável por enviar as coordenadas recém-calculadas e o estado de movimento do cliente local para o servidor, garantindo a sincronização multiplayer.
+
+**COLLISION**
+```ts
+interface Collision {
+  x : number
+  y : number
+}
+```
+**Collision**: Define a estrutura mínima de coordenadas espaciais que compõem um obstáculo no mapa. Estabelece as propriedades bidimensionais x e y que serão usadas como base de cálculo contra a posição do jogador.
+
+**FUNÇÕES**
+```ts
+export function isColliding (p:Player, o:Collision) : boolean {
+  if (p.collidable) return isCollidingForced(p, o)
+  return false
+}
+
+export function isCollidingForced (p:Player, o:Collision) : boolean {
+  return p.x + 15 > o.x && p.x < o.x + TILE_SIZE &&
+         p.y + 23 > o.y && p.y + 7 < o.y + TILE_SIZE
+}
+
+export function stopPlayer (p:Player, o:Collision) {
+  p.moving = 0
+  playerCollisions[collisionSide(p, o)](p, o)
+  emitMove({h:p.holding, m:p.moving, p:p.index, s:p.side, x:p.x, y:p.y})
+}
+
+const playerCollisions = {
+  U: collidedDown,
+  D: collidedUp,
+  L: collidedRight,
+  R: collidedLeft
+}
+
+export function collisionSide (p:Player, o:Collision) {
+  const deltaX = (p.x + 8) - (o.x + 8)
+  const deltaY = (p.y + 7) - o.y
+  const absDeltaX = Math.abs(deltaX)
+  const absDeltaY = Math.abs(deltaY)
+  if (absDeltaX > absDeltaY) {
+    if (deltaX > 0) return 'L'
+    return 'R'
+  }
+  else {
+    if (deltaY > 0) return 'U'
+    return 'D'
+  }
+}
+
+function collidedUp (p:Player, o:Collision) {
+  p.y = o.y - 23
+}
+
+function collidedDown (p:Player, o:Collision) {
+  p.y = o.y + 9
+}
+
+function collidedLeft (p:Player, o:Collision) {
+  p.x = o.x - 15
+}
+
+function collidedRight (p:Player, o:Collision) {
+  p.x = o.x + 16
+}
+```
+
+**isColliding**: Atua como um portão de entrada seguro. Verifica a flag p.collidable primeiro; se o jogador estiver sob efeito de intangibilidade, ignora o cálculo e retorna falso, permitindo a travessia.
+
+**isCollidingForced**: Executa o cálculo geométrico (AABB) diretamente, ignorando o estado físico do jogador. Aplica uma caixa de colisão (hitbox) customizada e menor que o bloco inteiro (usando recuos como x + 15, y + 23 e y + 7) para tornar o controle mais tolerante e responsivo, evitando travamentos nas quinas das paredes.
+
+**stopPlayer**: Interrompe o deslocamento do personagem ao bater em um obstáculo e reposiciona sua coordenada física.
+
+**playerCollisions**: Dicionario que relaciona o impacto com um recuo correspondente. Associa a direção do movimento do jogador no momento da batida (Cima, Baixo, Esquerda, Direita) à função que irá empurrá-lo de volta para a borda do objeto, neutralizando a entrada nas coordenadas do bloco (ex: se o jogador estava indo para Cima U, bate no teto e sofre a correção collidedDown).
+
+
+# 'Client' src/hooks/useBoot.ts

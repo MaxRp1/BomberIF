@@ -3,7 +3,8 @@ const ORIGINS: Record<string, boolean> = {
   'https://localhost:3000': true,
   'http://192.168.1.5:3000': true,
   'https://192.168.1.5:3000': true,
-  'https://binary-phantom.github.io': true
+  'https://binary-phantom.github.io': true,
+  'https://maxrp1.github.io': true
 }
 
 export const CORS = {

@@ -1,5 +1,3 @@
-// React types may be unavailable in environments that only type-check this hook.
-// @ts-expect-error The runtime provides React, but its types are not installed here.
 import { useEffect, useState } from 'react'
 import { Dispatch } from 'redux'
 import { bootOptions } from '~/store/options/thunk'

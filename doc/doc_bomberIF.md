@@ -5070,3 +5070,270 @@ function collidedRight (p:Player, o:Collision) {
 
 
 # 'Client' src/hooks/useBoot.ts
+
+**IMPORTS**
+```ts
+// React types may be unavailable in environments that only type-check this hook.
+// @ts-expect-error The runtime provides React, but its types are not installed here.
+import { useEffect, useState } from 'react'
+import { Dispatch } from 'redux'
+import { bootOptions } from '~/store/options/thunk'
+import { bootUser } from '~/store/user/thunk'
+```
+
+**Dependências do React (useEffect, useState)**: Importa os hooks fundamentais para gerenciar efeitos colaterais e armazenar o estado local.
+
+**Tipagem de Despacho (Dispatch)**: Importa o contrato de tipagem central do Redux para garantir segurança estática e rastreabilidade ao disparar ações contra a store global. Rotinas de Inicialização (Thunks): Traz as funções assíncronas bootOptions e bootUser, que encapsulam a lógica de busca das configurações gerais e da validação da sessão do usuário no momento do carregamento da interface.
+
+**FUNÇÕES**
+
+```ts
+async function run (dispatch:Dispatch) {
+  bootUser(dispatch)
+  bootOptions(dispatch)
+}
+
+export default function useBoot (dispatch:Dispatch) {
+  const [booting, setBooting] = useState(true)
+  useEffect(() => {
+    run(dispatch).then(() => setBooting(false))
+  }, [])
+  return booting
+}
+```
+
+**async function run:** Recebe o despachante do Redux (dispatch) e dispara simultaneamente as ações assíncronas bootUser e bootOptions.
+
+**export default function useBoot:** Inicializa uma variável reativa booting como true.
+
+**useEffect**: Dispara a função assíncrona run exatamente uma vez após o primeiro ciclo de renderização, o retorno devolve o valor booleano booting para os componentes pais.
+
+
+# 'Client' src/hooks/uselsPortrait.ts
+
+**IMPORTS**
+```ts
+import { useEffect, useState } from 'react'
+```
+
+**useEffect, useState**: Carrega os controladores de estado e ciclo de vida do React. Necessários para manter as medidas da janela em memória e reagir dinamicamente às mudanças de proporção da tela.
+
+
+**FUNÇÕES**
+```ts
+export default function useIsPortrait () : boolean {
+
+  const [isPortrait, setIsPortrait] = useState(window.innerHeight > window.innerWidth)
+
+  function handleResize () {
+    setIsPortrait(window.innerHeight > window.innerWidth)
+  }
+
+  useEffect(() => {
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+    }
+  })
+
+  return isPortrait
+
+}
+```
+
+**export default function useIsPortrait ()**: Inicializa e mantém a variável reativa isPortrait avaliando se a altura visível da tela é estritamente maior que a largura.
+
+**handleResize**: Função interna que reavalia a condição matemática de proporção e atualiza o estado local sempre que a janela sofre alterações físicas.
+
+**useEffect**: Registra o ouvinte global de resize na janela do documento. Implementa a função de limpeza (cleanup function) retornando o removeEventListener, prevenindo duplicação de chamadas e vazamentos de memória durante as atualizações do componente.
+
+
+# 'Client' src/prototype/array.ts
+
+**TIPAGEM**
+```ts
+interface Array<T> {
+  getRandom() : T
+}
+```
+**interface Array<T>**:Modifica o contrato nativo de Arrays no TypeScript (Declaration Merging). Adiciona a assinatura do método getRandom() utilizando Tipos Genéricos (<T>), o que garante que o compilador compreenda e preserve o tipo correto do elemento devolvido, mantendo a segurança de tipagem na base de código.
+
+**RANDOM**
+```ts
+Array.prototype.getRandom = function () {
+  return this[Math.floor(Math.random() * this.length)]
+}
+```
+
+**Array.prototype.getRandom = function**: Gera um valor decimal aleatório entre 0 e 0.999 via Math.random() e multiplica pelo tamanho exato da lista, usa Math.floor() para remover as casas decimais e retorna o valor armazenado na posição recém-calculada.
+
+
+# 'Client' src/services/call/index.ts
+
+**IMPORTS**
+```ts
+import { CallAnswerDTO, CallOfferDTO, DisconnectedDTO, IceCandidateDTO } from '#/dto'
+import { emitCallAnswer, emitCallOffer, socket } from '~/services/socket'
+import { Peer, PeerFactory } from './peer'
+```
+
+**import { CallAnswerDTO, CallOfferDTO, DisconnectedDTO, IceCandidateDTO}:**Elas tipam os pacotes de informação necessários para negociar a conexão e lidar com quedas de usuários.
+
+**socket**: Traz os métodos emitCallOffer e emitCallAnswer, além da instância global do socket.
+
+**import { Peer, PeerFactory }**: Importa a interface do nó de conexão e a sua respectiva fábrica (PeerFactory), que será instanciada para cada jogador adversário na partida.
+
+**INTERFACE DE CHAMADAS**
+```ts
+interface Call {
+  peers  : {[key:string]:Peer}
+  stream : MediaStream|null
+  init               : () => Promise<void>
+  initAudioStream    : () => Promise<void>
+  initPeerConnection : () => void
+  initiated          : () => boolean
+  onIceCandidate     : (dto:IceCandidateDTO) => Promise<void>
+  createOffer        : () => Promise<void>
+  onCallOffer        : (dto:CallOfferDTO) => Promise<void>
+  onCallAnswer       : (dto:CallAnswerDTO) => Promise<void>
+  close              : (dto:DisconnectedDTO) => void
+  closeAll           : () => void
+}
+```
+
+Estado de Conexão: Mantém o dicionário peers, que armazena as instâncias de nós conectados indexados por identificador, e a propriedade stream, que guarda o fluxo de mídia local capturado via MediaStream.
+
+**(init, initAudioStream, initPeerConnection)**: Define as funções para inicialização , verificação de estado (initiated) e limpeza de conexões (close, closeAll).
+
+**Sinalização WebRTC**: Declara os manipuladores para a troca de dados de conexão, incluindo criação e recebimento de propostas (createOffer, onCallOffer), resposta de conexão (onCallAnswer) e roteamento de rede (onIceCandidate).
+
+**GERENCIADOR DE "FABRICA"**
+```ts
+export function CallFactory () : Call {
+  const call:Call = {
+    peers: {},
+    stream: null
+  } as Call
+  call.init = init.bind(call)
+  call.initAudioStream = initAudioStream.bind(call)
+  call.initPeerConnection = initPeerConnection.bind(call)
+  call.initiated = initiated.bind(call)
+  call.onIceCandidate = onIceCandidate.bind(call)
+  call.createOffer = createOffer.bind(call)
+  call.onCallOffer = onCallOffer.bind(call)
+  call.onCallAnswer = onCallAnswer.bind(call)
+  call.close = close.bind(call)
+  call.closeAll = closeAll.bind(call)
+  return call
+}
+```
+
+**Inicialização de Estado**: Cria o objeto call definindo a lista de peers como um dicionário vazio {} e o stream de áudio inicial como null.
+
+**Vinculação de Contexto (Binding)**: Executa o método .bind(call) para todas as funções do ciclo de vida (desde a inicialização da mídia local até as negociações de Offer/Answer e fechamento). Isso garante que, ao serem disparadas assincronamente por eventos de rede ou componentes React, essas funções acessem corretamente as propriedades internas do objeto instanciado.
+
+**ASYNC's**
+```ts
+async function init (this:Call) {
+  await this.initAudioStream()
+  this.initPeerConnection()
+}
+
+async function initAudioStream (this:Call) {
+  try {
+    this.stream = await navigator.mediaDevices.getUserMedia({audio:true})
+  }
+  catch {
+    this.stream = null
+  }
+}
+
+function initPeerConnection (this:Call) {
+  if (!this.stream || !socket.id) return
+  this.peers[socket.id] = PeerFactory({id:socket.id})
+  this.peers[socket.id].addTrack(this.stream)
+}
+
+function initiated (this:Call) {
+  if (this.stream && socket.id) {
+    return true
+  }
+  return false
+}
+
+async function onIceCandidate (this:Call, dto:IceCandidateDTO) {
+  if (dto.socketId === socket.id) return
+  const peer = this.peers[dto.socketId]
+  if (!peer) return
+  await peer.addIceCandidate(dto.candidate)
+}
+
+async function createOffer (this:Call) {
+  if (!socket.id) return
+  const peer = this.peers[socket.id]
+  if (!peer) return
+  const offer = await peer.createOffer()
+  await peer.setLocalDescription(offer)
+  emitCallOffer({offer, socketId:peer.id})
+}
+
+async function onCallOffer (this:Call, dto:CallOfferDTO) {
+  if (dto.socketId === socket.id) return
+  if (!this.stream || !socket.id) return
+  const peerExists = this.peers[dto.socketId]
+  peerExists && peerExists.close()
+  this.peers[dto.socketId] = PeerFactory({id:dto.socketId})
+  const peer = this.peers[dto.socketId]
+  await peer.setRemoteDescription(dto.offer)
+  peer.addTrack(this.stream)
+  const answer = await peer.createAnswer()
+  await peer.setLocalDescription(answer)
+  emitCallAnswer({answer, socketId:peer.id})
+}
+
+async function onCallAnswer (this:Call, dto:CallAnswerDTO) {
+  const peer = this.peers[dto.socketId]
+  if (!peer) return
+  await peer.setRemoteDescription(dto.answer)
+}
+```
+
+**init**: Coordena as etapas sequenciais, aguardando primeiramente a liberação do microfone e prosseguindo para a estruturação do nó de conexão.
+
+**initiated**: Retorna o estado de prontidão do cliente, exigindo a presença ativa tanto do fluxo de áudio quanto do identificador de rede do socket.
+
+**Async function initAudioStream**: executa a chamada assíncrona ao navegador solicitando uso do microfone. Caso o usuário negue a permissão ou não possua hardware compatível, o bloco de erro atua silenciosamente definindo o fluxo como nulo, permitindo que a partida flua sem a funcionalidade de voz P2P.
+
+**function initPeerConnection**: Verifica a existência de áudio e rede. Em seguida, gera um objeto de par utilizando o próprio ID do cliente e anexa as trilhas de áudio capturadas, deixando a infraestrutura pronta para empacotar e transmitir esses dados durante as negociações.
+
+**createOffer**: Gera a proposta inicial de conexão contendo as capacidades de mídia do cliente. Aplica a descrição localmente e despacha o pacote de oferta para o servidor distribuir aos oponentes.
+
+**onCallOffer**: Processa propostas de conexão recebidas de terceiros. A função destrói instâncias presas do remetente, cria um novo nó, registra as capacidades do adversário, anexa o áudio local, formula a contraproposta de resposta e a envia de volta ao servidor.
+
+**onCallAnswer**: Finaliza a negociação bilateral. Localiza a instância do remetente e registra a resposta final como descrição remota, concretizando o canal direto de áudio entre os dois computadores.
+
+**onIceCandidate**: Recebe e processa fragmentos de rotas de rede descobertos pelos adversários. É a engrenagem que permite aos clientes encontrar caminhos de comunicação viáveis atravessando firewalls e roteadores.
+
+**ENCERRAMENTO E LIMPEZA**
+```ts
+function close (this:Call, dto:DisconnectedDTO) {
+  if (!this.peers[dto.socketId]) return
+  this.peers[dto.socketId].close()
+  delete this.peers[dto.socketId]
+}
+
+function closeAll (this:Call) {
+  for (const id in this.peers) {
+    this.peers[id].close()
+  }
+  this.peers = {}
+  this.stream = null
+}
+```
+
+**function close**: Verifica se o peer existe no dicionário. Caso positivo, invoca o método interno de fechamento do WebRTC (close()) do alvo e o deleta da coleção peers, interrompendo o canal direto sem afetar os demais jogadores.
+
+
+**function closeAll**: Acionada ao final da partida ou quando o cliente local decide abandonar o jogo, percorre iterativamente todos os nós registrados, executando o comando de fechamento individual para garantir o corte de comunicação com todos os oponentes.
+Por fim, redefine o repositório peers para um dicionário vazio {} e descarta o fluxo de mídia local (this.stream = null), liberando o uso do microfone no navegador.
+

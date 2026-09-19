@@ -12,8 +12,8 @@ export const Players = styled.div`
   position: absolute;
   top: 1%;
   p {
-    font-size: 0.5rem;
-    line-height: 1rem;
+    font-size: 2rem;
+    line-height: 1.5rem;
     margin: 0;
   }
 `

@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/BomberIF/static/css/main.47d527e7.css",
+    "main.js": "/BomberIF/static/js/main.43b9d8dd.js",
+    "index.html": "/BomberIF/index.html",
+    "main.47d527e7.css.map": "/BomberIF/static/css/main.47d527e7.css.map",
+    "main.43b9d8dd.js.map": "/BomberIF/static/js/main.43b9d8dd.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.47d527e7.css",
+    "static/js/main.43b9d8dd.js"
+  ]
+}

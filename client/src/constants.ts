@@ -8,6 +8,6 @@ export const PAGES = {
   HELP: '/help'
 }
 
-export const SERVER_URL = ONDEV ? 'https://bomberif.onrender.com': 'https://bomberif.onrender.com'
+export const SERVER_URL = ONDEV ? 'https://bomberif-azij.onrender.com': 'https://bomberif-azij.onrender.com'
 
 //'https://192.168.1.5:4000'

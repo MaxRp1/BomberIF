@@ -35,6 +35,6 @@ export const SPEED = 1
 
 export const SPRITES = 11
 
-export const STAGES = 3
+export const STAGES = 4
 
 export const TILE_SIZE = 16

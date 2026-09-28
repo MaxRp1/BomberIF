@@ -1,4 +1,4 @@
-export const ONDEV = process.env.NODE_ENV === 'production' 
+export const ONDEV = process.env.NODE_ENV !== 'production'
 
 export const BASENAME = '/BomberIF'
 
@@ -8,6 +8,6 @@ export const PAGES = {
   HELP: '/help'
 }
 
-export const SERVER_URL = ONDEV ? 'https://bomberif-azij.onrender.com': 'https://bomberif-azij.onrender.com'
-
-//'https://192.168.1.5:4000'
+export const SERVER_URL = ONDEV
+  ? 'https://localhost:4000'
+  : 'https://bomberif-azij.onrender.com'

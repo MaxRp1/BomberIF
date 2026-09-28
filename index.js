@@ -37390,7 +37390,7 @@ var BONUSES = [
 var ID_LENGTH = 4;
 var NICK = { MIN: 2, MAX: 12 };
 var SPRITES = 11;
-var STAGES = 3;
+var STAGES = 4;
 
 // src/factory.ts
 function startGameFactory(io3, roomId) {

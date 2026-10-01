@@ -3703,15 +3703,17 @@ interface PlayerProps extends PlayerDTO {
 }
 
 export interface Player {
-  active     : boolean
-  anim       : AnimControl['anim']
-  bombId     : string
-  bombKeys   : {[key:string]:'B'}
-  bombReach  : number
-  bombs      : number
-  collidable : boolean
-  hold       : boolean
-  holding    : 0|1
+  active           : boolean
+  anim             : AnimControl['anim']
+  bombId           : string
+  bombKeys         : {[key:string]:'B'}
+  bombReach        : number
+  bombs            : number
+  collidable       : boolean
+  extraLife        : boolean
+  invulnerableUntil: number
+  hold             : boolean
+  holding          : 0|1
   index      : number
   kick       : boolean
   lastPress  : LastPress
@@ -3745,7 +3747,7 @@ export interface Player {
   placeBomb            : (state:GameState) => void
   holdBomb             : (state:GameState) => void
   flingBomb            : (state:GameState) => void
-  kill                 : (emit:boolean) => void
+  kill : (emit:boolean, cause?: 'bomb'|'other') => void
   tick                 : (state:GameState) => void
   render               : (context:CanvasRenderingContext2D) => void
 }

@@ -21,17 +21,19 @@ interface PlayerProps extends PlayerDTO {
 }
 
 export interface Player {
-  active     : boolean
-  anim       : AnimControl['anim']
-  bombId     : string
-  bombKeys   : {[key:string]:'B'}
-  bombReach  : number
-  bombs      : number
-  collidable : boolean
-  hold       : boolean
-  holding    : 0|1
-  index      : number
-  kick       : boolean
+  active            : boolean
+  anim              : AnimControl['anim']
+  bombId            : string
+  bombKeys          : {[key:string]:'B'}
+  bombReach         : number
+  bombs             : number
+  collidable        : boolean
+  extraLife         : boolean
+  invulnerableUntil : number
+  hold              : boolean
+  holding           : 0|1
+  index              : number
+  kick               : boolean
   lastPress  : LastPress
   moveKeys   : {[key:string]:SIDES}
   moving     : 0|1
@@ -63,7 +65,7 @@ export interface Player {
   placeBomb            : (state:GameState) => void
   holdBomb             : (state:GameState) => void
   flingBomb            : (state:GameState) => void
-  kill                 : (emit:boolean) => void
+  kill                 : (emit:boolean, cause?: 'bomb'|'other') => void
   tick                 : (state:GameState) => void
   render               : (context:CanvasRenderingContext2D) => void
 }
@@ -88,6 +90,8 @@ export function PlayerFactory (props:PlayerProps) : Player {
     bombReach: 2,
     bombs: 1,
     collidable: true,
+    extraLife: props.sprite === 10,
+    invulnerableUntil: 0,
     hold: false,
     holding: 0,
     index: props.index,
@@ -368,25 +372,62 @@ function flingBomb (this:Player, state:GameState) {
   bomb.startFling(this.side)
 }
 
-function kill (this:Player, emit:boolean) {
+function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   if (this.removeTime) return
+
+  // Proteção temporária contra a mesma explosão que gastou a vida extra
+  if (
+    emit &&
+    cause === 'bomb' &&
+    Date.now() < this.invulnerableUntil
+  ) return
+
+  // Habilidade do Frank (sprite 10):
+  // sobrevive à primeira morte causada por bomba
+  if (
+    emit &&
+    cause === 'bomb' &&
+    this.extraLife
+  ) {
+    this.extraLife = false
+    this.invulnerableUntil = Date.now() + 1500
+    return
+  }
+
+  // Morte normal
   this.removeTime = Date.now() + 350
   this.active = false
   this.moving = 0
   this.holding = 0
   this.collidable = false
+
   this.tick = () => {
     if (Date.now() > this.removeTime) {
       this.tick = () => {}
       this.render = () => {}
     }
   }
+
   this.render = (context:CanvasRenderingContext2D) => {
     const { sx, sy } = animate(this, PLAYER_K)
-    context.drawImage(this.sprite, sx, sy, PLAYER_K.FRAME_WIDTH, PLAYER_K.FRAME_HEIGHT, this.x, this.y, PLAYER_K.FRAME_WIDTH, PLAYER_K.FRAME_HEIGHT)
+
+    context.drawImage(
+      this.sprite,
+      sx,
+      sy,
+      PLAYER_K.FRAME_WIDTH,
+      PLAYER_K.FRAME_HEIGHT,
+      this.x,
+      this.y,
+      PLAYER_K.FRAME_WIDTH,
+      PLAYER_K.FRAME_HEIGHT
+    )
   }
+
   playKillSound()
+
   if (!emit) return
+
   this.removeGamepadSupport()
   emitKill({p:this.index})
 }
@@ -396,6 +437,12 @@ function tick (this:Player, state:GameState) {
 }
 
 function render (this:Player, context:CanvasRenderingContext2D) {
+ 
+  // faz o frank piscar enquanto estiver na proteção da vida extra
+  if (
+    Date.now() < this.invulnerableUntil &&
+    Math.floor(Date.now() / 100) % 2 === 0
+  ) return
   if (this.side === 'D') {
     if (this.holding) {
       if (this.moving) {

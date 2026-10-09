@@ -33,7 +33,7 @@ export const PRESS_INTERVAL = 150
 
 export const SPEED = 1
 
-export const SPRITES = 11
+export const SPRITES = 12
 
 export const STAGES = 4
 

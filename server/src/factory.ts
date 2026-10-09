@@ -13,7 +13,7 @@ export function startGameFactory (io : Server, roomId : string) : StartGameDTO|n
     if (!p) continue
     const size = players.push({
       nick: p.data.nick,
-      sprite: math.floor(Math.random() * SPRITES)
+      sprite: Math.floor(Math.random() * SPRITES)
     })
     const index = size-1
     p.data.index = index

@@ -5339,3 +5339,553 @@ function closeAll (this:Call) {
 **function closeAll**: Acionada ao final da partida ou quando o cliente local decide abandonar o jogo, percorre iterativamente todos os nós registrados, executando o comando de fechamento individual para garantir o corte de comunicação com todos os oponentes.
 Por fim, redefine o repositório peers para um dicionário vazio {} e descarta o fluxo de mídia local (this.stream = null), liberando o uso do microfone no navegador.
 
+# 'Client' src/services/call/peer.ts
+
+Gerenciar conexões ponto-a-ponto (P2P) de áudio via WebRTC, abstraindo a complexidade de adicionar tracks, trocar ICE Candidates (através do serviço de socket) e manipular o DOM para injetar as tags de áudio.
+
+Interfaces Principais:
+
+**PeerProps**: Define os dados necessários para criar um peer (apenas o id da conexão).
+
+**Peer**: O contrato completo do objeto. Armazena a instância da conexão WebRTC, referências para os elementos do DOM (parent e audio) e as assinaturas dos métodos de controle da chamada.
+
+Ciclo de Vida / Eventos:
+
+**ontrack**: Disparado quando o peer remoto envia uma stream de áudio. Ele cria automaticamente uma tag <audio> com autoplay, associa a stream a ela e injeta na div #call.
+
+**onicecandidate**: Disparado quando a API local descobre um novo caminho de rede (ICE Candidate). Ele envia essa informação para o servidor de sinalização através da função emitIceCandidate.
+
+**close**: Encerra a conexão e faz a limpeza do DOM, removendo o elemento de áudio que havia sido criado para aquele usuário.
+
+```ts
+import { emitIceCandidate } from '~/services/socket'
+
+/**
+ * Propriedades necessárias para inicializar um novo Peer.
+ */
+interface PeerProps {
+  /** Identificador único do usuário/conexão */
+  id: string
+}
+
+/**
+ * Representa uma conexão WebRTC ponto-a-ponto, abstraindo o RTCPeerConnection 
+ * e a manipulação do DOM para chamadas de áudio.
+ */
+export interface Peer {
+  id: string
+  connection: RTCPeerConnection
+  parent?: HTMLDivElement
+  audio?: HTMLAudioElement
+  /** Adiciona a trilha de áudio local à conexão WebRTC */
+  addTrack: (stream: MediaStream) => void
+  /** Adiciona um ICE Candidate recebido remotamente à conexão local */
+  addIceCandidate: (candidate: RTCIceCandidate) => Promise<void>
+  /** Cria uma oferta SDP para iniciar a conexão */
+  createOffer: () => Promise<RTCSessionDescriptionInit>
+  /** Define a descrição SDP local */
+  setLocalDescription: (description: RTCLocalSessionDescriptionInit) => Promise<void>
+  /** Define a descrição SDP remota do outro peer */
+  setRemoteDescription: (description: RTCSessionDescriptionInit) => Promise<void>
+  /** Cria uma resposta SDP após receber uma oferta */
+  createAnswer: () => Promise<RTCSessionDescriptionInit>
+  /** Encerra a conexão e limpa os elementos de áudio do DOM */
+  close: () => void
+}
+
+/**
+ * Factory para criar e configurar uma nova instância de Peer.
+ * Faz o bind automático de todos os métodos de gerenciamento de conexão e eventos.
+ * 
+ * @param props Propriedades contendo o ID do peer.
+ * @returns Instância configurada de Peer.
+ */
+export function PeerFactory(props: PeerProps): Peer {
+  const peer: Peer = {
+    id: props.id,
+    connection: new RTCPeerConnection()
+  } as Peer
+
+  // Bind dos métodos de controle WebRTC
+  peer.addTrack = addTrack.bind(peer)
+  peer.addIceCandidate = addIceCandidate.bind(peer)
+  peer.createOffer = createOffer.bind(peer)
+  peer.setLocalDescription = setLocalDescription.bind(peer)
+  peer.setRemoteDescription = setRemoteDescription.bind(peer)
+  peer.createAnswer = createAnswer.bind(peer)
+  peer.close = close.bind(peer)
+
+  // Setup dos Listeners da conexão
+  peer.connection.ontrack = ontrack.bind(peer)
+  peer.connection.onicecandidate = onicecandidate.bind(peer)
+
+  return peer
+}
+
+/**
+ * Handler disparado quando uma stream remota é recebida.
+ * Cria um elemento de áudio no DOM e o anexa a uma div com id 'call'.
+ */
+function ontrack(this: Peer, event: RTCTrackEvent) {
+  this.audio = document.createElement('audio')
+  this.audio.id = this.id
+  this.audio.autoplay = true
+  this.audio.srcObject = event.streams[0]
+  this.parent = document.getElementById('call') as HTMLDivElement
+  this.parent.appendChild(this.audio)
+}
+
+/**
+ * Handler disparado quando um novo ICE Candidate local é descoberto.
+ * Envia o candidato via WebSockets para o peer remoto.
+ */
+function onicecandidate(this: Peer, event: RTCPeerConnectionIceEvent) {
+  if (!event.candidate) return
+  emitIceCandidate({ candidate: event.candidate, socketId: this.id })
+}
+
+/**
+ * Extrai a primeira trilha de áudio da MediaStream local e adiciona à conexão.
+ */
+function addTrack(this: Peer, stream: MediaStream) {
+  const track = stream.getAudioTracks()[0]
+  if (!track) return
+  this.connection.addTrack(track, stream)
+}
+
+/**
+ * Registra na conexão local um ICE Candidate enviado pelo peer remoto.
+ */
+async function addIceCandidate(this: Peer, candidate: RTCIceCandidate) {
+  await this.connection.addIceCandidate(new RTCIceCandidate(candidate))
+}
+
+/**
+ * Inicia o processo de handshake WebRTC gerando uma oferta local.
+ */
+function createOffer(this: Peer) {
+  return this.connection.createOffer()
+}
+
+/**
+ * Registra a descrição SDP gerada localmente na conexão.
+ */
+function setLocalDescription(this: Peer, description: RTCLocalSessionDescriptionInit) {
+  return this.connection.setLocalDescription(description)
+}
+
+/**
+ * Registra a descrição SDP recebida do peer remoto.
+ * Os erros são ignorados silenciosamente com um bloco try/catch.
+ */
+async function setRemoteDescription(this: Peer, description: RTCSessionDescriptionInit) {
+  try {
+    await this.connection.setRemoteDescription(new RTCSessionDescription(description))
+  } catch {}
+}
+
+/**
+ * Inicia o processo de resposta a uma oferta recebida previamente.
+ */
+function createAnswer(this: Peer) {
+  return this.connection.createAnswer()
+}
+
+/**
+ * Finaliza a conexão do RTCPeerConnection e remove a tag de áudio da tela.
+ */
+function close(this: Peer) {
+  this.connection.close()
+  this.audio && this.audio.remove()
+}
+```
+
+# 'Client' src/services/axios.ts
+
+Fornecer um cliente HTTP pré-configurado para a aplicação, centralizando as requisições para que todas apontem automaticamente para o servidor correto.
+
+Componentes Principais:
+
+**axios**: Uma instância do cliente HTTP axios criada através do método .create(). Ela já embute a SERVER_URL, evitando que você precise digitar o endereço completo do servidor toda vez que for fazer um GET ou POST em outros arquivos.
+
+```ts
+import libaxios from 'axios'
+import { SERVER_URL } from '~/constants'
+
+/**
+ * Cliente HTTP padronizado da aplicação.
+ * 
+ * Esta instância do Axios já está pré-configurada com a URL base do servidor.
+ * Importe este objeto ao invés do 'axios' original para fazer requisições à API.
+ * 
+ * @example
+ * // Fazendo uma requisição com a instância configurada:
+ * axios.get('/api/users').then(response => console.log(response.data))
+ */
+export const axios = libaxios.create({
+  baseURL: SERVER_URL
+})
+
+/* 
+===========================================================================
+  LÓGICA ANTIGA DE REDE (Legado)
+===========================================================================
+  Nota: O código abaixo não é mais utilizado na versão atual do projeto. 
+  Trata-se de uma implementação antiga de envio de pacotes estruturada 
+  em GML (GameMaker Language), manipulando bytes diretamente via buffers.
+  
+  Mantido aqui apenas por nostalgia! ☕
+---------------------------------------------------------------------------
+
+#macro CMD_X 0
+#macro CMD_Y 1
+#macro CMD_NAME 2
+#macro CMD_SPRITE 3
+#macro CMD_DESTROY 4
+
+buffer_seek(buffer, buffer_seek_start, 0)
+buffer_write(buffer, buffer_u8, PACKET_ENTITY)
+buffer_write(buffer, buffer_u8, argument1)
+buffer_write(buffer, buffer_u16, argument2)
+
+switch (argument1) {
+    case CMD_X:
+        buffer_write(buffer, buffer_s16, argument3)
+    break
+    
+    case CMD_Y:
+        buffer_write(buffer, buffer_s16, argument3)
+    break
+    
+    case CMD_NAME:
+        buffer_write(buffer, buffer_string, argument3)
+    break
+    
+    case CMD_SPRITE:
+        buffer_write(buffer, buffer_u16, argument3)
+    break
+    
+    case CMD_DESTROY:
+        buffer_write(buffer, buffer_u8, argument3)
+    break
+}
+
+network_send_packet(argument0, buffer, buffer_tell(buffer))
+
+===========================================================================
+*/
+```
+
+# 'Client' src/services/clipboard.ts
+
+Serve pra fornecer uma função utilitária global para copiar textos para a área de transferência do dispositivo do usuário, garantindo um feedback visual integrado.
+
+Componentes Principais:
+
+**toast.info**: Utiliza a biblioteca react-toastify para notificar o usuário na tela que a ação foi bem-sucedida, informando qual texto foi copiado.
+
+**navigator.clipboard.writeText**: Chama a API nativa dos navegadores modernos para injetar a string diretamente no clipboard do sistema (Ctrl+C).
+
+```ts
+import { toast } from 'react-toastify'
+
+/**
+ * Copia um texto para a área de transferência do sistema e exibe uma notificação visual.
+ * 
+ * Utiliza a API nativa do navegador (Clipboard API) para realizar a cópia e a 
+ * biblioteca `react-toastify` para alertar o usuário de que a ação foi concluída.
+ * 
+ * @param text O texto exato que será copiado para a área de transferência.
+ * @returns Uma Promise nativa que é resolvida quando o texto é copiado com sucesso, 
+ *          ou rejeitada caso o navegador bloqueie a ação (ex: falta de permissão).
+ * 
+ * @example
+ * // Exemplo de uso ao clicar em um botão de compartilhar ID:
+ * copyToClipboard('12345-ABCDE')
+ *   .then(() => console.log('Copiado com sucesso!'))
+ *   .catch(() => console.error('Falha ao copiar'))
+ */
+export function copyToClipboard (text: string) {
+  toast.info(`Cod. copiado: ${text}`, { autoClose: 2000, theme: 'dark' })
+  return navigator.clipboard.writeText(text)
+}
+```
+
+# 'Client' src/services/errorHandler.ts
+
+Centralizar e padronizar o tratamento de erros da aplicação. Ele mapeia códigos de erro numéricos (vindos do servidor ou de validações internas) para ações específicas na interface, como exibir notificações visuais customizadas e redirecionar o usuário.
+
+**Componentes Principais:**
+
+Configurações de Toast (*toastOptions, darkOptions, notCloseOptions*): Predefinições visuais e de tempo de tela para manter a consistência das notificações no sistema.
+
+Dicionário **handler**: Um mapa que liga os códigos numéricos de erro (ERRORS) a funções anônimas que executam a ação correspondente (ex: exibir o aviso correto e, se necessário, expulsar o usuário da sala cheia).
+
+**redirectToHomePage**: Função utilitária que aguarda o tempo de leitura da notificação antes de redirecionar o usuário para a rota raiz (BASENAME).
+
+**errorHandler**: A função principal exportada, que recebe o código de erro, busca a ação no dicionário e a executa. Se o erro não for reconhecido, ele faz o log silencioso no console.
+
+```ts
+import { toast, ToastOptions } from 'react-toastify'
+import { ERRORS } from '#/errors'
+import { BASENAME } from '~/constants'
+
+/** Configuração padrão para os toasts de erro (3 segundos, tema colorido). */
+const toastOptions: ToastOptions = {
+  autoClose: 3000,
+  theme: 'colored'
+}
+
+/** Configuração para toasts com tema escuro. */
+const darkOptions: ToastOptions = {
+  ...toastOptions,
+  theme: 'dark'
+}
+
+/** Configuração para erros críticos que exigem que o usuário feche manualmente. */
+const notCloseOptions: ToastOptions = {
+  ...toastOptions,
+  autoClose: false
+}
+
+/**
+ * Dicionário que mapeia códigos de erro para suas respectivas ações de interface.
+ * Cada chave é um código numérico de erro e o valor é a função executada ao ocorrer.
+ */
+const handler: { [key: string]: Function | undefined } = {
+  [ERRORS.ALREADY_IN_LOBBY]: () => {
+    toast.warn('Você já está na sala', darkOptions)
+  },
+  [ERRORS.ALREADY_PAIRING]: () => {
+    toast.warn('A sala está em pareamento', darkOptions)
+  },
+  [ERRORS.CREATE_LOBBY_FAILED]: () => {
+    toast.error('Falha ao criar lobby', notCloseOptions)
+  },
+  [ERRORS.CREATE_ROOM_FAILED]: () => {
+    toast.error('Falha ao criar a sala', notCloseOptions)
+  },
+  [ERRORS.LOBBY_FULL]: () => {
+    toast.info('O lobby ou a sala estão cheios', darkOptions)
+    redirectToHomePage()
+  },
+  [ERRORS.LOBBY_NOT_FOUND]: () => {
+    toast.error('Lobby não encontrado', toastOptions)
+    redirectToHomePage()
+  },
+  [ERRORS.PAGE_LOADING]: () => {
+    toast.error('Jubilando', toastOptions)
+  },
+  [ERRORS.SET_USER_FAILED]: () => {
+    toast.error('Erro ao atualizar usuário', toastOptions)
+  }
+}
+
+/**
+ * Redireciona o usuário de volta para a página inicial da aplicação.
+ * Aguarda o tempo de exibição do toast antes de forçar o redirecionamento,
+ * garantindo que o usuário consiga ler o aviso.
+ */
+function redirectToHomePage() {
+  setTimeout(() => {
+    window.location.href = BASENAME
+  }, toastOptions.autoClose as number)
+}
+
+/**
+ * Processa um código de erro recebido e executa a resposta de interface apropriada.
+ * Se o erro estiver mapeado no dicionário, exibe o toast correspondente.
+ * Se o erro for desconhecido, apenas o registra no console.
+ * 
+ * @param error Código numérico do erro (geralmente vindo do enum ERRORS).
+ * 
+ * @example
+ * // Utilização dentro de um bloco catch de uma API:
+ * catch (err) {
+ *   errorHandler(err.code)
+ * }
+ */
+export function errorHandler(error: number) {
+  const fn = handler[error]
+  if (fn) {
+    fn()
+  } else {
+    console.error(error)
+  }
+}
+```
+
+# 'Client' src/services/events.ts
+
+Gerenciar o registro e o disparo de eventos customizados globais na aplicação, garantindo sincronização na inicialização de chamadas.
+
+Componentes Principais:
+
+**EVENTS**: Um dicionário de constantes que guarda os nomes dos eventos customizados. Centralizar essas strings evita erros de digitação (typos) na hora de criar os addEventListener em outras partes do código.
+
+**dispatchOfferCall**: Uma função utilitária que dispara globalmente (no objeto window) o evento de iniciar a chamada, mas aplica um atraso (delay) intencional de 3 segundos antes da execução.
+
+```ts
+/**
+ * Dicionário de eventos customizados globais da aplicação.
+ * Centraliza os nomes dos eventos para evitar erros de digitação nos listeners.
+ */
+export const EVENTS = {
+  /** Evento disparado para solicitar a criação de uma oferta WebRTC (handshake) */
+  OFFER_CALL: 'offer_call'
+}
+
+/**
+ * Dispara o evento global de solicitação de chamada (OFFER_CALL) após um atraso.
+ * 
+ * O evento é emitido no objeto `window`, permitindo que qualquer parte do front-end
+ * que esteja "escutando" (com window.addEventListener) reaja a ele. 
+ * O delay de 3000ms garante tempo hábil para que os sockets e a UI sejam 
+ * totalmente inicializados antes de começar a negociação P2P.
+ * 
+ * @example
+ * // Como escutar esse evento em outro arquivo:
+ * window.addEventListener(EVENTS.OFFER_CALL, () => {
+ *   peer.createOffer().then(...)
+ * })
+ */
+export function dispatchOfferCall () {
+  setTimeout(() => window.dispatchEvent(new CustomEvent(EVENTS.OFFER_CALL)), 3000)
+}
+```
+
+# 'Client' src/services/randomuser.ts
+
+Fornecer uma função assíncrona que consome a API pública *randomuser.me* para gerar um primeiro nome aleatório de forma rápida.
+
+Componentes Principais:
+
+**fetch** nativo: Faz uma requisição GET para o endpoint da API. O parâmetro ?inc=name&results=1 otimiza a chamada, instruindo o servidor a retornar apenas os dados de "nome" e apenas para "1" usuário, economizando banda.
+
+Retorno extraído: Navega pelo objeto JSON retornado (*parsed.results[0].name.first*) para devolver exclusivamente o primeiro nome como uma string limpa.
+
+```ts
+/**
+ * Busca um primeiro nome aleatório na API pública do RandomUser.
+ * 
+ * Faz uma requisição otimizada que pede especificamente apenas o campo de "nome"
+ * de um único usuário gerado aleatoriamente. É ideal para atribuir nicknames
+ * provisórios a usuários convidados (guests) no lobby.
+ * 
+ * @returns Uma Promise que é resolvida com o primeiro nome do usuário gerado (ex: "John", "Alice").
+ * 
+ * @example
+ * // Utilização para definir o estado inicial do jogador:
+ * const nickname = await randomuser()
+ * console.log(`Bem-vindo ao lobby, ${nickname}!`)
+ */
+export default async function randomuser(): Promise<string> {
+  const response = await fetch('https://randomuser.me/api/?inc=name&results=1')
+  const parsed = await response.json()
+  return parsed.results[0].name.first
+}
+```
+
+# 'Client' src/services/socket.ts
+
+Centralizar a instância do cliente Socket.IO e exportar funções encapsuladas para a emissão de eventos. Isso garante o uso de DTOs (Data Transfer Objects) fortemente tipados, evitando que eventos sejam enviados com dados incorretos ou chaves de string com erro de digitação.
+
+Componentes Principais:
+
+**socket**: A conexão ativa e persistente com o servidor usando socket.io-client.
+
+Emissores de WebRTC: Funções de sinalização P2P (***emitCallAnswer, emitCallOffer, emitIceCandidate***).
+
+Emissores de Matchmaking: Controle de salas e lobby (*emitCreateLobby, emitChangeLobby, emitJoinRoom, emitReady, emitSetUser*).
+
+Emissores de Gameplay (O Jogo): Ações curtas enviadas em tempo real durante a partida. Note que elas usam strings encurtadas no servidor (*fb, hb, mv, pb*) para economizar banda, já que são disparadas muitas vezes por segundo.
+
+```ts
+import io from 'socket.io-client'
+import { CallAnswerDTO, CallOfferDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, JoinRoomDTO, KillDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, UserDTO } from '#/dto'
+import { SERVER_URL } from '~/constants'
+
+/** 
+ * Instância global do cliente Socket.IO conectada ao servidor principal. 
+ * Usada para comunicação em tempo real (gameplay e chat/sinalização).
+ */
+export const socket = io(SERVER_URL)
+
+/* ========================================================================
+   SINALIZAÇÃO WEBRTC (Áudio P2P)
+   ======================================================================== */
+
+export function emitCallAnswer (dto: CallAnswerDTO) {
+  socket.emit('call_answer', dto)
+}
+
+export function emitCallOffer (dto: CallOfferDTO) {
+  socket.emit('call_offer', dto)
+}
+
+export function emitIceCandidate (dto: IceCandidateDTO) {
+  socket.emit('ice_candidate', dto)
+}
+
+/* ========================================================================
+   MATCHMAKING E GERENCIAMENTO DE LOBBY/SALA
+   ======================================================================== */
+
+export function emitChangeLobby (lobbyId: string) {
+  socket.emit('change_lobby', lobbyId)
+}
+
+export function emitCreateLobby () {
+  socket.emit('create_lobby')
+}
+
+export function emitExitPairing () {
+  socket.emit('exit_pairing')
+}
+
+export function emitJoinRoom (dto: JoinRoomDTO) {
+  socket.emit('join_room', dto)
+}
+
+export function emitReady () {
+  socket.emit('ready')
+}
+
+export function emitSetUser (dto: UserDTO) {
+  socket.emit('set_user', dto)
+}
+
+/* ========================================================================
+   AÇÕES DE GAMEPLAY (In-game)
+   Note que os eventos usam alias curtos (ex: 'fb', 'mv') para otimizar 
+   o tráfego de rede, dado o alto volume de chamadas por segundo.
+   ======================================================================== */
+
+export function emitFlingBomb (dto: FlingBombDTO) {
+  socket.emit('fb', dto) // Fling Bomb (Arremessar bomba)
+}
+
+export function emitHoldBomb (dto: HoldBombDTO) {
+  socket.emit('hb', dto) // Hold Bomb (Segurar bomba)
+}
+
+export function emitKill (dto: KillDTO) {
+  socket.emit('kl', dto) // Kill (Morte de jogador/entidade)
+}
+
+export function emitMove (dto: MoveDTO) {
+  socket.emit('mv', dto) // Move (Movimentação do personagem)
+}
+
+export function emitMoveBomb (dto: MoveBombDTO) {
+  socket.emit('mb', dto) // Move Bomb (Movimentação da bomba ex: chutada)
+}
+
+export function emitNullifyBlock (dto: NullifyBlockDTO) {
+  socket.emit('nb', dto) // Nullify Block (Destruição de bloco)
+}
+
+export function emitPlaceBomb (dto: PlaceBombDTO) {
+  socket.emit('pb', dto) // Place Bomb (Colocar bomba no chão)
+}
+```

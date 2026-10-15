@@ -177,7 +177,7 @@ export const PowerUpsTitle = styled.h1`
   margin: 1.8rem 0 1.2rem;
   line-height: 1.3;
   text-shadow:
-    1px 1px 0 rgba(0, 242, 255, 0.6);
+    1px 1px 0 rgba(0, 242, 255, 0.6),
     0 0 6px #0c7db5ff,
 `
 

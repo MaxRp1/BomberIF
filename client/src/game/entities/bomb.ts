@@ -95,7 +95,7 @@ function getAxes (this:Bomb) : [number, number] {
 
 function setDetonation (this:Bomb, multiplier=1) {
   this.detonateTime = Date.now() + (3000 * multiplier)
-  this.removeTime = this.detonateTime + 1000
+  this.removeTime = this.detonateTime + 500
 }
 
 function detonate (this:Bomb, state:GameState) {

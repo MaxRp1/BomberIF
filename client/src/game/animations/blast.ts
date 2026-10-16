@@ -1,7 +1,7 @@
 import { Animation } from './animation'
 
 const AnimationBase = {
-  ANIM_INTERVAL: 100,
+  ANIM_INTERVAL: 80,
   FRAME_START  : 0,
   FRAME_END    : 3,
   FRAME_WIDTH  : 16,

@@ -33,19 +33,13 @@ export default function HomePage () {
    * Envolvido em useCallback para manter a referência da função estável e
    * evitar re-renderizações desnecessárias no useEffect.
    */
-  const handleOpenGame = useCallback(() => {
-    socket.off('open_game', handleOpenGame)
-    setShowGame(true)
-  }, [])
+const handleOpenGame = useCallback(() => {
+  setShowGame(true)
+}, [])
 
-  /**
-   * Recebe e salva o índice identificador do jogador local na partida.
-   * Essencial para a engine saber qual personagem a câmera e os controles devem seguir.
-   */
-  const handleMyself = useCallback((index: number) => {
-    socket.off('myself', handleMyself)
-    setMyself(index)
-  }, [])
+const handleMyself = useCallback((index: number) => {
+  setMyself(index)
+}, [])
 
   /**
    * Função utilitária que resolve qual interface renderizar antes de a partida iniciar.

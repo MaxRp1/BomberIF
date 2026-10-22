@@ -1,6 +1,6 @@
 # Estudo Técnico - BomberIF
 
-> **Revisão atualizada em 17/10/2026** — sincronizada com as alterações recentes de explosão, pareamento via Socket.IO, `STAGES = 3` e deploy automático do servidor no Render.
+> **Revisão atualizada em 22/10/2026** — sincronizada com as alterações recentes de explosão, habilidade do Frank, pareamento via Socket.IO, `STAGES = 3`, deploy automático no Render e piso lento do refeitório.
 
 ---
 # **SERVER**
@@ -96,13 +96,16 @@ export interface PlayerDTO {
 **Imports**
 
 ``` ts 
-  import { Server } from 'socket.io'
-  import { BLASTS, BOMBS, BONUS, BONUSES, SPRITES, STAGES } from '#/constants'
-  import { BlockDTO, GameStateDTO, LobbyDTO, StartGameDTO } from '#/dto'
-  import { Socket } from '~/extends'
+import { Server } from 'socket.io'
+import { BLASTS, BOMBS, BONUS, BONUSES, SPRITES, STAGES } from '#/constants'
+import { BlockDTO, GameStateDTO, LobbyDTO, SlowFloorDTO, StartGameDTO } from '#/dto'
+import { Socket } from '~/extends'
+
+const CAFETERIA_STAGE = 2
+const SLOW_FLOOR_COUNT = 8
 ``` 
 
-- Realiza as importações das ferramentas de rede do Socket.IO (Server e Socket), das constantes que definem as regras e elementos do jogo (bombas, bônus, sprites, estágios) e das estruturas de dados (DTOs) necessárias para trafegar as informações dos jogadores e do estado da partida.
+- Realiza as importações das ferramentas de rede do Socket.IO (Server e Socket), das constantes que definem as regras e elementos do jogo e das estruturas de dados (DTOs) necessárias para trafegar as informações dos jogadores e do estado da partida. A versão atual também importa `SlowFloorDTO` e define `CAFETERIA_STAGE = 2` e `SLOW_FLOOR_COUNT = 8`, usados para gerar a mecânica especial do refeitório.
 
 **StartGameFactory**
 ``` ts
@@ -156,21 +159,80 @@ export interface PlayerDTO {
 
 - Localiza um lobby existente atráves o ID e atualiza todos os jogadores presentes nele, percorre todas as conexões ativas do lobby, extrai o nick de cada jogador e retorna um pacote de dados (LobbyDTO) contendo a lista atualizada. Caso o lobby não exista ou esteja vazio, a função retorna null.
 
-**stateFactory**
+**slowFloorsFactory**
 
-```ts 
-  // estabelece o estado inicial do jogo
-  function stateFactory () : GameStateDTO {
-    const blocks = bonusFactory(blocksFactory())
-    const blast = Math.floor(Math.random() * BLASTS)
-    const bomb = Math.floor(Math.random() * BOMBS)
-    const bonus = Math.floor(Math.random() * BONUS)
-    const stage = Math.floor(Math.random() * STAGES)
-    return {blast, blocks, bomb, bonus, stage}
+```ts
+function slowFloorsFactory (
+  blocks:(BlockDTO|null)[][]
+) : SlowFloorDTO[] {
+  const available:SlowFloorDTO[] = []
+
+  const protectedSpawnAreas = new Set([
+    '0,0', '0,1', '1,0',
+    '0,11', '0,12', '1,12',
+    '9,0', '10,0', '10,1',
+    '9,12', '10,11', '10,12'
+  ])
+
+  for (let row = 0; row < blocks.length; row++) {
+    for (let column = 0; column < blocks[row].length; column++) {
+      if (blocks[row][column] !== null) continue
+
+      const key = `${row},${column}`
+      if (protectedSpawnAreas.has(key)) continue
+
+      available.push({
+        axes: [row, column]
+      })
     }
+  }
+
+  for (let i = available.length - 1; i > 0; i--) {
+    const randomIndex = Math.floor(
+      Math.random() * (i + 1)
+    )
+
+    const temporary = available[i]
+    available[i] = available[randomIndex]
+    available[randomIndex] = temporary
+  }
+
+  return available.slice(0, SLOW_FLOOR_COUNT)
+}
 ```
 
-- Gera o estado inicial do tabuleiro e sorteia as características da partida. Ela cria a matriz de blocos do mapa inserindo os bônus ocultos neles e realiza sorteios aleatórios para definir o cenário (stage), o tipo de bomba, o alcance/estilo de explosão (blast) e a variação dos bônus. No final, retorna esses dados estruturados dentro de um pacote GameStateDTO.
+- Gera as células de piso lento usadas exclusivamente no refeitório. A função percorre apenas posições vazias (`null`) da matriz de blocos, protege as áreas iniciais dos quatro jogadores, embaralha as posições disponíveis e seleciona até **8 células**.
+- Como a lista é criada no servidor e enviada dentro do `GameStateDTO`, todos os clientes recebem exatamente as mesmas posições de piso lento na mesma partida.
+
+**stateFactory**
+
+```ts
+function stateFactory () : GameStateDTO {
+  const blocks = bonusFactory(blocksFactory())
+
+  const blast = Math.floor(Math.random() * BLASTS)
+  const bomb = Math.floor(Math.random() * BOMBS)
+  const bonus = Math.floor(Math.random() * BONUS)
+  const stage = Math.floor(Math.random() * STAGES)
+
+  const slowFloors =
+    stage === CAFETERIA_STAGE
+      ? slowFloorsFactory(blocks)
+      : []
+
+  return {
+    blast,
+    blocks,
+    bomb,
+    bonus,
+    stage,
+    slowFloors
+  }
+}
+```
+
+- Gera o estado inicial do tabuleiro e sorteia as características da partida. Além de criar os blocos, bônus, bomba, explosão e cenário, a versão atual também monta `slowFloors`.
+- Quando `stage === 2` (refeitório), o estado recebe a lista aleatória produzida por `slowFloorsFactory`; nos outros cenários, `slowFloors` é um array vazio.
 
 **blocksFactory** 
 
@@ -796,6 +858,27 @@ export const STAGES = 3
 
 - Essas constantes são consumidas pelo `server/src/factory.ts`: `SPRITES` controla o personagem sorteado em `startGameFactory`, enquanto `STAGES` controla o cenário sorteado em `stateFactory`.
 
+# 'Shared' dto.ts — estado compartilhado do piso lento
+
+```ts
+export interface SlowFloorDTO {
+  axes : [number, number]
+}
+
+export interface GameStateDTO {
+  blast      : number
+  blocks     : (BlockDTO|null)[][]
+  bomb       : number
+  bonus      : number
+  slowFloors : SlowFloorDTO[]
+  stage      : number
+}
+```
+
+- **SlowFloorDTO** representa uma célula especial do mapa através de suas coordenadas de matriz `[linha, coluna]`.
+- **GameStateDTO.slowFloors** transporta a lista dessas células do servidor para todos os clientes no momento em que a partida é criada.
+- O campo fica vazio em cenários comuns e recebe as posições sorteadas quando o `stage` escolhido é o refeitório.
+
 ---
 # **CLIENT**
 ---
@@ -1164,6 +1247,7 @@ import { BlocksFactory } from '~/game/entities/block'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { EntitiesFactory } from '~/game/entities/factory'
 import { PlayersFactory } from '~/game/entities/players'
+import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { StageFactory } from '~/game/entities/stage'
 import { GameState } from '~/game/entities/state'
 import { TimerFactory } from '~/game/entities/timer'
@@ -1214,17 +1298,26 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
   }
 
   function render () {
-    // @ts-ignore
-    context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
-    state?.stage.render(context!)
-    state?.blocks.render(context!, state)
+    if (!context || !canvasRef.current) return
+
+    context.clearRect(
+      0,
+      0,
+      canvasRef.current.width,
+      canvasRef.current.height
+    )
+
+    state?.stage.render(context)
+    state?.slowFloors.render(context)
+    state?.blocks.render(context, state)
+
     if (state!.players.players.find(p => p.holding)) {
-      state?.players.render(context!)
-      state?.entities.render(context!)
+      state?.players.render(context)
+      state?.entities.render(context)
     }
     else {
-      state?.entities.render(context!)
-      state?.players.render(context!)
+      state?.entities.render(context)
+      state?.players.render(context)
     }
   }
 
@@ -1235,6 +1328,7 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
       blocks: BlocksFactory(dto.state.blocks),
       entities: EntitiesFactory(),
       players: PlayersFactory(dto.players),
+      slowFloors: SlowFloorsFactory(dto.state.slowFloors),
       stage: StageFactory({name:dto.state.stage})
     })
   }
@@ -1242,9 +1336,9 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
 
 - Gerencia o estado interno, as referências de tela e o loop principal de atualização e renderização. O componente inicializa os refs de controle do **canvas** e de contagem/tempo, mantendo o estado global da partida **GameState** e o contexto 2D de pintura.
 
-- **gameLoop**, **tick**, **render**: Formam o ciclo de atualização contínua do jogo. O tick atualiza as regras e posições físicas das entidades e jogadores, enquanto o render limpa a tela e desenha as camadas em ordem (cenário, blocos, bombas/entidades e jogadores, alternando a prioridade de sobreposição caso algum jogador esteja carregando um objeto).
+- **gameLoop**, **tick**, **render**: Formam o ciclo de atualização contínua do jogo. O `render` agora valida `context` e `canvasRef.current` antes de acessar o Canvas e desenha as camadas na ordem **stage → slowFloors → blocks → entities/players**. Assim, o piso lento aparece sobre o chão do cenário e abaixo dos elementos jogáveis.
 
-- **startGame**: Trata o evento de início da partida vindo do Socket, desativando o ouvinte da rede e construindo as fábricas das entidades (stage, blocos, jogadores e entidades gerais) para popular o estado do jogo.
+- **startGame**: Trata o evento de início da partida vindo do Socket e constrói as fábricas do estado. Além de stage, blocos, jogadores e entidades gerais, também converte `dto.state.slowFloors` com `SlowFloorsFactory`, preservando no cliente as mesmas células sorteadas pelo servidor.
 
 ---
 
@@ -3911,6 +4005,7 @@ export interface Player {
   side       : SIDES
   sprite     : HTMLImageElement
   speed      : number
+  speedMultiplier : number
   x          : number
   y          : number
   setMyself            : () => void
@@ -3979,6 +4074,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
     nick: props.nick,
     side: 'D',
     speed: props.speed,
+    speedMultiplier: 1,
     x: props.x,
     y: props.y,
     sprite: new Image()
@@ -4005,7 +4101,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
 }
 ```
 
-- Instancia a estrutura do jogador, carrega seus sprites visuais e vincula todos os seus métodos operacionais. Configura os atributos iniciais de movimento, teclas de atalho padrão (WASD, Setas, Z, X, C, Espaço), capacidade de bombas e faz o bind das funções de física, teclado, gamepad e combate à instância. Também inicializa a habilidade exclusiva do Frank: quando `props.sprite === 10`, `extraLife` começa como `true`; os demais personagens recebem `false`. `invulnerableUntil` começa em 0 para todos.
+- Instancia a estrutura do jogador, carrega seus sprites visuais e vincula todos os seus métodos operacionais. Configura os atributos iniciais de movimento, teclas de atalho padrão (WASD, Setas, Z, X, C, Espaço), capacidade de bombas e faz o bind das funções de física, teclado, gamepad e combate à instância. Também inicializa a habilidade exclusiva do Frank: quando `props.sprite === 10`, `extraLife` começa como `true`; os demais personagens recebem `false`. `invulnerableUntil` começa em 0 para todos. A propriedade `speedMultiplier` começa em `1` e é alterada dinamicamente quando o personagem entra ou sai de um piso lento.
 
 **setMyself/getAxes**
 
@@ -4148,27 +4244,49 @@ function startMove (this:Player, side:SIDES) {
 **moveTick** 
 
 ```ts
-function moveTick (this:Player, state:GameState) {
+function moveTick (
+  this:Player,
+  state:GameState
+) {
   if (!this.moving) return
+
+  const onSlowFloor =
+    state.slowFloors.isPlayerOnFloor(this)
+
+  this.speedMultiplier =
+    onSlowFloor
+      ? 0.5
+      : 1
+
   this.moves[this.side]()
+
   if (!this.myself) return
+
   state.blocks.tick(state)
-  emitMove({h:this.holding, m:this.moving, p:this.index, s:this.side, x:this.x, y:this.y})
+
+  emitMove({
+    h:this.holding,
+    m:this.moving,
+    p:this.index,
+    s:this.side,
+    x:this.x,
+    y:this.y
+  })
 }
 ```
 
-Executa o deslocamento quadro a quadro e transmite a posição atualizada para a rede.
+Executa o deslocamento quadro a quadro, aplica modificadores de velocidade e transmite a posição atualizada para a rede.
 
-- Processamento Local: Dispara a função de movimento mapeada em moves **this.side** caso o sinalizador moving esteja ativo.
-
-- Sincronização Multiplayer: Executa verificações de blocos e emite o evento emitMove via socket para sincronizar as coordenadas e o estado do jogador local com os outros clientes.
+- **Piso lento:** antes de mover, consulta `state.slowFloors.isPlayerOnFloor(this)`. Se o jogador estiver sobre uma célula especial, `speedMultiplier` passa para `0.5`; fora dela volta para `1`.
+- **Velocidade preservada:** o efeito multiplica a velocidade atual em vez de sobrescrever `speed`. Assim, bônus que aumentam ou reduzem a velocidade continuam compatíveis com a mecânica ambiental.
+- **Sincronização Multiplayer:** após o movimento do jogador local, executa as verificações de blocos e emite `emitMove` com as coordenadas atualizadas.
 
 
 **move: UP/DOWN/RIGHT/LEFT** 
 
 ```ts
 function moveDown (this:Player) {
-  this.y += this.speed
+  this.y += this.speed * this.speedMultiplier
   if (this.y > 169) {
     if (this.collidable) {
       this.y = 169
@@ -4181,7 +4299,7 @@ function moveDown (this:Player) {
 }
 
 function moveUp (this:Player) {
-  this.y -= this.speed
+  this.y -= this.speed * this.speedMultiplier
   if (this.y < 9) {
     if (this.collidable) {
       this.y = 9
@@ -4194,7 +4312,7 @@ function moveUp (this:Player) {
 }
 
 function moveRight (this:Player) {
-  this.x += this.speed
+  this.x += this.speed * this.speedMultiplier
   if (this.x > 209) {
     if (this.collidable) {
       this.x = 209
@@ -4207,7 +4325,7 @@ function moveRight (this:Player) {
 }
 
 function moveLeft (this:Player) {
-  this.x -= this.speed
+  this.x -= this.speed * this.speedMultiplier
   if (this.x < 17) {
     if (this.collidable) {
       this.x = 17
@@ -4220,7 +4338,7 @@ function moveLeft (this:Player) {
 }
 ```
 
-- Atualiza as posições físicas em pixels e aplica colisões de borda ou teleporte. Incrementa ou decreta os eixos x ou y com base em speed. Caso o jogador seja colidível, trava a movimentação nos limites da arena; caso esteja intangível (como no efeito Pass), permite o atravessamento da borda reaparecendo no lado oposto (wrap-around).
+- Atualiza as posições físicas em pixels e aplica colisões de borda ou teleporte. O deslocamento usa `speed * speedMultiplier`, permitindo reduzir a velocidade para 50% enquanto o jogador permanece sobre um piso lento sem alterar permanentemente o atributo `speed`. Caso o jogador seja colidível, trava a movimentação nos limites da arena; caso esteja intangível (como no efeito Pass), permite o atravessamento da borda reaparecendo no lado oposto (wrap-around).
 
 **onMove** 
 
@@ -4599,6 +4717,131 @@ Vincula o cliente principal ao seu personagem e repassa as chamadas do game loop
 - **tick:** Percorre o array players e executa o tick individual de cada participante a cada quadro.
 
 - **render:** Itera sobre todos os jogadores invocando render para desenhá-los sequencialmente no Canvas.
+
+# 'Client' src/game/entities/state.ts
+
+**GameState**
+
+```ts
+import { Blocks } from './block'
+import { Entities } from './factory'
+import { Players } from './players'
+import { SlowFloors } from './slowFloor'
+import { Stage } from './stage'
+
+export interface GameState {
+  blast      : number
+  blocks     : Blocks
+  bomb       : number
+  bonus      : number
+  entities   : Entities
+  players    : Players
+  slowFloors : SlowFloors
+  stage      : Stage
+}
+```
+
+- Centraliza o estado utilizado pela engine durante a partida.
+- A propriedade **slowFloors** foi adicionada para manter a coleção de pisos lentos recebidos do servidor e disponibilizar sua consulta para o movimento dos jogadores e sua renderização no Canvas.
+- O tipo usado no cliente é `SlowFloors`, construído por `SlowFloorsFactory` a partir do array `SlowFloorDTO[]` recebido em `StartGameDTO`.
+
+# 'Client' src/game/entities/slowFloor.ts
+
+**Objetivo**
+
+Representar e renderizar as células especiais do refeitório que reduzem temporariamente a velocidade do jogador enquanto ele permanece sobre elas. A posição das células não é sorteada no cliente: ela já chega sincronizada pelo servidor.
+
+**Interfaces e Factory**
+
+```ts
+import { TILE_SIZE } from '#/constants'
+import { SlowFloorDTO } from '#/dto'
+import { Player } from '~/game/entities/player'
+
+interface SlowFloor {
+  axes : [number, number]
+  x    : number
+  y    : number
+}
+
+export interface SlowFloors {
+  floors          : SlowFloor[]
+  isPlayerOnFloor : (player:Player) => boolean
+  render          : (context:CanvasRenderingContext2D) => void
+}
+
+export function SlowFloorsFactory (
+  dto:SlowFloorDTO[]
+) : SlowFloors {
+
+  const floors:SlowFloor[] = dto.map(floor => ({
+    axes: floor.axes,
+    x: TILE_SIZE + (floor.axes[1] * TILE_SIZE),
+    y: TILE_SIZE + (floor.axes[0] * TILE_SIZE)
+  }))
+
+  const slowFloors = {
+    floors
+  } as SlowFloors
+
+  slowFloors.isPlayerOnFloor =
+    isPlayerOnFloor.bind(slowFloors)
+
+  slowFloors.render =
+    render.bind(slowFloors)
+
+  return slowFloors
+}
+```
+
+- **SlowFloor** armazena a célula da matriz e também as coordenadas em pixels utilizadas pelo Canvas.
+- **SlowFloorsFactory** transforma os DTOs vindos do servidor em objetos prontos para consulta e renderização. A conversão usa `TILE_SIZE`, mantendo cada piso especial alinhado à grade de 16x16 pixels.
+
+**isPlayerOnFloor**
+
+```ts
+function isPlayerOnFloor (
+  this:SlowFloors,
+  player:Player
+) {
+  const [row, column] = player.getAxes()
+
+  return this.floors.some(floor =>
+    floor.axes[0] === row &&
+    floor.axes[1] === column
+  )
+}
+```
+
+- Obtém a célula atual do personagem através de `player.getAxes()` e verifica se existe um piso lento com as mesmas coordenadas.
+- O resultado booleano é usado por `player.ts` para definir `speedMultiplier` como `0.5` ou `1`.
+
+**render**
+
+```ts
+function render (
+  this:SlowFloors,
+  context:CanvasRenderingContext2D
+) {
+  context.save()
+  context.fillStyle = 'rgba(120, 80, 40, 0.55)'
+
+  this.floors.forEach(floor => {
+    context.fillRect(
+      floor.x,
+      floor.y,
+      TILE_SIZE,
+      TILE_SIZE
+    )
+  })
+
+  context.restore()
+}
+```
+
+- A implementação atual desenha um quadrado marrom semitransparente sobre cada célula especial.
+- Esse preenchimento funciona como **representação visual temporária** da mecânica. O código da lógica já está funcional; o sprite em pixel art do piso especial ainda pode substituir este `fillRect` posteriormente sem alterar a sincronização ou a redução de velocidade.
+- O `Canvas` chama esse `render` depois de desenhar o cenário e antes dos blocos, fazendo o piso aparecer **sobre o chão original do refeitório**.
 
 # 'Client' src/game/entities/stage.ts
 
@@ -5717,39 +5960,6 @@ function close(this: Peer) {
 }
 ```
 
-# 'Client' src/site/pages/home/index.tsx
-
-**Listeners de início de partida e identificação do jogador**
-
-```ts
-const handleOpenGame = useCallback(() => {
-  setShowGame(true)
-}, [])
-
-const handleMyself = useCallback((index: number) => {
-  setMyself(index)
-}, [])
-
-useEffect(() => {
-  socket.on('open_game', handleOpenGame)
-  socket.on('myself', handleMyself)
-
-  return () => {
-    socket.off('open_game', handleOpenGame)
-    socket.off('myself', handleMyself)
-  }
-}, [handleOpenGame, handleMyself])
-```
-
-- `handleOpenGame` apenas altera `showGame` para `true`, abrindo a interface da partida quando o servidor emite `open_game`.
-- `handleMyself` salva o índice recebido pelo evento `myself`, permitindo que a engine identifique qual jogador pertence ao cliente local.
-- Os handlers são estabilizados com `useCallback` e registrados pelo `useEffect`.
-- A remoção dos listeners ocorre **somente no cleanup do `useEffect`**, quando o componente é desmontado. Os handlers não executam mais `socket.off()` sobre si mesmos.
-
-Essa alteração corrige o erro que aparecia ao tentar iniciar uma segunda partida na mesma sessão. Na versão problemática, o primeiro evento `open_game` removia o próprio listener; como os callbacks eram estáveis e o `useEffect` não era executado novamente, o cliente deixava de escutar futuras partidas. O servidor entrava normalmente em estado de pareamento, mas a tela do jogo não era aberta e uma nova tentativa resultava em **"A sala está em pareamento"**. Mantendo os listeners ativos até o cleanup do componente, múltiplas partidas podem ser iniciadas na mesma sessão sem perder os eventos de `open_game` e `myself`.
-
----
-
 # 'Client' src/services/axios.ts
 
 Fornecer um cliente HTTP pré-configurado para a aplicação, centralizando as requisições para que todas apontem automaticamente para o servidor correto.
@@ -6141,6 +6351,1517 @@ export function emitPlaceBomb (dto: PlaceBombDTO) {
 ```
 
 ---
+
+# 'Client' src/services/url.ts
+
+
+*URL* e *searchParams*: APIs nativas do JavaScript para ler a URL atual e injetar ou modificar o parâmetro de busca (query string) *?lobby=*....
+
+*window.history.pushState*: Modifica o histórico do navegador e a barra de endereços visualmente, sem disparar um novo request HTTP para o servidor, preservando o estado do Single Page Application (SPA) e a conexão de rede do jogo.
+
+```ts
+/**
+ * Injeta o ID do lobby na barra de endereços do navegador.
+ * 
+ * Utiliza a History API (pushState) para alterar a URL atual sem causar um 
+ * recarregamento da página. Isso é útil para permitir que o usuário copie a URL 
+ * atualizada e a envie para amigos, gerando um link de convite direto para a sala.
+ * 
+ * @param lobbyId O identificador único da sala/lobby gerado pelo servidor.
+ * 
+ * @example
+ * // Se a URL atual é "http://localhost:3000" e a função é chamada:
+ * addLobbyToUrl('xyz-987')
+ * // A barra de endereços muda imediatamente para: "http://localhost:3000/?lobby=xyz-987"
+ */
+export function addLobbyToUrl(lobbyId: string) {
+  const url = new URL(window.location.toString())
+  url.searchParams.set('lobby', lobbyId)
+  window.history.pushState({}, '', url)
+}
+```
+
+# 'Client' src/site/components/lobby/index.tsx
+
+**COMPONENTES PRINCIPAIS**
+
+Estado e Redux: Usa *useSelector* para ler as opções globais (como a opção de "Preencher Sala", provavelmente com bots) e *useDispatch* para alternar essa opção via setFillRoom.
+
+Controle de Áudio: Utiliza o ciclo de vida do React (*useEffect*) para iniciar a música tema do lobby ao entrar na tela e pará-la ao sair.
+
+Ações de Interface:
+
+*handlePlayClick*: Interrompe a música e dispara a transição para entrar de vez na partida (*joinRoom*).
+
+Clique no ID do lobby: Copia o código para a área de transferência do usuário.
+
+Renderização da lista de jogadores (*lobby.players.map(...)*).
+
+```ts
+import { useDispatch, useSelector } from 'react-redux'
+import { LobbyDTO } from '#/dto'
+import { useEffect } from 'react'
+import { copyToClipboard } from '~/services/clipboard'
+import OnlinePlayers from '~/site/components/onlinePlayers'
+import Toggle from '~/site/components/toggle'
+import { setFillRoom } from '~/store/options/actions'
+import { OptionsDTO } from '~/store/options/reducer'
+import { playLobbySound, stopLobbySound } from '~/game/sound/lobby'
+import { joinRoom } from './method'
+import { Container, LobbyContainer, LobbyId, Options, OptionsContainer, Play, PlayContainer, PlayBorder, Player, PlayersContainer } from './style'
+
+// let winPlaying = false
+
+/**
+ * Propriedades esperadas pelo componente Lobby.
+ */
+interface LobbyProps {
+  /** Objeto contendo os dados da sala, incluindo ID e lista de jogadores conectados. */
+  lobby: LobbyDTO
+  /** Função para alternar a visibilidade do modal/tela de opções. */
+  setShowOptions: React.Dispatch<React.SetStateAction<boolean>>
+}
+
+/**
+ * Lida com o clique no botão "Jogar!".
+ * Interrompe a música do lobby e despacha a ação para juntar-se à partida ativa.
+ */
+function handlePlayClick () {
+  stopLobbySound()
+  joinRoom()
+}
+
+/**
+ * Componente principal da Sala de Espera (Lobby).
+ * Exibe os jogadores conectados, o ID da sala para convites, opções de pareamento 
+ * e o botão de iniciar o jogo.
+ */
+export default function Lobby ({ lobby, setShowOptions }: LobbyProps) {
+
+  const dispatch = useDispatch()
+  const options = useSelector<any, OptionsDTO>(state => state.options)
+
+  // Controle do ciclo de vida da música do lobby
+  useEffect(() => {
+    // Ativa quando entrar na tela ou der reload na página
+    playLobbySound()
+
+    return () => {
+      // Desativa quando o componente for desmontado (ex: transição para a partida)
+      stopLobbySound()
+    }
+  }, [])
+
+  return (
+    <Container>
+      <PlayContainer>
+        <PlayBorder onClick={handlePlayClick}>
+          <Play>Jogar!</Play>
+        </PlayBorder>
+        
+        {/* Toggle para definir se a sala deve ser preenchida com bots caso falte jogadores */}
+        <Toggle on={options.fillRoom} onClick={() => dispatch(setFillRoom())}>
+          Preencher Sala
+        </Toggle>
+        
+        <OnlinePlayers />
+      </PlayContainer>
+      
+      <LobbyContainer>
+        <OptionsContainer>
+          {/* Permite copiar o ID da sala com um simples clique */}
+          <LobbyId onClick={() => copyToClipboard(lobby.lobbyId)}>
+            {lobby.lobbyId}
+          </LobbyId>
+          <Options onClick={() => setShowOptions(true)}>Opções</Options>
+        </OptionsContainer>
+        
+        <PlayersContainer>
+          {/* Mapeia e exibe a lista atual de jogadores no lobby */}
+          {lobby.players.map((p, i) => (
+            <Player key={`${i}${p.nick}`}>{p.nick}</Player>
+          ))}
+        </PlayersContainer>
+      </LobbyContainer>
+    </Container>
+  )
+}
+```
+
+# 'Client' src/site/components/lobby/method.ts
+
+
+**Componentes Principais:**
+
+Acesso Direto ao Redux (*store.getState*): Ao invés de usar hooks do React, a função lê o estado global diretamente da instância da store. Isso é ideal para funções utilitárias que vivem fora de componentes React, garantindo acesso aos dados mais recentes (como a opção *fillRoom*).
+
+Validação de ReadyState: Checa se a página já terminou de ser renderizada e carregada pelo navegador antes de enviar requisições que possam exigir assets pesados no próximo passo.
+
+Tratamento de Erro Integrado: Usa a sua central de erros (*errorHandler*) para notificar o usuário caso o carregamento ainda não esteja concluído.
+
+
+```ts
+import { ERRORS } from '#/errors'
+import { errorHandler } from '~/services/errorHandler'
+import { emitJoinRoom } from '~/services/socket'
+import store from '~/store'
+
+/**
+ * Solicita a entrada do jogador na sala de jogo ativa.
+ * 
+ * Antes de enviar o evento para o servidor Socket, a função verifica se o 
+ * navegador já concluiu o carregamento da página (assets, scripts, DOM). 
+ * Se estiver tudo pronto, lê as configurações atuais do Redux (como a opção 
+ * de preencher a sala com bots) e emite o DTO correspondente.
+ * 
+ * Caso a página ainda esteja carregando, bloqueia a ação e dispara um aviso
+ * visual de erro (PAGE_LOADING).
+ */
+export function joinRoom() {
+  if (document.readyState === 'complete') {
+    // Lê a configuração 'fillRoom' direto da store do Redux (fora de componentes React)
+    emitJoinRoom({ fillRoom: store.getState().options.fillRoom! })
+  } else {
+    // Dispara a notificação configurada para PAGE_LOADING ("Jubilando")
+    errorHandler(ERRORS.PAGE_LOADING)
+  }
+}
+```
+
+# 'Client' src/site/components/lobby/style.ts
+
+Definir os componentes estilizados (via *styled-components*) para a tela de Lobby, isolando o CSS da lógica do React.
+
+Componentes Principais:
+
+Contêineres de Layout (*Container*, *LobbyContainer*, *PlayContainer*): Estruturam a tela usando Flexbox, cuidando do alinhamento e do posicionamento absoluto na tela.
+
+Estética Geométrica (*clip-path*): Utilizada em *LobbyContainer* e *Play* para criar recortes diagonais (chanfros) nas bordas dos elementos, fugindo do formato quadrado tradicional.
+
+Interatividade (*PlayBorder*, *Play*): Uso de seletores aninhados ($*{PlayBorder}:hover &)* para alterar as cores de fundo e do texto do botão "Jogar" quando o usuário passa o mouse.
+
+```ts
+import styled from 'styled-components'
+
+/**
+ * Contêiner principal absoluto que envolve toda a tela do Lobby.
+ * Utiliza flexbox para alinhar os elementos à direita e ajustar a posição inicial.
+ */
+export const Container = styled.div`
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: right;
+  left: -16%;
+  position: absolute;
+  top: 0;
+  width: 100%;
+`
+
+/**
+ * Caixa flutuante na parte inferior da tela que guarda o ID da sala e os jogadores.
+ * Utiliza `clip-path` para criar pontas chanfradas e é responsiva.
+ */
+export const LobbyContainer = styled.div`
+  align-items: center;
+  background-color: rgba(132, 255, 0, 0.8);
+  bottom: 1%;
+  clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 1024px;
+  padding: 0 5%;
+  position: absolute;
+  transition: 0.2s;
+  width: 98%;
+  @media (min-width: 1024px) {
+    padding: 0 7.5%;
+  }
+`
+
+/**
+ * Botão invisível (sem fundo) que exibe o ID do lobby e permite a cópia ao clicar.
+ */
+export const LobbyId = styled.button`
+  background-color: rgba(0,0,0,0);
+  padding: 1rem 5%;
+  text-align: start;
+  width: 53%;
+  @media (min-width: 1024px) {
+    padding: 1rem 7%;
+    width: 81%;
+  }
+`
+
+/**
+ * Botão transparente para abrir o menu de opções.
+ */
+export const Options = styled.button`
+  background-color: rgba(0,0,0,0);
+`
+
+/**
+ * Contêiner horizontal para alinhar o ID do lobby e o botão de opções em extremidades opostas.
+ */
+export const OptionsContainer = styled.div`
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+`
+
+/**
+ * Borda decorativa azul clicável que envolve o botão "Jogar".
+ */
+export const PlayBorder = styled.button`
+  background-color: rgba(0, 225, 255, 1);
+  padding: 0.3rem;
+`
+
+/**
+ * O interior do botão "Jogar".
+ * Possui formato chanfrado e muda de cor quando a borda pai (`PlayBorder`) sofre hover.
+ */
+export const Play = styled.div`
+  background-color: rgba(0, 255, 166, 1);
+  clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%);
+  font-size: 1.5rem;
+  padding: 1.5rem;
+  transition: 0.2s;
+  color: #ffffff;
+  ${PlayBorder}:hover & {
+    background-color: rgba(188, 75, 18, 1);
+    color: rgb(255, 235, 0);
+  }
+`
+
+/**
+ * Contêiner vertical para o bloco de interações de início de jogo (Botão Jogar, Toggle).
+ */
+export const PlayContainer = styled.div`
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 192px;
+  width: 100%;
+  z-index: 1;
+  & > *:not(:last-child) {
+    margin-bottom: 1rem;
+  }
+`
+
+/**
+ * Grade flexível que envolve todos os nomes dos jogadores conectados no lobby.
+ */
+export const PlayersContainer = styled.div`
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-evenly;
+  padding: 1rem 6% 1rem 0;
+  width: 100%;
+`
+
+/**
+ * Elemento base que exibe o nome (nick) de um jogador individual.
+ */
+export const Player = styled.div``
+```
+
+# 'Client' src/site/components/menu/index.tsx
+
+Fornecer um menu de navegação global para a aplicação, permitindo a transição entre as páginas principais do sistema de forma fluida utilizando o React Router.
+
+Componentes Principais:
+
+useNavigate: Hook do *react-router-dom* utilizado para alterar a rota atual da aplicação programaticamente, mantendo o estado de Single Page Application (SPA).
+
+PAGES: Enum ou dicionário de constantes importado de *~/constants* que guarda os caminhos exatos das rotas (ex: */*, */about, /help*), evitando links quebrados por erros de digitação.
+
+```ts
+import { useNavigate } from 'react-router-dom'
+import { PAGES } from '~/constants'
+import { Container } from './style'
+
+/**
+ * Componente de Menu de Navegação.
+ * 
+ * Renderiza os botões principais que permitem ao usuário transitar entre
+ * a página inicial (Home), a página de informações (Sobre) e o guia (Ajuda).
+ * Utiliza roteamento interno para transições sem recarregamento de página.
+ * 
+ * @returns Um elemento JSX contendo o contêiner e os botões de navegação.
+ */
+export default function Menu () {
+
+  // Hook do React Router para navegação imperativa
+  const navigate = useNavigate()
+
+  return (
+    <Container>
+      <button onClick={() => navigate(PAGES.HOME)}>Menu</button>
+      <button onClick={() => navigate(PAGES.ABOUT)}>Sobre</button>
+      <button onClick={() => navigate(PAGES.HELP)}>Ajuda</button>
+    </Container>
+  )
+}
+```
+
+# 'Client' src/site/components/menu/style.ts
+
+Fornecer a estilização base (CSS-in-JS) para um contêiner de interface, provavelmente a barra de navegação ou menu superior.
+
+Componentes Principais:
+
+Container: Uma *div* estilizada com Flexbox que empurra seus elementos filhos para a extremidade direita (*justify-content: flex-end*) e garante que o elemento fique uma camada acima do fundo *(z-index: 1)*.
+
+```ts
+import styled from 'styled-components'
+
+/**
+ * Contêiner de layout flexível com alinhamento à direita.
+ * 
+ * Utiliza posicionamento relativo e `z-index` para garantir que o menu 
+ * ou barra de navegação sobreponha corretamente os elementos de fundo.
+ */
+export const Container = styled.div`
+  align-items: center;
+  display: flex;
+  justify-content: flex-end;
+  padding: 1rem 0.5rem;
+  position: relative;
+  width: 100%;
+  z-index: 1;
+`
+```
+
+# 'Client' src/site/components/onlinePlayers/index.tsx
+
+Consultar e exibir a quantidade de jogadores conectados simultaneamente ao servidor, com tratamento de requisições concorrentes.
+
+Componentes Principais:
+
+Requisição HTTP (*getPlayersCount*): Utiliza o cliente *axios* configurado para buscar o número de jogadores.
+
+Controle de Concorrência (*loading*): Bloqueia novas requisições enquanto uma está em andamento e aplica um tempo de recarga (cooldown) de 1 segundo para evitar spam de cliques.
+
+Montagem (*useEffect*): Garante que o número de jogadores seja consultado automaticamente assim que o componente aparece na tela, sem precisar que o usuário clique primeiro.
+
+```ts
+import { useEffect, useState } from 'react'
+import { axios } from '~/services/axios'
+import { Container } from './style'
+
+/**
+ * Componente que exibe a contagem de jogadores online no servidor.
+ * 
+ * Realiza uma chamada de API ao montar e permite que o usuário atualize
+ * o número ao clicar. Possui uma trava de "loading" que impede múltiplos
+ * cliques em sequência (spam), garantindo o alívio de carga no backend.
+ */
+export default function OnlinePlayers () {
+
+  const [loading, setLoading] = useState(false)
+  const [count, setCount] = useState('')
+
+  /**
+   * Busca a quantidade de jogadores online na API.
+   * Aplica um cooldown (espera) de 1 segundo após o término da requisição
+   * antes de permitir que uma nova busca seja feita.
+   */
+  async function getPlayersCount () {
+    try {
+      if (loading) return
+      setLoading(true)
+      
+      const { data } = await axios<number>('/players/count')
+      
+      // Formatação no plural/singular
+      setCount(data > 1 ? `${data} Players Online` : `${data} Player Online`)
+    } finally {
+      // Libera o botão após 1 segundo, independente de sucesso ou falha da API
+      setTimeout(() => setLoading(false), 1000)
+    }
+  }
+
+  // Busca a contagem assim que o elemento é renderizado na tela
+  useEffect(() => {
+    getPlayersCount()
+  }, [])
+
+  return (
+    <Container loading={loading} onClick={getPlayersCount}>
+      {count}
+    </Container>
+  )
+
+}
+```
+
+# 'Client' src/site/components/onlinePlayers/style.ts
+
+Fornecer o estilo visual dinâmico para o componente OnlinePlayers, lidando com as mudanças de estado durante as requisições à API.
+
+Componentes Principais:
+
+Props Dinâmicas (*loading*): O componente aceita um tipo genérico *<{loading: boolean}>* para alterar sua opacidade dinamicamente com base no estado do React.
+
+Transição e Interação: Define transições suaves *(transition: 0.2s)* e efeitos de hover vibrantes que indicam claramente que o elemento é interativo.
+
+```ts
+import styled from 'styled-components'
+
+/**
+ * Contêiner estilizado para o contador de jogadores online.
+ * 
+ * @param loading Define se uma requisição está em andamento. Reduz a opacidade 
+ * para 50% quando verdadeiro, dando um feedback de "carregando" ao usuário.
+ */
+export const Container = styled.div<{ loading: boolean }>`
+  background-color: rgba(0, 255, 26, 1);
+  
+  /* Feedback visual condicional baseado no prop injetado pelo React */
+  opacity: ${({ loading }) => loading ? 0.5 : 1};
+  
+  padding: 0.25rem 0.5rem;
+  position: relative;
+  transition: 0.2s;
+  
+  /* Ajusta o tamanho da div exatamente ao conteúdo textual interno */
+  width: fit-content;
+  z-index: 1;
+  
+  &:hover {
+    background-color: rgba(255, 0, 217, 1);
+    color: rgba(0, 255, 98, 1);
+    cursor: pointer;
+  }
+`
+```
+
+# 'Client' src/site/components/options/index.tsx
+
+Fornecer a interface de configurações da partida, permitindo ao usuário alterar sua sala, seu nickname e alternar configurações globais de acessibilidade e rede (voz, tela cheia, modo mobile).
+
+Componentes Principais:
+
+Formulários Não Controlados (*useRef*): Referências diretas ao DOM para os inputs de Lobby e Nickname, otimizando a performance ao evitar re-renderizações desnecessárias.
+
+Integração com Redux: Despacha ações (*dispatch*) para atualizar preferências persistentes do usuário *(setCall, setFullScreen, setTouchControls, setUserNick)*.
+
+Gerenciamento de Rede (*handleChangeLobby*): Ao trocar de sala, notifica o servidor via WebSocket e reativa o gatilho do WebRTC (*dispatchOfferCall*) para restabelecer o canal de voz com os novos membros.
+
+
+```ts
+import { useRef } from 'react'
+import { useDispatch, useSelector } from 'react-redux'
+import { ID_LENGTH, NICK } from '#/constants'
+import { dispatchOfferCall } from '~/services/events'
+import { emitChangeLobby } from '~/services/socket'
+import Toggle from '~/site/components/toggle'
+import { setCall, setFullScreen, setTouchControls } from '~/store/options/actions'
+import { OptionsDTO } from '~/store/options/reducer'
+import { setUserNick } from '~/store/user/actions'
+import { CloseOptions, Container, FormContainer } from './style'
+
+interface OptionsProps {
+  setShowOptions: React.Dispatch<React.SetStateAction<boolean>>
+}
+
+/**
+ * Menu de opções gerais do jogo.
+ * Permite gerenciar a sala atual, o nickname do jogador e opções de usabilidade
+ * como chat de voz, tela cheia e controles de toque.
+ */
+export default function Options({ setShowOptions }: OptionsProps) {
+
+  const lobbyIdRef = useRef<HTMLInputElement>(null)
+  const nickRef = useRef<HTMLInputElement>(null)
+  const options = useSelector<any, OptionsDTO>(state => state.options)
+  const dispatch = useDispatch()
+
+  /**
+   * Processa a tentativa de mudança de sala.
+   * Verifica se o ID inserido possui o tamanho exato exigido. Caso seja válido, 
+   * fecha o menu, emite o evento de troca para o servidor via Socket e dispara 
+   * a reconexão de áudio (WebRTC).
+   */
+  function handleChangeLobby(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const { value } = lobbyIdRef.current!
+    if (!value || value.length !== ID_LENGTH) return
+    
+    setShowOptions(false)
+    emitChangeLobby(value)
+    dispatchOfferCall()
+  }
+
+  /**
+   * Processa a alteração de nickname do jogador.
+   * Verifica se o nick inserido respeita os limites mínimo e máximo de caracteres.
+   * Se for válido, fecha o menu e atualiza o estado global no Redux.
+   */
+  function handleChangeNick(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const { value } = nickRef.current!
+    if (!value || value.length < NICK.MIN || value.length > NICK.MAX) return
+    
+    setShowOptions(false)
+    dispatch(setUserNick(value))
+  }
+
+  return (
+    <Container>
+      <CloseOptions onClick={() => setShowOptions(false)}>Voltar</CloseOptions>
+      
+      <FormContainer>
+        {/* Formulário para busca e entrada em uma nova sala/lobby */}
+        <form onSubmit={handleChangeLobby}>
+          <input 
+            ref={lobbyIdRef} 
+            type='text' 
+            placeholder='Sala/lobby id' 
+            maxLength={ID_LENGTH} 
+            minLength={ID_LENGTH} 
+          />
+          <input type='submit' value='Entrar!' />
+        </form>
+        
+        {/* Formulário para alteração de Nickname */}
+        <form onSubmit={handleChangeNick}>
+          <input 
+            ref={nickRef} 
+            type='text' 
+            placeholder='Novo nick' 
+            maxLength={NICK.MAX} 
+            minLength={NICK.MIN} 
+          />
+          <input type='submit' value='Mudar' />
+        </form>
+        
+        {/* Toggles de opções globais integrados ao Redux */}
+        <Toggle on={options.call} onClick={() => dispatch(setCall())}>
+          Habilitar voz
+        </Toggle>
+        
+        <Toggle on={options.fullScreen} onClick={() => dispatch(setFullScreen())}>
+          Tela Cheia
+        </Toggle>
+        
+        <Toggle on={options.touchControls} onClick={() => dispatch(setTouchControls())}>
+          Modo Mobile
+        </Toggle>
+      </FormContainer>
+    </Container>
+  )
+}
+```
+
+# 'Client' src/site/components/options/style.ts
+
+Isolar a estilização dos componentes do Menu de Opções usando *styled-components*, garantindo que o formulário fique centralizado e sobreponha as outras telas.
+
+Componentes Principais:
+
+*Container*: Um overlay (camada sobreposta) que ocupa toda a tela e possui um fundo semi-transparente escuro, focando a atenção do usuário no menu central.
+
+*CloseOptions*: Um botão posicionado de forma absoluta no canto superior direito para fechar o menu rapidamente.
+
+FormContainer: Aplica um espaçamento inferior (*margin-bottom*) uniforme entre todos os seus filhos diretos, evitando que os formulários e os toggles fiquem grudados uns nos outros.
+
+```ts
+import styled from 'styled-components'
+
+/**
+ * Botão estilizado para fechar o menu de opções.
+ * Fica fixado no canto superior direito do contêiner pai.
+ */
+export const CloseOptions = styled.button`
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+`
+
+/**
+ * Overlay de fundo do Menu de Opções.
+ * Ocupa 100% da tela e escurece o fundo (opacity 0.8) para destacar o conteúdo centralizado.
+ */
+export const Container = styled.div`
+  align-items: center;
+  background-color: rgba(0,0,0,0.8);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  justify-content: center;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+`
+
+/**
+ * Contêiner para os blocos de formulário e opções (toggles).
+ * Utiliza um seletor CSS avançado para aplicar margem inferior a todos os 
+ * elementos filhos, exceto o último.
+ */
+export const FormContainer = styled.div`
+  & > *:not(:last-child) {
+    margin-bottom: 1.5rem;
+  }
+`
+```
+
+# 'Client' src/site/components/toggle/index.tsx
+
+Criar um componente de botão alternador (toggle) genérico e reutilizável para a interface do usuário, separando a lógica visual do estado global.
+
+Componentes Principais:
+
+Props Dinâmicas (ToggleProps): Recebe o estado atual (*on*), a função de disparo (*onClick*) e o texto descritivo (*children*) via propriedades, tornando o componente burro (stateless) e fácil de plugar no Redux.
+
+Renderização Condicional: Alterna a exibição entre os subcomponentes estilizados *<On>* e *<Off>* com base no valor booleano recebido, dando feedback visual imediato ao jogador.
+
+```ts
+import { Container, Off, On } from './style'
+
+/**
+ * Propriedades esperadas pelo componente Toggle.
+ */
+interface ToggleProps {
+  /** Texto descritivo que aparecerá ao lado do botão (ex: "Tela Cheia") */
+  children: string
+  /** Estado atual do botão (true para ligado, false para desligado) */
+  on: boolean
+  /** Função disparada quando o usuário clica no componente */
+  onClick: () => void
+}
+
+/**
+ * Componente de botão alternador (Toggle) usado nos menus do jogo.
+ * 
+ * Exibe um rótulo textual e um indicador visual (ON/OFF) que muda de acordo 
+ * com o estado fornecido. Como não possui estado interno, depende do componente 
+ * pai (ou do Redux) para gerenciar seu valor.
+ */
+export default function Toggle({ children, on, onClick }: ToggleProps) {
+  return (
+    <Container onClick={onClick}>
+      <label>{children}</label>
+      {on ? <On>ON</On> : <Off>OFF</Off>}
+    </Container>
+  )
+}
+```
+
+# 'Client' src/site/components/toggle/style.ts
+
+*Container*: Um flexbox horizontal que espaça o rótulo descritivo e o botão nas extremidades opostas (*justify-content: space-between*). Também garante que o cursor mude para a "mãozinha" (*pointer*) para indicar interatividade.
+
+*Off* e *On*: Tags *span* estilizadas com cores de fundo absolutas (vermelho para desligado, verde para ligado) e texto em negrito, servindo como o indicador visual de estado.
+
+```ts
+import styled from 'styled-components'
+
+/**
+ * Contêiner principal do botão Toggle.
+ * Organiza o rótulo (label) e o indicador de estado nas extremidades e 
+ * altera o cursor ao passar o mouse para indicar que o elemento é clicável.
+ */
+export const Container = styled.div`
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  width: 100%;
+  
+  label {
+    color: rgb(255, 255, 0);
+    font-weight: 700;
+  }
+  
+  :hover {
+    cursor: pointer;
+  }
+`
+
+/**
+ * Indicador visual para o estado DESLIGADO (false).
+ * Utiliza um fundo vermelho clássico de alerta/inatividade.
+ */
+export const Off = styled.span`
+  background-color: rgb(255, 0, 0);
+  color: #fff;
+  font-weight: 700;
+  padding: 0.25rem 0.5rem;
+`
+
+/**
+ * Indicador visual para o estado LIGADO (true).
+ * Utiliza um fundo verde clássico de confirmação/atividade.
+ */
+export const On = styled.span`
+  background-color: rgb(0, 255, 0);
+  color: #fff;
+  font-weight: 700;
+  padding: 0.25rem 0.5rem;
+`
+```
+
+# 'Client' src/site/components/siteApp.tsx
+
+Objetivo:
+Atuar como o componente raiz da camada de interface (Site), gerenciando os efeitos colaterais globais (side-effects), a persistência de dados do jogador e a sinalização de rede (Sockets e WebRTC).
+
+Componentes Principais:
+
+Bootstrapping (*useBoot* e random nick): Garante que o estado local seja carregado. Se o usuário for novo, busca um nickname aleatório automaticamente.
+
+Sincronização de Estado: Observa as alterações no *user* e nas *options* via Redux e as persiste no dispositivo do usuário, além de notificar o servidor (*emitSetUser*).
+
+Gerenciamento de Sala (*handleLobby*): Lê a URL atual ao carregar a página. Se houver um parâmetro *?lobby=...*, tenta conectar nessa sala; caso contrário, solicita ao servidor a criação de um lobby novo.
+
+Orquestração de Áudio (WebRTC): Monta os listeners para as chamadas de voz (*all_offer, call_answer, ice_candidate*) dependendo da configuração do usuário *(options.call)*.
+
+```ts
+import '~/index.css'
+import { useEffect, useState } from 'react'
+import { useDispatch, useSelector } from 'react-redux'
+import { useSearchParams } from 'react-router-dom'
+import { LobbyDTO, UserDTO } from '#/dto'
+import useBoot from '~/hooks/useBoot'
+import { CallFactory } from '~/services/call'
+import { errorHandler } from '~/services/errorHandler'
+import { EVENTS } from '~/services/events'
+import randomuser from '~/services/randomuser'
+import { emitChangeLobby, emitCreateLobby, emitSetUser, socket } from '~/services/socket'
+import { updateLobby } from '~/store/lobby/actions'
+import { OptionsDTO } from '~/store/options/reducer'
+import { saveOptions } from '~/store/options/thunk'
+import { setUserNick } from '~/store/user/actions'
+import { saveUser } from '~/store/user/thunk'
+
+interface SiteAppProps {
+  /** Componentes filhos que serão renderizados dentro deste wrapper (ex: rotas, páginas) */
+  children: JSX.Element
+}
+
+/**
+ * Componente Wrapper Global da aplicação web.
+ * 
+ * Este componente não possui interface própria. Ele envolve a árvore de componentes
+ * do React para gerenciar ciclos de vida globais: carregamento de dados (boot),
+ * roteamento de salas via URL, negociação de WebRTC para chat de voz e sincronização
+ * de estado Redux com o servidor Socket.
+ */
+export default function SiteApp({ children }: SiteAppProps) {
+
+  const dispatch = useDispatch()
+  const booting = useBoot(dispatch)
+  const [searchParams] = useSearchParams()
+  
+  const lobby = useSelector<any, LobbyDTO | null>(state => state.lobby)
+  const options = useSelector<any, OptionsDTO>(state => state.options)
+  const user = useSelector<any, UserDTO>(state => state.user)
+  
+  // Instância gerenciadora de chamadas de voz P2P
+  const [call] = useState(CallFactory())
+
+  /**
+   * Inicializa a infraestrutura de chamada de voz local.
+   * Se já houverem outros jogadores no lobby, cria imediatamente uma oferta de conexão.
+   */
+  async function initCall() {
+    if (call.initiated()) return
+    await call.init()
+    if (lobby!.players.length > 1) await call.createOffer()
+  }
+
+  /**
+   * Tenta iniciar o handshake WebRTC manualmente através do disparo de eventos.
+   */
+  async function offerCall() {
+    if (!call.initiated() || !lobby || lobby.players.length < 2) return
+    await call.createOffer()
+  }
+
+  /**
+   * Analisa a URL da aplicação. Se houver um convite (?lobby=ID), tenta entrar
+   * na sala especificada. Se não houver, solicita a criação de uma sala vazia.
+   */
+  function handleLobby() {
+    if (lobby) return
+    const lobbyParam = searchParams.get('lobby')
+    if (lobbyParam) {
+      emitChangeLobby(lobbyParam)
+    } else {
+      emitCreateLobby()
+    }
+  }
+
+  // EFEITO 1: Gera um nickname aleatório para usuários novos assim que o app carrega
+  useEffect(() => {
+    if (booting || user.nick) return
+    randomuser().then(randomnick => {
+      dispatch(setUserNick(randomnick))
+    })
+  }, [booting, user])
+
+  // EFEITO 2: Quando os dados do usuário mudam, avisa o servidor e salva localmente
+  useEffect(() => {
+    if (booting || !user) return
+    for (const key in user) {
+      // @ts-ignore
+      if (!user[key]) return // Evita salvar se algum dado for inválido
+    }
+    emitSetUser(user)
+    saveUser()
+  }, [user])
+
+  // EFEITO 3: Salva as opções (como tela cheia, volume) localmente quando alteradas
+  useEffect(() => {
+    if (booting || !options) return
+    saveOptions()
+  }, [options])
+
+  // EFEITO 4: Registra o tratador de lobby assim que a página terminar de carregar
+  useEffect(() => {
+    window.addEventListener('load', handleLobby)
+    return () => {
+      window.removeEventListener('load', handleLobby)
+    }
+  }, [lobby])
+
+  // EFEITO 5: Gerencia os listeners de WebRTC (Áudio) com base na configuração do jogador
+  useEffect(() => {
+    if (booting) return
+    window.addEventListener(EVENTS.OFFER_CALL, offerCall)
+    socket.on('disconnected', call.close)
+    socket.on('call_offer', call.onCallOffer)
+    socket.on('call_answer', call.onCallAnswer)
+    socket.on('ice_candidate', call.onIceCandidate)
+    
+    // Inicia ou desativa a chamada de voz dependendo do Toggle nas opções
+    if (options.call && lobby) {
+      initCall()
+    } else {
+      call.closeAll()
+    }
+    
+    return () => {
+      window.removeEventListener(EVENTS.OFFER_CALL, offerCall)
+      socket.off('disconnected', call.close)
+      socket.off('call_offer', call.onCallOffer)
+      socket.off('call_answer', call.onCallAnswer)
+      socket.off('ice_candidate', call.onIceCandidate)
+    }
+  }, [booting, lobby, options])
+
+  // EFEITO 6: Listeners globais essenciais (Atualizações do Lobby e Erros)
+  useEffect(() => {
+    socket.on('error', errorHandler)
+    socket.on('update_lobby', lobby => dispatch(updateLobby(lobby)))
+    
+    return () => {
+      socket.off('error', errorHandler)
+      socket.off('update_lobby', lobby => dispatch(updateLobby(lobby)))
+    }
+  }, [])
+
+  return children
+}
+```
+
+# 'Client' src/site/pages/about/assets.tsx
+
+Fornecer um conjunto de ícones vetoriais escaláveis nativos para a aplicação, evitando a necessidade de importar arquivos de imagem externos (*.png* ou *.svg* via *<img>*) e permitindo a manipulação de cores e tamanhos via CSS/Props.
+
+Componentes Principais:
+
+*Computer*, *Gamepad*, *Smartphone*: Componentes funcionais e sem estado (stateless) que retornam a estrutura de marcação XML de cada desenho respectivo.
+
+```ts
+/**
+ * Ícone vetorial de um monitor/computador.
+ * Utilizado para indicar jogadores ou controles de versão Desktop.
+ */
+export function Computer () {
+  return (
+    <svg width="100%" height="64px" fillOpacity={0} version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 15">
+      <path d="m4 12h12c1.1 0 2-0.9 2-2v-7c0-1.1-0.9-2-2-2h-12c-1.1 0-2 0.9-2 2v7c0 1.1 0.9 2 2 2zm-3 2h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+/**
+ * Ícone vetorial de um controle clássico (Gamepad).
+ * Utilizado para representar suporte a controles ou preferências de entrada.
+ */
+export function Gamepad () {
+  return (
+    <svg width="100%" height="64px" version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 18">
+      <path fillRule="evenodd" d="m19.8 5.2c1.4 1.4 2.2 3.3 2.2 5.3 0 2-0.8 3.9-2.2 5.3-1.4 1.4-3.3 2.2-5.3 2.2h-7c-2 0-3.9-0.8-5.3-2.2-1.4-1.4-2.2-3.3-2.2-5.3 0-2 0.8-3.9 2.2-5.3 1.4-1.4 3.3-2.2 5.3-2.2h2.5v-2q0-0.4 0.3-0.7 0.3-0.3 0.7-0.3 0.4 0 0.7 0.3 0.3 0.3 0.3 0.7v2h2.5c2 0 3.9 0.8 5.3 2.2zm-1.4 9.2c1-1 1.6-2.4 1.6-3.9 0-1.5-0.6-2.9-1.6-3.9-1-1-2.4-1.6-3.9-1.6h-7c-1.5 0-2.9 0.6-3.9 1.6-1 1-1.6 2.4-1.6 3.9 0 1.5 0.6 2.9 1.6 3.9 1 1 2.4 1.6 3.9 1.6h7c1.5 0 2.9-0.6 3.9-1.6zm-8.4-3.9q0 0.2-0.1 0.4-0.1 0.2-0.2 0.3-0.1 0.1-0.3 0.2-0.2 0.1-0.4 0.1h-1v1q0 0.4-0.3 0.7-0.3 0.3-0.7 0.3-0.4 0-0.7-0.3-0.3-0.3-0.3-0.7v-1h-1q-0.4 0-0.7-0.3-0.3-0.3-0.3-0.7 0-0.4 0.3-0.7 0.3-0.3 0.7-0.3h1v-1q0-0.4 0.3-0.7 0.3-0.3 0.7-0.3 0.4 0 0.7 0.3 0.3 0.3 0.3 0.7v1h1q0.2 0 0.4 0.1 0.2 0.1 0.3 0.2 0.1 0.1 0.2 0.3 0.1 0.2 0.1 0.4zm8-1.5c0 0.4-0.2 0.8-0.6 0.9-0.4 0.2-0.8 0.1-1.1-0.2-0.3-0.3-0.4-0.7-0.2-1.1 0.1-0.4 0.5-0.6 0.9-0.6q0.2 0 0.4 0.1 0.2 0.1 0.3 0.2 0.1 0.1 0.2 0.3 0.1 0.2 0.1 0.4zm-2 3c0 0.4-0.2 0.8-0.6 0.9-0.4 0.2-0.8 0.1-1.1-0.2-0.3-0.3-0.4-0.7-0.2-1.1 0.1-0.4 0.5-0.6 0.9-0.6q0.2 0 0.4 0.1 0.2 0.1 0.3 0.2 0.1 0.1 0.2 0.3 0.1 0.2 0.1 0.4z"/>
+    </svg>
+  )
+}
+
+/**
+ * Ícone vetorial de um smartphone.
+ * Utilizado para indicar jogadores em dispositivos móveis ou ativar o HUD de toque.
+ */
+export function Smartphone () {
+  return (
+    <svg width="100%" height="64px" version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 328 512">
+      <path fillRule="evenodd" d="m327.7 59.5v357.3c0 52.6-42.6 95.2-95.2 95.2h-137c-52.6 0-95.2-42.6-95.2-95.2v-357.3c0-32.9 26.7-59.5 59.5-59.5h208.4c32.8 0 59.5 26.6 59.5 59.5zm-149 407c0-8.1-6.6-14.6-14.7-14.6-8.1 0-14.7 6.5-14.7 14.6 0 8.2 6.6 14.7 14.7 14.7 8.1 0 14.7-6.5 14.7-14.7zm-60.2-436.4c0 4.2 3.5 7.7 7.7 7.7h75.6c4.2 0 7.7-3.5 7.7-7.7 0-4.3-3.5-7.7-7.7-7.7h-75.6c-4.2 0-7.7 3.4-7.7 7.7zm-83.5 398h258c0.7-3.7 1.1-7.4 1.1-11.3v-345.5h-260.2v345.5c0 3.9 0.4 7.6 1.1 11.3z"/>
+    </svg>
+  )
+}
+```
+
+# 'Client' src/site/pages/about/index.tsx
+
+Objetivo:
+Renderizar a página "Sobre" (About) da aplicação, detalhando a sinopse do jogo, as plataformas suportadas e os créditos acadêmicos e autorais do Trabalho de Conclusão de Curso (TCC).
+
+Componentes Principais:
+
+*AuthorSection:* Bloco focado na autoria e no contexto acadêmico, exibindo as credenciais institucionais, orientadores e links de contato (GitHub/LinkedIn). Recebe a prop *isPortrait* para ajustar o layout em telas verticais.
+
+*GameSection*: Bloco descritivo do jogo (BomberIF), contendo a lore, características principais (multiplayer, power-ups, personagens baseados no campus) e renderizando os ícones vetoriais de plataforma.
+
+*AboutPage*: Componente raiz da rota que orquestra as seções e injeta o hook de responsividade (*useIsPortrait*), além de exibir o rodapé estilizado.
+
+
+```ts
+import useIsPortrait from '~/hooks/useIsPortrait'
+import { Computer, Gamepad, Smartphone } from './assets'
+import { AuthorContainer, Container, Footer, GameContainer } from './style'
+
+/**
+ * Propriedades injetadas nas seções da página para controle de layout.
+ */
+interface SectionProps {
+  /** Indica se a tela do dispositivo está na orientação retrato (vertical). */
+  isPortrait: boolean
+}
+
+/**
+ * Seção de Autoria e Créditos Acadêmicos.
+ * Exibe os dados do Trabalho de Conclusão de Curso, os responsáveis 
+ * e links externos para contato com o desenvolvedor.
+ * 
+ * @param isPortrait Utilizado pelo styled-component para reorganizar o layout em telas menores.
+ */
+function AuthorSection ({ isPortrait }: SectionProps) {
+  return (
+    <AuthorContainer isPortrait={isPortrait}>
+      <div>
+        <h1>Autor</h1>
+        <br></br>
+        <h1> Vinícius Nogueira Proença</h1>
+        <img src='https://avatars.githubusercontent.com/u/123850856?v=4' alt="Avatar do Autor" />
+      </div>
+      <div>
+        <h1>Instituto Federal do Norte de Minas Gerais – Campus Januária</h1>
+        <br></br>
+        <h2>Bacharelado em Sistemas de Informação</h2>
+        <br></br>
+        <h2>Trabalho de Conclusão de Curso</h2>
+        <br></br>
+        <h2>Jogo: BomberIF</h2>
+        <br></br>
+        <h3>Orientadora: Profª Drª Joselice F. Lima</h3>
+        <br></br>
+        <h3>Co-orientador: Esp. Herbert W. Macêdo</h3>
+        <br></br>
+        <h3>Aluno: Vinicius Nogueira Proença</h3>
+        <br></br>
+        <div>
+          <div>
+            <button onClick={() => window.open('https://github.com/Binary-Phantom', '_blank')}>GitHub</button>
+            <button onClick={() => window.open('https://www.linkedin.com/in/viniproenca777/', '_blank')}>LinkedIn</button>
+          </div>
+        </div>
+      </div>
+    </AuthorContainer>
+  )
+}
+
+/**
+ * Seção Descritiva do Jogo.
+ * Apresenta a sinopse do BomberIF, mecânicas principais e as plataformas suportadas,
+ * ilustradas com ícones e uma captura de tela do gameplay.
+ */
+function GameSection () {
+  return (
+    <GameContainer>
+      <h1>BomberIF</h1>
+      <p>BomberIF é um jogo multiplayer online do tipo battle royale baseado em navegador sucessor do clássico BomberTADS. Com gráficos 2D clássicos e uma trilha sonora incrível, 4 jogadores competem pela vitória usando bombas esperando assim superar o inevitável Jubilamento. O jogo conta atualmente com 10 personagens baseados em alunos e professores do Campus Januária, power-ups e suporte para controle, teclado e mobile. Você agora pode jogar com seus amigos e também se conectar com qualquer pessoa no mundo todo, graças ao sistema de lobby, apelidos, chamadas e tela cheia. Convide seus amigos para disputas épicas e use power-ups para aprimorar suas habilidades. Quem escapará?</p>
+      <div>
+        <Gamepad />
+        <Computer />
+        {/* Smartphone poderia ser incluído aqui já que é citado no texto */}
+      </div>
+      <img src={`${process.env.PUBLIC_URL}/images/screenshots/0.png`} alt="Screenshot do jogo" />
+    </GameContainer>
+  )
+}
+
+/**
+ * Página principal de "Sobre".
+ * Agrupa as seções de informações do jogo e do autor, gerenciando a 
+ * detecção de orientação de tela para garantir a responsividade.
+ */
+export default function AboutPage () {
+
+  // Hook que detecta a orientação da tela em tempo real
+  const isPortrait = useIsPortrait()
+
+  return (
+    <Container>
+      <AuthorSection isPortrait={isPortrait} />
+      <GameSection />
+      <Footer>
+        <a href='https://github.com/Binary-Phantom' target='_blank' rel="noreferrer" title='Powered by Vinícius Proença'>&lt;KEK/&gt;</a>
+      </Footer>
+    </Container>
+  )
+}
+```
+
+# 'Client' src/site/pages/about/style.ts
+
+
+Objetivo:
+Definir os estilos visuais e animações para a página "Sobre", encapsulando o tema retrô (estética de monitores CRT) através de *styled-components*.
+
+Componentes Principais:
+
+Mixins e Animações Base:
+
+*crtBackground*: Injeta bordas brilhantes, sombreamento interno/externo (neon) e um pseudo-elemento ::*after* com um padrão de linhas de varredura (scanlines).
+
+*scanlineFade*: Animação de entrada (*keyframes*) que faz o elemento surgir suavemente com um leve movimento vertical e transição de brilho.
+
+Contêineres de Layout:
+
+*AuthorContainer* e *GameContainer*: Aplicam o tema CRT e gerenciam o layout de texto, centralizando ícones e garantindo que as imagens preservem o aspecto serrilhado do pixel art (*image-rendering: pixelated*).
+
+
+```ts
+import styled, { keyframes } from 'styled-components'
+
+/**
+ * Mixin de CSS que aplica um efeito de monitor de tubo (CRT) retrô.
+ * Utiliza box-shadows múltiplas para um efeito de brilho neon (roxo/laranja)
+ * e um pseudo-elemento transparente com scanlines (linhas de varredura horizontais).
+ */
+const crtBackground = `
+  position: relative;
+  background-color: rgba(40, 10, 60, 0.75); /* roxo */
+  border: 2px solid rgba(255, 81, 0, 0.78); /* laranja */
+  box-shadow:
+    inset 0 0 0 2px rgba(0, 0, 0, 0.8),
+    -1px 0 2px  rgba(255, 140, 0, 0.35),
+     1px 0 2px rgba(180, 0, 255, 0.35),
+     0 0 18px rgba(0, 0, 0, 0.85);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255, 140, 0, 0.05),
+      rgba(255, 140, 0, 0.05) 1px,
+      rgba(180, 0, 255, 0.04) 2px,
+      transparent 3px
+    );
+    pointer-events: none;
+  }
+`
+
+/**
+ * Animação de entrada tipo 'fade-in' com deslocamento.
+ * Simula a tela de um monitor CRT ligando e ajustando o brilho inicial.
+ */
+const scanlineFade = keyframes`
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: brightness(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: brightness(1);
+  }
+`
+
+/**
+ * Contêiner da seção do autor.
+ * Altera a direção do flexbox com base na orientação da tela (retrato ou paisagem).
+ * 
+ * @param isPortrait Define a orientação do layout (vertical se true, horizontal se false).
+ */
+export const AuthorContainer = styled.div<{ isPortrait: boolean }>`
+  display: flex;
+  flex-direction: ${({ isPortrait }) => (isPortrait ? 'column' : 'row')};
+  width: 100%;
+
+  > div {
+    ${crtBackground};
+    align-items: center;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 255px;
+    padding: 1rem;
+    animation: ${scanlineFade} 0.6s ease-out both;
+  }
+
+  img {
+    max-width: 192px;
+    width: 75%;
+    /* Impede que o navegador borre o pixel art ao redimensionar a imagem */
+    image-rendering: pixelated; 
+  }
+`
+
+/**
+ * Contêiner raiz da página Sobre.
+ * Centraliza e empilha as seções de Autor e Jogo.
+ */
+export const Container = styled.div`
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+`
+
+/**
+ * Contêiner da seção descritiva do jogo.
+ * Aplica o tema CRT nativamente e ajusta o dimensionamento dos ícones SVG filhos.
+ */
+export const GameContainer = styled.div`
+  ${crtBackground};
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  min-height: 255px;
+  padding: 1.5rem;
+  width: 100%;
+  text-align: center;
+  animation: ${scanlineFade} 0.6s ease-out both;
+
+  img {
+    max-width: 100%;
+    margin-top: 1rem;
+    image-rendering: pixelated;
+  }
+
+  svg {
+    fill: #fff;
+    width: 33%;
+  }
+`
+
+/**
+ * Rodapé inferior da página.
+ */
+export const Footer = styled.div`
+  align-items: center;
+  background-color: #000;
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  width: 100%;
+`
+```
+
+# 'Client' src/site/pages/help/index.tsx
+
+
+Objetivo:
+Renderizar a página de Ajuda (Tutorial) da aplicação, explicando as mecânicas, os controles, a interface do lobby e o sistema de power-ups para novos jogadores.
+
+Componentes Principais:
+
+Seções de Conteúdo (*HelpSection*): Divide o manual em três blocos lógicos principais: Resumo/Personagens, Controles/Interface e Power-ups.
+
+Imagens Estáticas (*process.env.PUBLIC_URL*): Carrega as capturas de tela e ícones de sprites diretamente da pasta *public* do React para ilustrar o texto.
+
+Responsividade (*useIsPortrait*): Reajusta a disposição do conteúdo textual e visual dependendo da orientação do dispositivo móvel ou janela do navegador.
+
+
+```ts
+import useIsPortrait from '~/hooks/useIsPortrait'
+import { Container, HelpSection, Section, Footer, Highlight, Highlight2, Highlight3, Highlight4, PowerUpsTitle } from './style'
+
+/**
+ * Página principal de Ajuda / Tutorial do BomberIF.
+ * 
+ * Apresenta um guia completo para novos jogadores, detalhando os controles 
+ * (Teclado/Mobile), o funcionamento das opções do Lobby e o catálogo de 
+ * power-ups temáticos baseados em conceitos de Computação.
+ */
+export default function HelpPage () {
+  
+  // Hook que detecta se a tela está na vertical (retrato) para ajustar o grid
+  const isPortrait = useIsPortrait()
+
+  return (
+    <Container>
+      <HelpSection isPortrait={isPortrait}>
+        
+        {/* SEÇÃO 1: Resumo e Personagens */}
+        <div>
+          <h1><Highlight4>Resumo 🎮</Highlight4></h1>  
+
+        {/* SEÇÃO 2: Controles e Interface */}
+        <div>
+          <h1><Highlight4>Controles ⌨️</Highlight4></h1>
+
+
+        {/* SEÇÃO 3: Catálogo de Power-ups */}
+        <Section>
+          <div>
+            <PowerUpsTitle>Power-ups ⚡</PowerUpsTitle>
+            <p>
+        </Sction>
+    </Container>
+  )
+}
+```
+
+# 'Client' src/site/pages/help/style.ts
+
+Objetivo:
+Fornecer a estilização dos componentes da página de Ajuda (Tutorial), focando em uma estética retrô (Arcade/CRT) através do uso de sombras coloridas, animações de entrada e tipografia pixelada.
+
+Componentes Principais:
+
+*scanlineFade* & *HelpSection*: Aplicam o tema de monitor de tubo, gerando um efeito de vidro fosco (*backdrop-filter: blur*), bordas neon e linhas de varredura (::after), além de animar a entrada dos blocos em cascata (*animation-delay: 0.2s*).
+
+Highlights (*Highlight* a *Highlight4*): Componentes de texto criados para dar ênfase a palavras-chave (como nomes de power-ups ou botões do menu) utilizando cores de alto contraste e múltiplas camadas de *text-shadow*.
+
+Utilitários (*Spacer*, *Container*): Componentes para gerenciamento de fluxo e espaçamento entre as seções do tutorial.
+
+
+```ts
+import styled, { keyframes } from 'styled-components'
+
+/**
+ * Animação de entrada tipo 'fade-in' com deslocamento vertical.
+ * Usada para criar um efeito de tela ligando com ajuste de brilho suave.
+ */
+const scanlineFade = keyframes`
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: brightness(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: brightness(1);
+  }
+`
+
+/* ===========================
+   CONTAINERS
+   =========================== */
+
+/** Contêiner flexível principal para alinhar e centralizar toda a página. */
+export const Container = styled.div`
+ 
+
+/**
+ * Seção principal da Ajuda.
+ * Alterna entre layout de colunas ou linhas dependendo da orientação do dispositivo
+ * e injeta todo o estilo visual retrô de arcade (fonte, blur, neon e scanlines).
+ * 
+ * @param isPortrait Controla a direção do flexbox (portrait = coluna).
+ */
+export const HelpSection = styled.div<{ isPortrait: boolean }>`
+  font-family: 'Press Start 2P', monospace;
+  display: flex;
+  flex-direction: ${({ isPortrait }) => (isPortrait ? 'column' : 'row')};
+  width: 100%;
+
+  /* Estilização base de cada bloco interno (CRT Effect) */
+  > div {
+  ...
+  ...
+  }
+
+  /* Scanlines overlay */
+  > div::after {
+  ...
+  ...
+  }
+
+
+
+/* ===========================
+   DESTAQUES DE TEXTO (HIGHLIGHTS)
+   =========================== */
+
+/** Texto de destaque padrão amarelo */
+export const Highlight = styled.span`
+  color: #ffd966;`
+
+/** Texto de destaque secundário verde-água */
+export const Highlight2 = styled.span`
+  color: #00f974ff;
+
+/** Título de destaque amarelo */
+export const Highlight3 = styled.span`
+  color: #ffd966;
+`
+
+/** Título principal verde-água usado nos cabeçalhos (Resumo, Controles) */
+export const Highlight4 = styled.span`
+  color: #00f974ff;
+
+/**
+ * Utilitário de espaçamento vertical configurável.
+ * @param size 'sm' (pequeno), 'md' (médio - padrão), ou 'lg' (grande).
+ */
+export const Spacer = styled.div<{ size?: 'sm' | 'md' | 'lg' }>`
+  height: ${({ size }) =>
+    size === 'sm' ? '0.75rem' :
+    size === 'lg' ? '2.5rem' :
+    '1.5rem'};
+`
+
+/** Título exclusivo da seção de Power-Ups */
+export const PowerUpsTitle = styled.h1`
+  color: #00f974ff;
+  font-size: 35px;
+  margin: 1.8rem 0 1.2rem;
+  line-height: 1.3;
+  text-shadow:
+    1px 1px 0 rgba(0, 242, 255, 0.6),
+    0 0 6px #0c7db5ff;
+`
+```
+
+# 'Client' src/site/pages/home/index.tsx
+
+**Objetivo**
+
+Atuar como o roteador principal da interface gráfica. O componente decide quando exibir menus, lobby, páginas informativas ou a própria partida (`GameApp`). Também mantém os listeners responsáveis por abrir o jogo e identificar qual índice pertence ao cliente local.
+
+**Gerenciamento de Estado**
+
+- `showGame` controla a transição entre a interface web e a engine da partida.
+- `myself` armazena o índice enviado pelo servidor através do evento `myself`.
+- O componente também utiliza o estado da conexão para adaptar elementos visuais da página inicial.
+
+**Listeners de início de partida e identificação do jogador**
+
+```ts
+const handleOpenGame = useCallback(() => {
+  setShowGame(true)
+}, [])
+
+const handleMyself = useCallback((index: number) => {
+  setMyself(index)
+}, [])
+
+useEffect(() => {
+  socket.on('open_game', handleOpenGame)
+  socket.on('myself', handleMyself)
+
+  return () => {
+    socket.off('open_game', handleOpenGame)
+    socket.off('myself', handleMyself)
+  }
+}, [handleOpenGame, handleMyself])
+```
+
+- `handleOpenGame` altera `showGame` para `true` quando o servidor emite `open_game`.
+- `handleMyself` salva o índice enviado pelo evento `myself`.
+- Os callbacks são estabilizados com `useCallback` e registrados dentro do `useEffect`.
+- Os listeners são removidos **somente no cleanup do efeito**, quando o componente é desmontado.
+
+**Correção aplicada ao matchmaking**
+
+Na implementação problemática, `handleOpenGame` e `handleMyself` executavam `socket.off()` sobre eles mesmos assim que recebiam o primeiro evento. Como os callbacks eram estáveis e o `useEffect` não era executado novamente, o cliente deixava de ouvir futuras partidas.
+
+O efeito observado era o seguinte:
+
+1. a primeira partida abria normalmente;
+2. depois de voltar ao lobby, o servidor entrava em pareamento novamente;
+3. o cliente não recebia mais `open_game`;
+4. uma nova tentativa podia resultar na mensagem **"A sala está em pareamento"**.
+
+Mantendo os listeners ativos durante toda a vida do componente e removendo-os apenas no cleanup, múltiplas partidas podem ser iniciadas na mesma sessão sem perder os eventos `open_game` e `myself`.
+
+# 'Client' src/site/pages/home/style.ts
+
+
+Objetivo:
+Fornecer o contêiner base de tela cheia para os menus do jogo. Ele gerencia a renderização adaptativa do plano de fundo, desativando a imagem pesada caso o usuário esteja em uma conexão lenta, otimizando o tempo de carregamento inicial.
+
+Componentes Principais:
+
+*ContainerProps*: Tipagem para aceitar a propriedade transiente *$slow*, que dita o estado da conexão.
+
+*Container*: Uma *div* estilizada que ocupa 100% da tela, exibe a imagem *0.jpg* da pasta public e ajusta o fundo com *background-size*: cover para se adaptar a qualquer tamanho de monitor.
+
+Código Legado: Bloco comentado guardando a antiga implementação que chamava o utilitário de rede diretamente no CSS.
+
+
+# 'Client' src/site/pages/notFound/index.tsx
+
+### 1. Resumo Estrutural do Módulo
+
+**Objetivo:** Atuar como um componente de captura para rotas inválidas ou inexistentes. Impede que o usuário fique preso em uma tela em branco (Erro 404) ao redirecioná-lo automaticamente e de forma silenciosa para a página inicial.
+
+**Componentes Principais:**
+
+- **Redirecionamento Automático (`useEffect` + `useNavigate`)**: Utiliza o ciclo de vida de montagem do React para disparar a navegação imperativa assim que o componente é chamado pelo React Router.
+- **Componente Fantasma (`return null`)**: Como a intenção é apenas redirecionar o usuário, o componente não renderiza nenhum HTML/DOM, otimizando a performance visual.
+
+### 2. Código com Documentação JSDoc e Correção
+
+```ts
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { PAGES } from '~/constants'
+
+/**
+ * Componente de captura para Rotas Não Encontradas (404).
+ *
+ * Este componente não possui interface gráfica. Sua única responsabilidade
+ * é interceptar acessos a URLs inválidas do jogo e redirecionar o jogador
+ * imediatamente de volta para a tela inicial (Home).
+ */
+export default function NotFound () {
+
+  // Hook do React Router para navegação imperativa
+  const navigate = useNavigate()
+
+  // Efeito executado quando o componente é montado.
+  useEffect(() => {
+    navigate(PAGES.HOME)
+  }, [navigate])
+
+  // Retorna nulo para não poluir o DOM da aplicação durante o redirecionamento
+  return null
+}
+```
+
+- O array `[navigate]` mantém a dependência do hook explícita e evita alertas de lint relacionados ao `useEffect`.
+- Como não existe conteúdo visual associado ao erro 404, `return null` é suficiente enquanto o redirecionamento ocorre.
+
+
+---
+
 # **DEPLOY ATUAL DO SERVIDOR — RENDER**
 ---
 
@@ -6196,6 +7917,7 @@ Esta seção existe para evitar que o código e o estudo técnico voltem a ficar
 | Adicionar/remover personagem | `client/public/sprites/chars/` e `shared/constants.ts` (`SPRITES`) | `Shared constants.ts`, `server/src/factory.ts` e, se houver comportamento exclusivo, `client/src/game/entities/player.ts` |
 | Criar habilidade de personagem | `player.ts`; arquivos que disparam a condição; possivelmente DTO/socket se precisar sincronização | `Player` (interface, factory, função da habilidade e render); entidade que aciona a habilidade; rede se aplicável |
 | Adicionar/remover mapa | `client/public/sprites/stages/`, `shared/constants.ts` (`STAGES`) e `client/src/game/util/bgSound.ts` | `Shared constants.ts`, `server/src/factory.ts`, `Assets` e `bgSound.ts` |
+| Alterar piso lento do refeitório | `shared/dto.ts`, `server/src/factory.ts`, `client/src/game/entities/slowFloor.ts`, `state.ts`, `canvas/index.tsx` e `player.ts` | Atualizar todas essas seções em conjunto, pois a mecânica depende de geração no servidor, sincronização, renderização e modificação de velocidade |
 | Alterar sorteio de personagem/mapa | `server/src/factory.ts` | `startGameFactory` ou `stateFactory` |
 | Criar/alterar power-up | `client/src/game/entities/bonus.ts`, constantes compartilhadas e arquivos de som/sprite | Seção `bonus.ts`, constantes relacionadas e áudio/assets do item |
 | Criar novo evento multiplayer | `shared/dto.ts`, `server/src/game.ts`, `server/src/ioListener.ts`, `client/src/services/socket.ts` e receptor no cliente | Atualizar todas essas mesmas seções para documentar emissão, retransmissão e recepção |
@@ -6222,4 +7944,7 @@ Ao fazer uma mudança no código, procure no documento pelo **caminho do arquivo
 - O tempo de permanência da bomba após a detonação foi reduzido de 1000 ms para 500 ms para acompanhar a nova animação.
 - O `HomePage` mantém os listeners `open_game` e `myself` ativos durante toda a vida do componente, corrigindo o problema que impedia iniciar uma segunda partida na mesma sessão.
 - O backend no Render agora acompanha a branch `main` com `Auto-Deploy: On Commit`, executando o build automaticamente e tornando a antiga branch `server` desnecessária no fluxo oficial de produção.
-
+- O refeitório (`stage === 2`) passou a possuir **8 pisos lentos aleatórios**, gerados no servidor apenas em células vazias e fora das áreas protegidas de spawn.
+- As posições dos pisos lentos são sincronizadas através de `SlowFloorDTO[]` dentro de `GameStateDTO`, garantindo que todos os clientes enxerguem e processem as mesmas células.
+- O cliente ganhou `SlowFloorsFactory`, `GameState.slowFloors` e `speedMultiplier`; sobre o piso especial, o deslocamento usa 50% da velocidade atual e retorna automaticamente ao normal ao sair da célula.
+- A representação visual atual do piso lento é um preenchimento marrom semitransparente de 16x16 desenhado sobre o chão original. O sprite definitivo em pixel art ainda não faz parte desta revisão.

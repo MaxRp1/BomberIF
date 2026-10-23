@@ -102,10 +102,117 @@ import { BlockDTO, GameStateDTO, LobbyDTO, SlowFloorDTO, StartGameDTO } from '#/
 import { Socket } from '~/extends'
 
 const CAFETERIA_STAGE = 2
-const SLOW_FLOOR_COUNT = 8
+const SLOW_FLOOR_COUNT = 12
 ``` 
 
-- Realiza as importações das ferramentas de rede do Socket.IO (Server e Socket), das constantes que definem as regras e elementos do jogo e das estruturas de dados (DTOs) necessárias para trafegar as informações dos jogadores e do estado da partida. A versão atual também importa `SlowFloorDTO` e define `CAFETERIA_STAGE = 2` e `SLOW_FLOOR_COUNT = 8`, usados para gerar a mecânica especial do refeitório.
+- Realiza as importações das ferramentas de rede do Socket.IO (Server e Socket), das constantes que definem as regras e elementos do jogo e das estruturas de dados (DTOs) necessárias para trafegar as informações dos jogadores e do estado da partida. A versão atual também importa `SlowFloorDTO` e define `CAFETERIA_STAGE = 2` e `SLOW_FLOOR_COUNT = 12`, usados para gerar a mecânica especial do refeitório.
+
+Configuração dos pisos lentos
+
+const CAFETERIA_STAGE = 2
+const SLOW_FLOOR_COUNT = 12
+
+CAFETERIA_STAGE identifica o cenário do refeitório dentro da lista de estágios disponíveis no jogo. Atualmente o refeitório corresponde ao índice 2.
+
+SLOW_FLOOR_COUNT determina a quantidade de células especiais de lentidão geradas em cada partida realizada no refeitório.
+
+O valor atual é:
+
+const SLOW_FLOOR_COUNT = 12
+
+Portanto, cada partida realizada nesse cenário possui 12 posições de piso lento, selecionadas aleatoriamente entre as células disponíveis do mapa.
+
+```ts
+slowFloorsFactory
+
+function slowFloorsFactory (
+  blocks:(BlockDTO|null)[][]
+) : SlowFloorDTO[] {
+  const available:SlowFloorDTO[] = []
+
+  const protectedSpawnAreas = new Set([
+    '0,0', '0,1', '1,0',
+    '0,11', '0,12', '1,12',
+    '9,0', '10,0', '10,1',
+    '9,12', '10,11', '10,12'
+  ])
+
+  for (let row = 0; row < blocks.length; row++) {
+    for (let column = 0; column < blocks[row].length; column++) {
+      if (blocks[row][column] !== null) continue
+
+      const key = `${row},${column}`
+
+      if (protectedSpawnAreas.has(key)) continue
+
+      available.push({
+        axes: [row, column]
+      })
+    }
+  }
+
+  for (let i = available.length - 1; i > 0; i--) {
+    const randomIndex = Math.floor(
+      Math.random() * (i + 1)
+    )
+
+    const temporary = available[i]
+
+    available[i] = available[randomIndex]
+    available[randomIndex] = temporary
+  }
+
+  return available.slice(0, SLOW_FLOOR_COUNT)
+}
+```
+A função slowFloorsFactory determina as posições que receberão o efeito de redução de velocidade no cenário do refeitório.
+
+Inicialmente, percorre a matriz de blocos e seleciona apenas células livres, ou seja, posições cujo valor seja null.
+
+Algumas células próximas aos pontos iniciais dos jogadores são armazenadas em protectedSpawnAreas e removidas da seleção. Essa proteção evita que um participante comece uma partida diretamente sobre uma área de lentidão.
+
+Após identificar todas as posições válidas, a lista é embaralhada utilizando um algoritmo de troca aleatória.
+
+Por fim:
+```ts
+return available.slice(0, SLOW_FLOOR_COUNT)
+
+/*
+seleciona apenas a quantidade estabelecida pela constante SLOW_FLOOR_COUNT.
+
+Com a configuração atual, são utilizadas 12 células aleatórias por partida.
+
+Integração com stateFactory
+*/
+
+function stateFactory () : GameStateDTO {
+  const blocks = bonusFactory(blocksFactory())
+
+  const blast = Math.floor(Math.random() * BLASTS)
+  const bomb = Math.floor(Math.random() * BOMBS)
+  const bonus = Math.floor(Math.random() * BONUS)
+  const stage = Math.floor(Math.random() * STAGES)
+
+  const slowFloors =
+    stage === CAFETERIA_STAGE
+      ? slowFloorsFactory(blocks)
+      : []
+
+  return {
+    blast,
+    blocks,
+    bomb,
+    bonus,
+    stage,
+    slowFloors
+  }
+}
+```
+Os pisos lentos são criados somente quando o cenário sorteado corresponde ao refeitório.
+
+Caso outro mapa seja selecionado, slowFloors recebe um vetor vazio, mantendo a mecânica exclusiva desse cenário.
+
+As posições são geradas pelo servidor e enviadas junto ao estado inicial da partida. Dessa forma, todos os jogadores compartilham as mesmas células que provocam redução de velocidade.
 
 **StartGameFactory**
 ``` ts
@@ -4748,8 +4855,6 @@ export interface GameState {
 # 'Client' src/game/entities/slowFloor.ts
 
 
-# 'Client' src/game/entities/slowFloor.ts
-
 **IMPORTS E SPRITE**
 
 ```ts
@@ -4774,6 +4879,162 @@ client/public/sprites/stages/slow_floor.png
 - O sprite possui dimensões de **16x16 pixels** e fundo transparente. Ele funciona como uma camada visual sobre o piso original do cenário, permitindo que apenas a mancha desenhada fique visível enquanto o restante do chão do refeitório continua aparecendo normalmente.
 
 ---
+
+Sprites dos pisos lentos
+
+O recurso visual passou a possuir quatro variações diferentes:
+
+client/public/sprites/stages/slow_floor_0.png
+client/public/sprites/stages/slow_floor_1.png
+client/public/sprites/stages/slow_floor_2.png
+client/public/sprites/stages/slow_floor_3.png
+
+Todos os arquivos possuem dimensões de 16x16 pixels e fundo transparente.
+
+As imagens representam diferentes variações de manchas presentes no piso do refeitório.
+
+A utilização de múltiplas versões evita que todas as 12 células especiais apresentem exatamente a mesma aparência, aumentando a variedade visual do cenário.
+
+Carregamento das variações
+
+const slowFloorSprites = [
+  'slow_floor_0.png',
+  'slow_floor_1.png',
+  'slow_floor_2.png',
+  'slow_floor_3.png'
+].map(file => {
+  const image = new Image()
+
+  image.src =
+    `${process.env.PUBLIC_URL}/sprites/stages/${file}`
+
+  return image
+})
+
+O vetor slowFloorSprites contém os nomes das quatro variações disponíveis.
+
+A função map() cria uma nova instância de Image para cada arquivo e define automaticamente seu caminho dentro da pasta pública do cliente.
+
+Como todos os sprites são carregados antecipadamente, o método de renderização precisa apenas selecionar qual imagem será utilizada em cada posição.
+
+Interface SlowFloor
+
+interface SlowFloor {
+  axes        : [number, number]
+  spriteIndex : number
+  x           : number
+  y           : number
+}
+
+Além das coordenadas lógicas axes e das posições físicas x e y, cada piso lento possui agora a propriedade:
+
+spriteIndex : number
+
+Essa propriedade identifica qual das quatro variações visuais será utilizada naquela célula durante a partida.
+
+SlowFloorsFactory
+
+export function SlowFloorsFactory (
+  dto:SlowFloorDTO[]
+) : SlowFloors {
+
+  const floors:SlowFloor[] = dto.map(floor => ({
+    axes: floor.axes,
+
+    spriteIndex: Math.floor(
+      Math.random() * slowFloorSprites.length
+    ),
+
+    x: TILE_SIZE + (floor.axes[1] * TILE_SIZE),
+    y: TILE_SIZE + (floor.axes[0] * TILE_SIZE)
+  }))
+
+  const slowFloors = {
+    floors
+  } as SlowFloors
+
+  slowFloors.isPlayerOnFloor =
+    isPlayerOnFloor.bind(slowFloors)
+
+  slowFloors.render =
+    render.bind(slowFloors)
+
+  return slowFloors
+}
+
+Cada posição recebida do servidor recebe uma das quatro imagens disponíveis.
+
+A escolha é realizada através de:
+
+Math.floor(
+  Math.random() * slowFloorSprites.length
+)
+
+Como existem quatro imagens, o resultado possível corresponde aos índices:
+
+0
+1
+2
+3
+
+A escolha ocorre apenas no momento da criação do estado visual do piso. Por isso, uma mancha não muda de aparência durante a execução da partida.
+
+A posição e o efeito da célula continuam sendo definidos pelo servidor. Apenas sua aparência específica é escolhida localmente pelo cliente.
+
+Renderização
+```ts
+function render (
+  this:SlowFloors,
+  context:CanvasRenderingContext2D
+) {
+  this.floors.forEach(floor => {
+    const sprite =
+      slowFloorSprites[floor.spriteIndex]
+
+    context.drawImage(
+      sprite,
+      floor.x,
+      floor.y,
+      TILE_SIZE,
+      TILE_SIZE
+    )
+  })
+}
+```
+
+Para cada piso lento, a função recupera a imagem correspondente ao seu spriteIndex.
+
+Em seguida, desenha o sprite sobre sua posição no cenário utilizando context.drawImage().
+
+Cada imagem ocupa exatamente uma célula de:
+
+16x16 pixels
+
+Como os arquivos possuem transparência, somente a mancha fica visível enquanto o piso original do refeitório permanece desenhado abaixo dela.
+
+Funcionamento atual da mecânica
+
+O piso lento do refeitório funciona atualmente da seguinte maneira:
+
+é exclusivo do cenário do refeitório;
+
+são geradas 12 células lentas por partida;
+
+as posições são sorteadas pelo servidor;
+
+áreas próximas aos pontos iniciais dos jogadores são protegidas;
+
+todos os participantes recebem as mesmas posições de lentidão;
+
+cada posição utiliza aleatoriamente uma entre quatro variações visuais;
+
+as manchas são sprites transparentes de 16x16 pixels;
+
+o efeito reduz temporariamente a velocidade do jogador enquanto ele permanece sobre a célula;
+
+ao abandonar a área afetada, a velocidade volta automaticamente ao valor normal;
+
+bônus de velocidade continuam preservados, pois a redução utiliza speedMultiplier em vez de sobrescrever permanentemente o atributo speed.
 
 **Interfaces**
 

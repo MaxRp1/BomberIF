@@ -1,7 +1,16 @@
 import { Server } from 'socket.io'
 import { BLASTS, BOMBS, BONUS, BONUSES, SPRITES, STAGES } from '#/constants'
-import { BlockDTO, GameStateDTO, LobbyDTO, StartGameDTO } from '#/dto'
+import {
+  BlockDTO,
+  GameStateDTO,
+  LobbyDTO,
+  SlowFloorDTO,
+  StartGameDTO
+} from '#/dto'
 import { Socket } from '~/extends'
+
+const CAFETERIA_STAGE = 2
+const SLOW_FLOOR_COUNT = 8
 
 // estabelece os jogadores e o estado inicial do jogo
 export function startGameFactory (io : Server, roomId : string) : StartGameDTO|null {
@@ -42,15 +51,74 @@ export function updateLobbyFactory (io : Server, lobbyId : string) : LobbyDTO|nu
   }
   return null
 }
+
+function slowFloorsFactory (
+  blocks:(BlockDTO|null)[][]
+) : SlowFloorDTO[] {
+  const available:SlowFloorDTO[] = []
+
+  const protectedSpawnAreas = new Set([
+    '0,0', '0,1', '1,0',
+    '0,11', '0,12', '1,12',
+    '9,0', '10,0', '10,1',
+    '9,12', '10,11', '10,12'
+  ])
+
+  for (let row = 0; row < blocks.length; row++) {
+    for (let column = 0; column < blocks[row].length; column++) {
+      if (blocks[row][column] !== null) continue
+
+      const key = `${row},${column}`
+
+      if (protectedSpawnAreas.has(key)) continue
+
+      available.push({
+        axes: [row, column]
+      })
+    }
+  }
+
+  for (let i = available.length - 1; i > 0; i--) {
+    const randomIndex = Math.floor(
+      Math.random() * (i + 1)
+    )
+
+    const temporary = available[i]
+
+    available[i] = available[randomIndex]
+    available[randomIndex] = temporary
+  }
+
+  return available.slice(0, SLOW_FLOOR_COUNT)
+}
+
 // estabelece o estado inicial do jogo
 function stateFactory () : GameStateDTO {
   const blocks = bonusFactory(blocksFactory())
+
   const blast = Math.floor(Math.random() * BLASTS)
   const bomb = Math.floor(Math.random() * BOMBS)
   const bonus = Math.floor(Math.random() * BONUS)
   const stage = Math.floor(Math.random() * STAGES)
-  return {blast, blocks, bomb, bonus, stage}
+
+  const slowFloors =
+    stage === CAFETERIA_STAGE
+      ? slowFloorsFactory(blocks)
+      : []
+
+  console.log('STAGE:', stage)
+  console.log('SLOW FLOORS:', slowFloors)
+
+  return {
+    blast,
+    blocks,
+    bomb,
+    bonus,
+    stage,
+    slowFloors
+  }
 }
+
 // posição dos blocos destrutíveis aleatória
 function blocksFactory () : (BlockDTO|null)[][] {
   const removal = [3,2,3,2,3,2,3,2,3,2,3]

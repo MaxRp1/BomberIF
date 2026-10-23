@@ -29,12 +29,18 @@ export interface FlingBombDTO {
   y : number // player y position
 }
 
+export interface SlowFloorDTO {
+  axes: [number, number]
+}
+
 export interface GameStateDTO {
   blast  : number
   blocks : (BlockDTO|null)[][]
   bomb   : number
   bonus  : number
+  slowFloors : SlowFloorDTO[]
   stage  : number
+
 }
 
 export interface HoldBombDTO {

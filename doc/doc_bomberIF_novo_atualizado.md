@@ -4747,17 +4747,37 @@ export interface GameState {
 
 # 'Client' src/game/entities/slowFloor.ts
 
-**Objetivo**
 
-Representar e renderizar as células especiais do refeitório que reduzem temporariamente a velocidade do jogador enquanto ele permanece sobre elas. A posição das células não é sorteada no cliente: ela já chega sincronizada pelo servidor.
+# 'Client' src/game/entities/slowFloor.ts
 
-**Interfaces e Factory**
+**IMPORTS E SPRITE**
 
 ```ts
 import { TILE_SIZE } from '#/constants'
 import { SlowFloorDTO } from '#/dto'
 import { Player } from '~/game/entities/player'
 
+const slowFloorSprite = new Image()
+
+slowFloorSprite.src =
+  `${process.env.PUBLIC_URL}/sprites/stages/slow_floor.png`
+```
+
+- O arquivo importa o tamanho padrão dos tiles do mapa, a estrutura de transferência de dados utilizada pelos pisos lentos e a entidade `Player`, necessária para verificar a posição do jogador.
+
+- A constante **slowFloorSprite** cria uma nova instância de imagem e carrega o recurso visual localizado em:
+
+```text
+client/public/sprites/stages/slow_floor.png
+```
+
+- O sprite possui dimensões de **16x16 pixels** e fundo transparente. Ele funciona como uma camada visual sobre o piso original do cenário, permitindo que apenas a mancha desenhada fique visível enquanto o restante do chão do refeitório continua aparecendo normalmente.
+
+---
+
+**Interfaces**
+
+```ts
 interface SlowFloor {
   axes : [number, number]
   x    : number
@@ -4769,7 +4789,17 @@ export interface SlowFloors {
   isPlayerOnFloor : (player:Player) => boolean
   render          : (context:CanvasRenderingContext2D) => void
 }
+```
 
+- **SlowFloor** representa individualmente uma célula de piso lento dentro do cenário. A propriedade `axes` guarda sua posição lógica na matriz do mapa, enquanto `x` e `y` representam as coordenadas físicas utilizadas para renderização no Canvas.
+
+- **SlowFloors** representa o conjunto de todos os pisos lentos ativos durante a partida. A estrutura mantém uma lista `floors` e disponibiliza funções para verificar se um jogador está sobre uma dessas células e para desenhar os sprites no cenário.
+
+---
+
+**SlowFloorsFactory**
+
+```ts
 export function SlowFloorsFactory (
   dto:SlowFloorDTO[]
 ) : SlowFloors {
@@ -4794,8 +4824,13 @@ export function SlowFloorsFactory (
 }
 ```
 
-- **SlowFloor** armazena a célula da matriz e também as coordenadas em pixels utilizadas pelo Canvas.
-- **SlowFloorsFactory** transforma os DTOs vindos do servidor em objetos prontos para consulta e renderização. A conversão usa `TILE_SIZE`, mantendo cada piso especial alinhado à grade de 16x16 pixels.
+- A função recebe a lista de posições enviada pelo servidor através de `SlowFloorDTO[]` e transforma cada coordenada da matriz em uma posição física dentro do Canvas.
+
+- As coordenadas são multiplicadas por `TILE_SIZE` e recebem um deslocamento adicional equivalente a um tile, pois a área jogável começa após a borda do cenário.
+
+- Após construir a lista de pisos, a função associa os métodos de detecção e renderização à estrutura `SlowFloors`.
+
+---
 
 **isPlayerOnFloor**
 
@@ -4813,8 +4848,15 @@ function isPlayerOnFloor (
 }
 ```
 
-- Obtém a célula atual do personagem através de `player.getAxes()` e verifica se existe um piso lento com as mesmas coordenadas.
-- O resultado booleano é usado por `player.ts` para definir `speedMultiplier` como `0.5` ou `1`.
+- Verifica se o jogador está atualmente posicionado sobre uma célula de piso lento.
+
+- A função utiliza `player.getAxes()` para obter a posição do personagem na matriz e compara essas coordenadas com todos os pisos registrados em `floors`.
+
+- O método `some()` retorna `true` assim que encontra uma célula com a mesma linha e coluna do jogador. Caso nenhuma posição coincida, retorna `false`.
+
+- Essa verificação é utilizada pela entidade `Player` para decidir se deve aplicar ou remover a redução de velocidade.
+
+---
 
 **render**
 
@@ -4823,25 +4865,194 @@ function render (
   this:SlowFloors,
   context:CanvasRenderingContext2D
 ) {
-  context.save()
-  context.fillStyle = 'rgba(120, 80, 40, 0.55)'
-
   this.floors.forEach(floor => {
-    context.fillRect(
+    context.drawImage(
+      slowFloorSprite,
       floor.x,
       floor.y,
       TILE_SIZE,
       TILE_SIZE
     )
   })
-
-  context.restore()
 }
 ```
 
-- A implementação atual desenha um quadrado marrom semitransparente sobre cada célula especial.
-- Esse preenchimento funciona como **representação visual temporária** da mecânica. O código da lógica já está funcional; o sprite em pixel art do piso especial ainda pode substituir este `fillRect` posteriormente sem alterar a sincronização ou a redução de velocidade.
-- O `Canvas` chama esse `render` depois de desenhar o cenário e antes dos blocos, fazendo o piso aparecer **sobre o chão original do refeitório**.
+- Renderiza os pisos lentos no Canvas utilizando o sprite transparente `slow_floor.png`.
+
+- A função percorre todas as posições existentes em `floors` e desenha uma cópia do sprite de **16x16 pixels** exatamente sobre a célula correspondente.
+
+- Como o sprite possui áreas transparentes, o piso original do cenário permanece visível abaixo da mancha.
+
+- No ciclo de renderização do jogo, o piso lento é desenhado depois do cenário e antes dos blocos e personagens. Dessa forma, ele funciona visualmente como uma camada intermediária sobre o chão:
+
+```ts
+state?.stage.render(context)
+state?.slowFloors.render(context)
+state?.blocks.render(context, state)
+```
+
+- O sistema originalmente utilizava um retângulo marrom semitransparente através de `fillRect`. Essa representação provisória foi substituída pelo sprite em pixel art para integrar melhor a mecânica à identidade visual do refeitório.
+
+---
+
+# 'Client' src/game/entities/player.ts
+
+## speedMultiplier
+
+Na interface `Player`, foi adicionada a propriedade:
+
+```ts
+speedMultiplier : number
+```
+
+- A propriedade **speedMultiplier** funciona como um modificador temporário aplicado sobre a velocidade normal do personagem.
+
+- Diferentemente de alterar diretamente a propriedade `speed`, o multiplicador permite aplicar o efeito ambiental do piso lento sem apagar bônus de velocidade que o jogador tenha coletado anteriormente.
+
+---
+
+## PlayerFactory
+
+Na criação do jogador, o multiplicador é inicialmente definido como:
+
+```ts
+speed: props.speed,
+speedMultiplier: 1,
+```
+
+- O valor padrão `1` representa **100% da velocidade normal**.
+
+- Enquanto o jogador não estiver sobre um piso lento, sua movimentação utiliza integralmente o valor armazenado em `speed`.
+
+---
+
+## moveTick
+
+```ts
+function moveTick (
+  this:Player,
+  state:GameState
+) {
+  if (!this.moving) return
+
+  const onSlowFloor =
+    state.slowFloors.isPlayerOnFloor(this)
+
+  this.speedMultiplier =
+    onSlowFloor
+      ? 0.3
+      : 1
+
+  this.moves[this.side]()
+
+  if (!this.myself) return
+
+  state.blocks.tick(state)
+
+  emitMove({
+    h:this.holding,
+    m:this.moving,
+    p:this.index,
+    s:this.side,
+    x:this.x,
+    y:this.y
+  })
+}
+```
+
+- Antes de executar o movimento do personagem, a função verifica se ele está atualmente sobre uma das células especiais através de:
+
+```ts
+state.slowFloors.isPlayerOnFloor(this)
+```
+
+- Caso a resposta seja positiva, `speedMultiplier` recebe o valor `0.3`.
+
+- Isso significa que, enquanto estiver sobre o piso lento, o jogador se movimenta com **50% da velocidade que possuir naquele momento**.
+
+- Ao sair da área afetada, o multiplicador retorna automaticamente para `1`, restaurando 100% da velocidade.
+
+- A utilização de um multiplicador preserva modificações provenientes de power-ups. Por exemplo, caso um jogador tenha aumentado sua propriedade `speed`, o piso reduz temporariamente essa velocidade adquirida em vez de substituir permanentemente o valor.
+
+---
+
+## Movimentação com speedMultiplier
+
+As funções direcionais passaram a utilizar a velocidade multiplicada pelo modificador:
+
+```ts
+function moveDown (this:Player) {
+  this.y += this.speed * this.speedMultiplier
+
+  // restante da função...
+}
+
+function moveUp (this:Player) {
+  this.y -= this.speed * this.speedMultiplier
+
+  // restante da função...
+}
+
+function moveRight (this:Player) {
+  this.x += this.speed * this.speedMultiplier
+
+  // restante da função...
+}
+
+function moveLeft (this:Player) {
+  this.x -= this.speed * this.speedMultiplier
+
+  // restante da função...
+}
+```
+
+- O deslocamento final do jogador passa a ser calculado pela expressão:
+
+```text
+velocidade final = speed × speedMultiplier
+```
+
+- Em condições normais:
+
+```text
+speedMultiplier = 1
+```
+
+portanto:
+
+```text
+velocidade final = speed × 1
+```
+
+- Sobre o piso lento:
+
+```text
+speedMultiplier = 0.5
+```
+
+portanto:
+
+```text
+velocidade final = speed × 0.5
+```
+
+- Dessa forma, a mecânica reduz temporariamente o deslocamento sem interferir permanentemente nos atributos adquiridos durante a partida.
+
+---
+
+# Recurso visual adicionado
+
+```text
+client/public/sprites/stages/slow_floor.png
+```
+
+- Sprite em pixel art de **16x16 pixels** utilizado para representar visualmente as células de piso lento presentes no cenário do refeitório.
+
+- O arquivo possui fundo transparente e é desenhado sobre o piso original do mapa.
+
+- Sua função é indicar visualmente ao jogador quais regiões aplicam a penalidade de movimentação.
+
+- A aparência substitui o retângulo marrom provisório utilizado durante os testes iniciais da mecânica.
 
 # 'Client' src/game/entities/stage.ts
 

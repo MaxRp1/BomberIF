@@ -44,6 +44,7 @@ export interface Player {
   side       : SIDES
   sprite     : HTMLImageElement
   speed      : number
+  speedMultiplier : number
   x          : number
   y          : number
   setMyself            : () => void
@@ -113,6 +114,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
     nick: props.nick,
     side: 'D',
     speed: props.speed,
+    speedMultiplier: 1,
     x: props.x,
     y: props.y,
     sprite: new Image()
@@ -219,16 +221,39 @@ function startMove (this:Player, side:SIDES) {
   this.moving = 1
 }
 
-function moveTick (this:Player, state:GameState) {
+function moveTick (
+  this:Player,
+  state:GameState
+) {
+
   if (!this.moving) return
+
+  const onSlowFloor =
+    state.slowFloors.isPlayerOnFloor(this)
+
+  this.speedMultiplier =
+    onSlowFloor
+      ? 0.3
+      : 1
+
   this.moves[this.side]()
+
   if (!this.myself) return
+
   state.blocks.tick(state)
-  emitMove({h:this.holding, m:this.moving, p:this.index, s:this.side, x:this.x, y:this.y})
+
+  emitMove({
+    h:this.holding,
+    m:this.moving,
+    p:this.index,
+    s:this.side,
+    x:this.x,
+    y:this.y
+  })
 }
 
 function moveDown (this:Player) {
-  this.y += this.speed
+  this.y += this.speed * this.speedMultiplier
   if (this.y > 169) {
     if (this.collidable) {
       this.y = 169
@@ -241,7 +266,7 @@ function moveDown (this:Player) {
 }
 
 function moveUp (this:Player) {
-  this.y -= this.speed
+  this.y -= this.speed * this.speedMultiplier
   if (this.y < 9) {
     if (this.collidable) {
       this.y = 9
@@ -254,7 +279,7 @@ function moveUp (this:Player) {
 }
 
 function moveRight (this:Player) {
-  this.x += this.speed
+  this.x += this.speed * this.speedMultiplier
   if (this.x > 209) {
     if (this.collidable) {
       this.x = 209
@@ -267,7 +292,7 @@ function moveRight (this:Player) {
 }
 
 function moveLeft (this:Player) {
-  this.x -= this.speed
+  this.x -= this.speed * this.speedMultiplier
   if (this.x < 17) {
     if (this.collidable) {
       this.x = 17

@@ -13,6 +13,7 @@ import { playWinSound, stopWinSound } from '~/game/sound/win'
 import { Assets } from '~/game/util/assets'
 import { socket } from '~/services/socket'
 import { Pairing, Players, Timer } from './style'
+import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 
 interface CanvasProps {
   myself : number|null
@@ -43,31 +44,45 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
     state?.players.tick(state)
   }
 
-  function render () {
-    // @ts-ignore
-    context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
-    state?.stage.render(context!)
-    state?.blocks.render(context!, state)
-    if (state!.players.players.find(p => p.holding)) {
-      state?.players.render(context!)
-      state?.entities.render(context!)
-    }
-    else {
-      state?.entities.render(context!)
-      state?.players.render(context!)
-    }
-  }
+function render () {
+  if (!context || !canvasRef.current) return
 
-  function startGame (dto:StartGameDTO) {
-    socket.off('start_game', startGame)
-    setState({
-      ...dto.state,
-      blocks: BlocksFactory(dto.state.blocks),
-      entities: EntitiesFactory(),
-      players: PlayersFactory(dto.players),
-      stage: StageFactory({name:dto.state.stage})
-    })
+  context.clearRect(
+    0,
+    0,
+    canvasRef.current.width,
+    canvasRef.current.height
+  )
+
+  state?.stage.render(context)
+  state?.slowFloors.render(context)
+  state?.blocks.render(context, state)
+
+  if (state!.players.players.find(p => p.holding)) {
+    state?.players.render(context)
+    state?.entities.render(context)
   }
+  else {
+    state?.entities.render(context)
+    state?.players.render(context)
+  }
+}
+
+function startGame (dto:StartGameDTO) {
+  socket.off('start_game', startGame)
+
+  console.log('CLIENT STAGE:', dto.state.stage)
+  console.log('CLIENT SLOW FLOORS:', dto.state.slowFloors)
+
+  setState({
+    ...dto.state,
+    blocks: BlocksFactory(dto.state.blocks),
+    entities: EntitiesFactory(),
+    players: PlayersFactory(dto.players),
+    slowFloors: SlowFloorsFactory(dto.state.slowFloors),
+    stage: StageFactory({name:dto.state.stage})
+  })
+}
 
   function onReady () {
     readyRef.current++

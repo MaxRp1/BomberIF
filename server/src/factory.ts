@@ -10,7 +10,7 @@ import {
 import { Socket } from '~/extends'
 
 const CAFETERIA_STAGE = 2
-const SLOW_FLOOR_COUNT = 8
+const SLOW_FLOOR_COUNT = 12
 
 // estabelece os jogadores e o estado inicial do jogo
 export function startGameFactory (io : Server, roomId : string) : StartGameDTO|null {

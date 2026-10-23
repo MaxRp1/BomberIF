@@ -2,15 +2,25 @@ import { TILE_SIZE } from '#/constants'
 import { SlowFloorDTO } from '#/dto'
 import { Player } from '~/game/entities/player'
 
-const slowFloorSprite = new Image()
+const slowFloorSprites = [
+  'slow_floor_0.png',
+  'slow_floor_1.png',
+  'slow_floor_2.png',
+  'slow_floor_3.png'
+].map(file => {
+  const image = new Image()
 
-slowFloorSprite.src =
-  `${process.env.PUBLIC_URL}/sprites/stages/slow_floor.png`
+  image.src =
+    `${process.env.PUBLIC_URL}/sprites/stages/${file}`
+
+  return image
+})
 
 interface SlowFloor {
-  axes : [number, number]
-  x    : number
-  y    : number
+  axes        : [number, number]
+  spriteIndex : number
+  x           : number
+  y           : number
 }
 
 export interface SlowFloors {
@@ -25,6 +35,11 @@ export function SlowFloorsFactory (
 
   const floors:SlowFloor[] = dto.map(floor => ({
     axes: floor.axes,
+
+    spriteIndex: Math.floor(
+      Math.random() * slowFloorSprites.length
+    ),
+
     x: TILE_SIZE + (floor.axes[1] * TILE_SIZE),
     y: TILE_SIZE + (floor.axes[0] * TILE_SIZE)
   }))
@@ -59,8 +74,11 @@ function render (
   context:CanvasRenderingContext2D
 ) {
   this.floors.forEach(floor => {
+    const sprite =
+      slowFloorSprites[floor.spriteIndex]
+
     context.drawImage(
-      slowFloorSprite,
+      sprite,
       floor.x,
       floor.y,
       TILE_SIZE,

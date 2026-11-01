@@ -1,53 +1,136 @@
-## BomberIF
+BomberIF
 
-> 👨‍💻 Developed by Vinícius Nogueira Proença  
-🇧🇷 Brazilian Dev  
-✉️ profissional.viniciusproenca@gmail.com  
-💻 [LinkedIn](https://www.linkedin.com/in/viniproenca777/)
+🎮 Projeto original desenvolvido por Vinícius Nogueira Proença
+🚀 Atualmente mantido e expandido por Roniery Rodrigues Mota
 
----
+Sobre o projeto
 
-BomberIF é um jogo multiplayer online do tipo battle royale baseado em navegador sucessor do clássico BomberTADS. Com gráficos 2D clássicos e uma trilha sonora incrível, 4 jogadores competem pela vitória usando bombas esperando assim superar o inevitável Jubilamento. O jogo conta atualmente com 10 personagens baseados em alunos e professores do Campus Januária, power-ups e suporte para teclado e dispositivos móveis. Você agora poderá jogar com seus amigos e também se conectar com qualquer pessoa no mundo todo, graças ao sistema de lobby, apelidos, chamadas locais e tela cheia. Convide seus amigos para disputas épicas e use power-ups para aprimorar suas habilidades. Quem escapará?
+BomberIF é um jogo multiplayer online baseado em navegador, inspirado no clássico Bomberman e sucessor do projeto BomberTADS.
 
----
+Com gráficos 2D em pixel art, os jogadores competem em partidas utilizando bombas, obstáculos e power-ups para superar seus adversários. O jogo utiliza como temática o ambiente acadêmico do IFNMG – Campus Januária, incluindo personagens e cenários inspirados na instituição.
 
-### Como rodar localmente:
+O projeto original foi desenvolvido por Vinícius Nogueira Proença. Este repositório é um fork que está recebendo continuidade e novas funcionalidades, com o objetivo de expandir e manter o projeto.
+
+Alterações e novas funcionalidades deste fork
+
+Entre as modificações realizadas durante a continuidade do projeto estão:
+
+Adição de um novo personagem;
+
+Correções no sistema de explosões;
+
+Correções no gerenciamento de eventos e comunicação via Socket.IO;
+
+Adição de um novo cenário inspirado no refeitório;
+
+Implementação de uma mecânica exclusiva para o cenário do refeitório: pisos que reduzem temporariamente a velocidade dos jogadores;
+
+Adição de diferentes variações visuais para os pisos especiais;
+
+Ajustes na geração e organização dos sprites;
+
+Atualização e expansão da documentação técnica do projeto.
+
+O projeto continua em desenvolvimento, e novas funcionalidades e melhorias podem ser adicionadas futuramente.
+
+Créditos
+
+Criação original
+
+👨‍💻 Vinícius Nogueira Proença
+🇧🇷 Desenvolvedor brasileiro
+✉️ profissional.viniciusproenca@gmail.com
+💻 LinkedIn
+
+Continuidade e desenvolvimento atual
+
+👨‍💻 Roniery Rodrigues Mota
+
+Responsável pela manutenção e continuidade deste fork, incluindo a implementação de novas funcionalidades, correções, recursos visuais e documentação técnica.
+
+Como rodar localmente
 
 Preparativos
 
-1. Utilize o mkcert para gerar os certificados ssl;
+O projeto utiliza HTTPS durante o desenvolvimento local. Para isso, é necessário gerar certificados SSL utilizando o mkcert.
 
-2. Após a instalação, vá ao terminal como adm. e jogue o seguinte comando: mkcert localhost BomberIF 127.0.0.1 192.168.x.x -> use sua faixa de IP local;
+Instale o mkcert em seu sistema;
 
-3. Jogue as chaves no diretório padrão do seu S.O e renomeie-as como cert.pem e key.pem respectivamente. Lembre-se de usar o diretório padrão .ssl;
+No terminal, gere os certificados utilizando um comando semelhante a:
 
-4. Faça adaptações confome achar necessário;
+mkcert localhost BomberIF 127.0.0.1 192.168.x.x 
 
+Substitua 192.168.x.x pelo endereço IP da sua rede local, caso necessário.
 
----------------------------- Vamos Começar -----------------------------
+Coloque os certificados no diretório .ssl do seu sistema e renomeie os arquivos para:
 
+cert.pem key.pem 
 
+Faça as adaptações necessárias de acordo com o seu ambiente de desenvolvimento.
 
 Backend
 
-1. Clone este repositório;
+Clone este repositório:
 
-2. Abra a pasta "server" no terminal;
+git clone https://github.com/MaxRp1/BomberIF.git 
 
-3. Rode `yarn` para instalar as dependências necessárias;
+Acesse a pasta do servidor:
 
-4. Rode `yarn dev` para iniciar o nodemon development server na porta `4000`.
+cd BomberIF/server 
+
+Instale as dependências:
+
+yarn 
+
+Inicie o servidor de desenvolvimento:
+
+yarn dev 
+
+O servidor será iniciado, por padrão, na porta:
+
+4000 
 
 Frontend
 
-1. Abra a pasta `client` no terminal;
+Abra outro terminal e acesse a pasta do cliente:
 
-2. Rode `yarn` para instalar as dependências necessárias;
+cd BomberIF/client 
 
-3. Rode `yarn dev` para inicializar o craco development server no endereço: `https://192.168.x.x:3000/BomberIF`.
-(use sua faixa de IP)
----
+Instale as dependências:
 
-<p align="center">
-  <big><b>&lt;KEK/&gt;</b></big>
-</p>
+yarn 
+
+Inicie o servidor de desenvolvimento:
+
+yarn dev 
+
+O jogo estará disponível em um endereço semelhante a:
+
+https://localhost:3000/BomberIF 
+
+Tecnologias utilizadas
+
+O projeto utiliza tecnologias como:
+
+TypeScript
+
+React
+
+Node.js
+
+Socket.IO
+
+HTML5 Canvas
+
+Styled Components
+
+Documentação
+
+A documentação técnica do projeto está disponível na pasta:
+
+doc/ 
+
+Ela reúne informações sobre a estrutura do código, funcionamento dos módulos e alterações realizadas durante a continuidade do desenvolvimento.
+
+BomberIF — Exploda, sobreviva e escape do jubilamento! 
+

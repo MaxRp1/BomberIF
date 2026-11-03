@@ -48,11 +48,27 @@ export async function joinRoom (io:Server, socket:Socket, dto:JoinRoomDTO) {
     return socket.emit('error', ERRORS.LOBBY_NOT_FOUND)
   }
   for (const socketId of lobby) {
-    const s = io.sockets.sockets.get(socketId) as Socket
-    if (s.data.isPairing) {
-      return socket.emit('error', ERRORS.ALREADY_PAIRING)
+  const s = io.sockets.sockets.get(socketId) as Socket
+
+  console.log(
+    '[JOIN CHECK]',
+    {
+      nick: s.data.nick,
+      socket: s.id,
+      isPairing: s.data.isPairing,
+      roomId: s.data.roomId
     }
+  )
+
+  if (s.data.isPairing) {
+    console.log('[BLOQUEOU A SALA]', s.data.nick)
+
+    return socket.emit(
+      'error',
+      ERRORS.ALREADY_PAIRING
+    )
   }
+}
   io.to(socket.data.lobbyId).emit('open_game')
   const players = getLobbyPlayers(io, lobby)
   if (!dto.fillRoom || players.length === MAX_PLAYERS) {
@@ -78,12 +94,25 @@ export function onDisconnect (io:Server, socket:Socket) {
   }
 }
 
-async function enterLobby (io:Server, socket:Socket, lobbyId:string) {
+async function enterLobby (
+  io:Server,
+  socket:Socket,
+  lobbyId:string
+) {
   await socket.leave(socket.data.lobbyId)
   await socket.join(lobbyId)
+
   socket.data.lobbyId = lobbyId
+  socket.data.isPairing = false
+
   const dto = updateLobbyFactory(io, lobbyId)
-  dto && sendToLobby(io, socket, 'update_lobby', dto)
+
+  dto && sendToLobby(
+    io,
+    socket,
+    'update_lobby',
+    dto
+  )
 }
 
 function getLobbyPlayers (io : Server, lobby : Set<string>) {
@@ -150,8 +179,25 @@ function updateRoomQueue (socket:Socket) {
 }
 
 export function exitPairing (socket:Socket) {
+  console.log(
+    '[EXIT] antes',
+    {
+      nick: socket.data.nick,
+      isPairing: socket.data.isPairing,
+      roomId: socket.data.roomId
+    }
+  )
+
   updateRoomQueue(socket)
   socket.data.isPairing = false
+
+  console.log(
+    '[EXIT] depois',
+    {
+      nick: socket.data.nick,
+      isPairing: socket.data.isPairing
+    }
+  )
 }
 
 export function sendToLobby (io:Server, socket:Socket, event:string, dto:any) {

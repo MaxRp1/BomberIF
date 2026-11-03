@@ -29,6 +29,7 @@ export interface Player {
   bombs             : number
   collidable        : boolean
   extraLife         : boolean
+  ignoresSlowFloor  : boolean
   invulnerableUntil : number
   hold              : boolean
   holding           : 0|1
@@ -92,6 +93,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
     bombs: 1,
     collidable: true,
     extraLife: props.sprite === 10,
+    ignoresSlowFloor: props.sprite === 11,
     invulnerableUntil: 0,
     hold: false,
     holding: 0,
@@ -113,7 +115,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
     myself: false,
     nick: props.nick,
     side: 'D',
-    speed: props.speed,
+    speed: props.sprite === 11 ? props.speed * 1.4 : props.speed,
     speedMultiplier: 1,
     x: props.x,
     y: props.y,
@@ -228,13 +230,13 @@ function moveTick (
 
   if (!this.moving) return
 
-  const onSlowFloor =
-    state.slowFloors.isPlayerOnFloor(this)
+const onSlowFloor =
+  state.slowFloors.isPlayerOnFloor(this)
 
-  this.speedMultiplier =
-    onSlowFloor
-      ? 0.3
-      : 1
+this.speedMultiplier =
+  onSlowFloor && !this.ignoresSlowFloor
+    ? 0.3
+    : 1
 
   this.moves[this.side]()
 

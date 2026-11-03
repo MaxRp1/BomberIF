@@ -21,6 +21,12 @@ export function emitCreateLobby () {
 }
 
 export function emitExitPairing () {
+  console.log(
+    '[CLIENT] exit_pairing',
+    'socket:', socket.id,
+    'connected:', socket.connected
+  )
+
   socket.emit('exit_pairing')
 }
 

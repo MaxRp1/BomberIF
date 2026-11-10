@@ -14,6 +14,7 @@ import { Assets } from '~/game/util/assets'
 import { socket } from '~/services/socket'
 import { Pairing, Players, Timer } from './style'
 import { SlowFloorsFactory } from '~/game/entities/slowFloor'
+import { renderExplosionPreview } from '~/game/util/explosionPreview'
 
 interface CanvasProps {
   myself : number|null
@@ -57,7 +58,8 @@ function render () {
   state?.stage.render(context)
   state?.slowFloors.render(context)
   state?.blocks.render(context, state)
-
+  renderExplosionPreview(context!, state!)
+  
   if (state!.players.players.find(p => p.holding)) {
     state?.players.render(context)
     state?.entities.render(context)
@@ -103,14 +105,20 @@ function startGame (dto:StartGameDTO) {
 
   function onPlaceBomb (dto:PlaceBombDTO) {
     if (dto.p === myself) return
-    state?.entities.add(BombFactory({
+    if (!state) return
+  
+    const owner = state.players.players[dto.p]
+  
+    state.entities.add(BombFactory({
       axes: dto.a,
       id: dto.i,
       playerIndex: dto.p,
       reach: dto.r,
       x: dto.x,
-      y: dto.y
+      y: dto.y,
+      detonationMultiplier: owner?.hasOverclock ? 0.75 : 1
     }))
+  
     playBombSound()
   }
 

@@ -13,13 +13,14 @@ import { isColliding, stopPlayer } from '~/game/util/collision'
 import { emitMoveBomb } from '~/services/socket'
 
 interface BombProps {
-  axes        : [number, number]
-  id         ?: string
-  player     ?: Player
-  playerIndex : number
-  reach       : number
-  x          ?: number
-  y          ?: number
+  axes: [number, number]
+  id?: string
+  player?: Player
+  playerIndex: number
+  reach: number
+  x?: number
+  y?: number
+  detonationMultiplier?: number
 }
 
 export interface Bomb {
@@ -39,6 +40,7 @@ export interface Bomb {
   playerIndex   : number
   reach         : number
   removeTime    : number
+  detonationMultiplier: number
   side          : SIDES
   x             : number
   y             : number
@@ -66,6 +68,9 @@ export function BombFactory (props : BombProps) : Bomb {
   bomb.anim = {frameCurrent:0, lastRender:0, sum:true}
   bomb.armed = true
   bomb.detonated = false
+  bomb.detonationMultiplier =
+  props.detonationMultiplier ??
+  (props.player?.hasOverclock ? 0.5 : 1)
   bomb.blast = BlastFactory()
   bomb.collidable = false
   bomb.directions = {up:0, right:0, down:0, left:0}
@@ -94,7 +99,7 @@ function getAxes (this:Bomb) : [number, number] {
 }
 
 function setDetonation (this:Bomb, multiplier=1) {
-  this.detonateTime = Date.now() + (3000 * multiplier)
+  this.detonateTime = Date.now() + (3000 * this.detonationMultiplier * multiplier)
   this.removeTime = this.detonateTime + 500
 }
 

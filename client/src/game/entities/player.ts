@@ -30,7 +30,9 @@ export interface Player {
   collidable        : boolean
   extraLife         : boolean
   ignoresSlowFloor  : boolean
+  hasOverclock      : boolean
   invulnerableUntil : number
+  hasBlastVision    : boolean
   hold              : boolean
   holding           : 0|1
   index              : number
@@ -94,6 +96,8 @@ export function PlayerFactory (props:PlayerProps) : Player {
     collidable: true,
     extraLife: props.sprite === 10,
     ignoresSlowFloor: props.sprite === 11,
+    hasOverclock: props.sprite === 2,
+    hasBlastVision: props.sprite === 2,
     invulnerableUntil: 0,
     hold: false,
     holding: 0,
@@ -115,7 +119,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
     myself: false,
     nick: props.nick,
     side: 'D',
-    speed: props.sprite === 11 ? props.speed * 1.4 : props.speed,
+    speed: props.sprite === 11 ? props.speed * 1.5 : props.speed,
     speedMultiplier: 1,
     x: props.x,
     y: props.y,

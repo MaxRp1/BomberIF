@@ -9082,4 +9082,67 @@ Ao fazer uma mudança no código, procure no documento pelo **caminho do arquivo
 
 ---
 
+
+## MATRIZ DE VALIDAÇÃO E RASTREABILIDADE — 11/11/2026
+
+Este quadro integra a documentação de manutenção ao processo de testes. Os resultados **não foram executados automaticamente nesta revisão documental**: são critérios esperados a verificar na instância de desenvolvimento, no navegador e, quando necessário, em produção. Não confundir código compilado com comportamento comprovado em várias conexões.
+
+### Casos de regressão sugeridos
+
+| ID | Recurso / cenário | Procedimento sugerido | Critério esperado | Arquivos de referência |
+|---|---|---|---|---|
+| T01 | Lobby e pareamento | Criar uma sala, iniciar partida, retornar ao lobby e iniciar novamente | O evento `open_game` volta a ser recebido; `myself` identifica o participante na nova partida | `client/src/site/pages/home/index.tsx`, `server/src/manager.ts` |
+| T02 | Identificação com apelidos repetidos | Abrir múltiplas abas com apelidos iguais | O ranking conserva uma linha por `index`, sem confundir participantes de mesmo apelido | `canvas/index.tsx`, `server/src/factory.ts` |
+| T03 | Ranking, primeira vitória | Iniciar com dois ou mais participantes e deixar um sobrevivente | O servidor emite `wins_update` com `p` e `wins`; os clientes atualizam o mesmo jogador | `server/src/ranking.ts`, `server/src/game.ts`, `shared/dto.ts`, `canvas/index.tsx` |
+| T04 | Ranking, partida seguinte | Jogar uma rodada após outra, preservando as conexões | O valor acumulado do socket é incluído em `StartGameDTO.players[].wins` | `server/src/manager.ts`, `server/src/factory.ts` |
+| T05 | Ranking, morte repetida | Inspecionar emissão duplicada de `kl` para o mesmo socket na mesma rodada | O `Set` de sobreviventes não registra duas eliminações para o mesmo `socket.id` | `server/src/ranking.ts` |
+| T06 | Ranking, mortes simultâneas | Eliminar participantes em intervalos muito próximos | Avaliar se o atraso de 200 ms impede vitória indevida; empate sem sobreviventes não pontua | `server/src/ranking.ts` |
+| T07 | Ranking, desconexão | Desconectar um integrante durante a partida | A rodada é cancelada no mapa de acompanhamento; não deve ser concedida vitória a partir dela | `server/src/manager.ts`, `server/src/ranking.ts` |
+| T08 | Piso lento do refeitório | Sortear mapa de índice 2; comparar com mapas 0 e 1 | Há até 12 posições válidas apenas no refeitório, fora das áreas protegidas; nos demais mapas a lista é vazia | `server/src/factory.ts`, `shared/dto.ts` |
+| T09 | Visual dos pisos | Conferir as manchas em partidas diferentes | Cada posição recebe um dos quatro recursos `slow_floor_0.png` até `slow_floor_3.png`, sem afetar o tile de fundo | `client/src/game/entities/slowFloor.ts` |
+| T10 | Piso lento e imunidade da Ino | Colocar Ino (ID 11) e outro personagem sobre manchas | Ino mantém multiplicador 1; os outros usam 0.3 ao se mover sobre o piso | `client/src/game/entities/player.ts` |
+| T11 | Velocidade da Ino | Comparar deslocamento inicial sem bônus | O atributo `speed` da Ino começa em `props.speed * 1.5` | `client/src/game/entities/player.ts` |
+| T12 | Vida extra do Frank | Atingir Frank (ID 10) com uma explosão, depois com outra | A primeira morte causada por bomba consome `extraLife` e aplica 1500 ms de proteção; a próxima pode eliminá-lo | `client/src/game/entities/player.ts` |
+| T13 | Overclock em multiplayer | Fazer Proença (ID 2) colocar bomba e cronometrar em pelo menos dois clientes | **Teste de divergência conhecida:** o código atual usa 1500 ms na criação local e 2250 ms na réplica; não considerar sincronizado até uniformizar | `client/src/game/entities/bomb.ts`, `canvas/index.tsx` |
+| T14 | Proença e visão do alcance | Colocar bombas de qualquer jogador com Proença e personagem comum | Apenas o Proença ativo visualiza a projeção de todas as bombas armadas | `client/src/game/util/explosionPreview.ts`, `player.ts` |
+| T15 | Prévia de explosão e obstáculos | Colocar bomba próxima de blocos `I` e `D` | A marcação para em indestrutíveis e destaca o destrutível final; comparar com a explosão efetiva | `explosionPreview.ts`, `bomb.ts` |
+| T16 | Ranking em janela ampla | Jogar em monitor com espaço lateral à esquerda do Canvas | A largura do painel é limitada ao espaço medido, com teto de 280 px | `canvas/index.tsx`, `canvas/rankingStyle.ts` |
+| T17 | Ranking em janela estreita | Reduzir largura, redimensionar, ativar/desativar tela cheia | Quando a largura disponível fica abaixo de 215 px, aparece o botão; painel abre e fecha sem impedir os controles | `canvas/index.tsx`, `canvas/rankingStyle.ts` |
+| T18 | Eventos Socket ao sair do Canvas | Entrar e sair de partidas consecutivas | O listener de `wins_update` é removido com `socket.off` no cleanup, evitando acúmulo entre montagens | `canvas/index.tsx` |
+| T19 | Build frontend | Executar `cd client && yarn build` | Gerar o diretório `build/`; warnings de ESLint devem ser avaliados, mas não equivalem necessariamente a erro de compilação | `client/package.json`, `canvas/index.tsx` |
+| T20 | Build backend | Executar `cd server && yarn build` | Nenhuma importação do módulo `ranking.ts` pode aparecer como indefinida | `server/package.json`, `server/src/ranking.ts` |
+| T21 | Publicação do frontend | Executar `cd client && bash deploy.sh` | Novo build publicado na branch `client`; endereço `maxrp1.github.io/BomberIF/` continua o mesmo | `client/deploy.sh` |
+| T22 | Deploy do backend | Enviar commit validado à `main` e observar execução do Render | Backend é compilado e iniciado conforme configuração atual; serviço externo precisa ser verificado na plataforma | `server/build.sh`, `server/src/index.ts` |
+
+### Distinção entre build, teste local e teste publicado
+
+1. **Build concluído** indica que o empacotamento finalizou; ainda podem existir avisos e falhas em tempo de execução.
+2. **Teste local com múltiplas abas** verifica comunicação básica, mas abas compartilham características do mesmo navegador e não representam todas as condições de rede.
+3. **Teste com dispositivos diferentes** permite observar divergências entre clientes, principalmente temporizadores de bombas, resultados de partida e contador de vitórias.
+4. **Teste de produção** confirma comportamento na configuração publicada; deve ser feito depois de preservar um estado estável do código-fonte e do deploy.
+
+### Fluxos de dados de referência
+
+**Abertura de partida:** `join_room` → `server/manager.ts` → `lobbyToRoom` / `findRoom` → `server/factory.ts:startGameFactory` → `start_game` + `myself` → `client/canvas/index.tsx:startGame` → criação de `PlayersFactory`, `BlocksFactory`, `SlowFloorsFactory` e demais entidades.
+
+**Vitória:** morte do jogador local → `emitKill` (`kl`) → `server/game.ts:onKill` → `registerDefeat` → identificação do último sobrevivente (após 200 ms) → incremento de `socket.data.wins` → `wins_update` → `setVictories` → ordenação do ranking por vitórias decrescentes.
+
+**Bombas do Proença:** `Player.placeBomb` cria bomba local com referência ao dono; `BombFactory` armazena multiplicador; `PlaceBombDTO` é enviado por `pb`; `server/game.ts:onPlaceBomb` define `dto.p` usando o socket; outros clientes recriam a bomba somente com dados e multiplicador calculado a partir do personagem remoto. **Na revisão atual os multiplicadores são diferentes entre os dois caminhos.**
+
+**Piso especial:** `server/factory.ts:slowFloorsFactory` seleciona posições → `GameStateDTO.slowFloors` → `SlowFloorsFactory` escolhe sprite visual local → `Player.moveTick` testa a célula e ajusta `speedMultiplier`; `Canvas.render` desenha o cenário antes do piso e dos blocos.
+
+### Informações operacionais a manter sincronizadas
+
+- `client/package.json` ainda registra `homepage` apontando para o domínio do projeto original (`binary-phantom.github.io/BomberIF`), enquanto a publicação usada neste fork é `maxrp1.github.io/BomberIF/`. Como o prefixo de caminho permanece `/BomberIF/`, isso não demonstra sozinho uma falha atual, mas a divergência de configuração deve ser considerada ao mudar domínio ou alterar rotas.
+- O ranking **não usa conta, banco de dados ou armazenamento persistente**. Atualmente o número de vitórias é conservado no socket entre partidas, mas a tentativa de zerar ao trocar de lobby não funciona pela ordem das instruções em `enterLobby`. Não apresentar esse recurso como classificação histórica ou por conta de usuário.
+- O campo `roomId` identifica a sala de **partida**, enquanto `lobbyId` representa o grupo de lobby. Eles não são intercambiáveis; uma nova rodada pode receber outro `roomId`.
+- O mapa `rounds` é temporário e mantido apenas na memória de um processo Node.js. A documentação não pressupõe que esse controle sobreviva a reinícios do Render, balanceamento multi-instância ou reconexões.
+- A projeção da Visão de Alcance é uma leitura do estado atual dos obstáculos. Ela não deve ser descrita como uma garantia de todas as reações futuras entre explosões encadeadas.
+
+### Política de atualização da documentação
+
+Ao modificar uma habilidade ou infraestrutura, registrar no mesmo commit de documentação: **arquivos afetados**, **parâmetros atuais**, **caminho dos eventos de rede**, **comportamento local/remoto**, **cenário de teste**, **limitações abertas** e **impacto no deploy**. Esta matriz é um roteiro de verificação e não um relatório de execução de testes.
+
+---
+
 **Critério de manutenção:** sempre revisar `doc/doc_bomberIF_novo_atualizado.md` quando alterar regras, DTOs, mecanismos de rede, elementos visuais, ranking ou deploy. Não editar o documento original recuperado para explicar mudanças posteriores.

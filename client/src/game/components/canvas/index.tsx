@@ -15,7 +15,7 @@ import { socket } from '~/services/socket'
 import { Pairing, Timer } from './style'
 import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { renderExplosionPreview } from '~/game/util/explosionPreview'
-import { RankingPanel } from './rankingStyle'
+import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 
 interface CanvasProps {
@@ -32,6 +32,8 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
   const [context, setContext] = useState<CanvasRenderingContext2D>()
   const [state, setState] = useState<GameState>()
   const [victories, setVictories] = useState<number[]>([])
+  const [rankingWidth, setRankingWidth] = useState(0)
+  const [rankingOpen, setRankingOpen] = useState(false)
 
   function gameLoop () {
     try {
@@ -219,7 +221,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       socket.off('fb', onFlingBomb)
       socket.off('nb', onNullifyBlock)
       socket.off('kl', onKill)
-      socket.on('wins_update', onWinsUpdate)
+      socket.off('wins_update', onWinsUpdate)
     }
   }, [state])
 
@@ -253,6 +255,38 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     setContext(context2d)
   }, [])
 
+  // Ajusta o ranking ao espaço real disponível à esquerda do jogo.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    function updateRankingWidth() {
+      const canvasLeft = canvas!.getBoundingClientRect().left
+      const available = Math.max(0, Math.floor(canvasLeft - 28))
+      const nextWidth = Math.min(280, available)
+
+      setRankingWidth(previous => previous === nextWidth ? previous : nextWidth)
+    }
+
+    updateRankingWidth()
+
+    const observer = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateRankingWidth)
+
+    observer?.observe(canvas)
+    window.addEventListener('resize', updateRankingWidth)
+    document.addEventListener('fullscreenchange', updateRankingWidth)
+
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', updateRankingWidth)
+      document.removeEventListener('fullscreenchange', updateRankingWidth)
+    }
+  }, [])
+
+  const compactRanking = rankingWidth < 215
+
   const ranking = (state?.players.players ?? [])
   .map((player, index) => ({
     index,
@@ -267,7 +301,21 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     <>
     {!state && <Pairing>Pairing</Pairing>}
 
-<RankingPanel>
+{compactRanking && (
+      <RankingToggle
+        type="button"
+        onClick={() => setRankingOpen(open => !open)}
+        aria-expanded={rankingOpen}
+        aria-label={rankingOpen ? 'Fechar ranking' : 'Abrir ranking'}
+      >
+        {rankingOpen ? '✕ Fechar' : '🏆 Ranking'}
+      </RankingToggle>
+    )}
+
+<RankingPanel
+  className={compactRanking ? (rankingOpen ? 'ranking-popup' : 'ranking-hidden') : ''}
+  style={compactRanking ? undefined : { width: rankingWidth }}
+>
   <div className="ranking-heading">
     <div className="ranking-title">
       🏆 RANKING DA SALA

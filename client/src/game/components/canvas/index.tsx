@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { OVERCLOCK_DETONATION_MULTIPLIER } from '#/constants'
 import { toast } from 'react-toastify'
 import { FlingBombDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, StartGameDTO } from '#/dto'
 import { BlocksFactory } from '~/game/entities/block'
@@ -132,7 +133,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       reach: dto.r,
       x: dto.x,
       y: dto.y,
-      detonationMultiplier: owner?.hasOverclock ? 0.75 : 1
+      detonationMultiplier: owner?.hasOverclock ? OVERCLOCK_DETONATION_MULTIPLIER : 1
     }))
   
     playBombSound()

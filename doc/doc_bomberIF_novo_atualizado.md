@@ -1,6 +1,25 @@
 # Estudo Técnico - BomberIF
 
-> **Revisão atualizada em 22/10/2026** — sincronizada com as alterações recentes de explosão, habilidade do Frank, pareamento via Socket.IO, `STAGES = 3`, deploy automático no Render e piso lento do refeitório.
+> **Revisão consolidada em 11/11/2026**, a partir do código disponível na branch `main` do repositório `MaxRp1/BomberIF`. O conteúdo anterior permanece preservado para estudo histórico; sempre que um trecho antigo divergir da subseção **Atualização 11/11/2026** ou do código atual, prevalecem estes últimos.
+
+> **Escopo e integridade:** esta é a documentação da continuidade e evolução do projeto. A versão original de referência, `doc/doc_bomberIF_completo_recuperado.md`, não foi editada. Não confundir a documentação original recuperada com este arquivo de manutenção.
+
+## Índice rápido das mudanças após outubro de 2026
+
+| Sistema | Estado em 11/11/2026 | Referências de código |
+|---|---|---|
+| Personagens | 12 sprites (0 a 11); Frank (10), Ino (11), Proença (2) com habilidades próprias | `shared/constants.ts`, `client/src/game/entities/player.ts` |
+| Cenários | 3 mapas sorteáveis; refeitório é `stage === 2` | `shared/constants.ts`, `server/src/factory.ts` |
+| Piso lento | 12 células aleatórias no refeitório; sprites `slow_floor_0..3.png`; velocidade multiplicada por `0.3` | `server/src/factory.ts`, `slowFloor.ts`, `player.ts` |
+| Explosões | Animação com intervalo de 80 ms; efeitos temporais e colisão continuam em `bomb.ts` / `blast.ts` | `client/src/game/animations/blast.ts`, `client/src/game/entities/blast.ts` |
+| Proença — Overclock | Multiplicador temporal armazenado em cada bomba; **há divergência entre criação local e remota**, descrita na seção de pendências | `player.ts`, `bomb.ts`, `canvas/index.tsx` |
+| Proença — Visão de Alcance | Projeção visual local de todas as bombas armadas, exclusiva do Proença | `client/src/game/util/explosionPreview.ts`, `canvas/index.tsx` |
+| Ranking | Vitórias acumuladas por conexão durante a sessão; sincronização via `wins_update` | `server/src/ranking.ts`, `shared/dto.ts`, `canvas/index.tsx` |
+| Interface | Painel de classificação com identificação do jogador, posição, vitórias e layout responsivo | `canvas/rankingStyle.ts`, `canvas/index.tsx` |
+| Publicação | Backend Render via `main`, frontend Pages via branch `client` | `server/build.sh`, `client/deploy.sh` |
+
+**Linha do tempo verificada no Git:** 23/10 — pisos lentos e manchas visuais; 03/11 — habilidade da Ino; 10/11 — duas habilidades do Proença; 11/11 — ranking por sala/sessão e responsividade. As seções seguintes reúnem o funcionamento atual e também registram limitações e pontos a corrigir sem alterar o código do jogo.
+
 
 ---
 # **SERVER**
@@ -64,15 +83,34 @@ export const PORT = process.env.PORT || 4000
 
 # 'Server' src/dto.ts 
 
-**PLAYER DTO**
+### Atualização 11/11/2026 — dados do socket
 
-``` ts
+Esta interface estende os dados tipados armazenados em `socket.data` por meio de `server/src/extends.ts`. Os campos `wins` e `p` constam atualmente no arquivo; `wins` é utilizado para contabilização temporária de vitórias. Não confundir com `PlayerDTO` compartilhado, que transporta `sprite` e `wins?` para o cliente.
+
+```ts
 export interface PlayerDTO {
   index     : number
   isPairing : boolean
   lobbyId   : string
   nick      : string
   roomId    : string
+  p: number
+  wins: number
+}
+```
+
+
+**PLAYER DTO**
+
+```ts
+export interface PlayerDTO {
+  index     : number
+  isPairing : boolean
+  lobbyId   : string
+  nick      : string
+  roomId    : string
+  p: number
+  wins: number
 }
 ```
 
@@ -93,13 +131,81 @@ export interface PlayerDTO {
 
 # 'Server' src/factory.ts
 
+### Atualização 11/11/2026 — criação de partida, ranking e refeitório
+
+- `startGameFactory` obtém a sala pelo `roomId`, coleta `socketId` em `playerIds`, atribui `index`, envia `myself` e inclui `wins: p.data.wins ?? 0` em cada jogador. Após gerar o estado, inicia o rastreamento da rodada com `beginRankingRound(roomId, playerIds)`.
+
+- O servidor gera **12** posições de piso lento (e não 8), apenas no mapa de índice 2. O cálculo considera células `null`, protege regiões de nascimento e embaralha posições antes de selecionar `slice(0, 12)`.
+
+- `SPRITES = 12` sorteia personagens de índices 0 a 11; `STAGES = 3` sorteia mapas 0 a 2.
+
+- O array `playerIds` **precisa** ser preenchido dentro do laço; caso contrário, o ranking da rodada não será inicializado.
+
+
+
+Trecho central **atual**:
+
+```ts
+export function startGameFactory (
+  io: Server,
+  roomId: string
+): StartGameDTO | null {
+
+  // Obtém os jogadores conectados à sala
+  const room = io.sockets.adapter.rooms.get(roomId)
+
+  if (!room) return null
+
+  const players: StartGameDTO['players'] = []
+  const playerIds: string[] = []
+
+  for (const socketId of room) {
+    const p: Socket | undefined = io.sockets.sockets.get(socketId)
+
+    if (!p) continue
+
+    // Registra o jogador no sistema de ranking
+    playerIds.push(socketId)
+
+    const size = players.push({
+      nick: p.data.nick,
+      sprite: Math.floor(Math.random() * SPRITES),
+      wins: p.data.wins ?? 0
+    })
+
+    const index = size - 1
+
+    p.data.index = index
+    p.emit('myself', index)
+  }
+
+  if (!players.length) return null
+
+  // Cria o estado inicial da partida
+  const state = stateFactory()
+
+  // Inicializa o acompanhamento de vitórias da rodada
+  beginRankingRound(roomId, playerIds)
+
+  return { players, state }
+}
+```
+
+
 **Imports**
 
-``` ts 
+```ts
 import { Server } from 'socket.io'
 import { BLASTS, BOMBS, BONUS, BONUSES, SPRITES, STAGES } from '#/constants'
-import { BlockDTO, GameStateDTO, LobbyDTO, SlowFloorDTO, StartGameDTO } from '#/dto'
+import {
+  BlockDTO,
+  GameStateDTO,
+  LobbyDTO,
+  SlowFloorDTO,
+  StartGameDTO
+} from '#/dto'
 import { Socket } from '~/extends'
+import { beginRankingRound } from '~/ranking'
 
 const CAFETERIA_STAGE = 2
 const SLOW_FLOOR_COUNT = 12
@@ -215,27 +321,50 @@ Caso outro mapa seja selecionado, slowFloors recebe um vetor vazio, mantendo a m
 As posições são geradas pelo servidor e enviadas junto ao estado inicial da partida. Dessa forma, todos os jogadores compartilham as mesmas células que provocam redução de velocidade.
 
 **StartGameFactory**
-``` ts
-  // estabelece os jogadores e o estado inicial do jogo
-  export function startGameFactory (io : Server, roomId : string) : StartGameDTO|null {
-    const room = io.sockets.adapter.rooms.get(roomId)
-    if (!room) return null
-    const players:StartGameDTO['players'] = []
-    for (const socketId of room) {
-      const p:Socket|undefined = io.sockets.sockets.get(socketId)
-      if (!p) continue
-      const size = players.push({
-        nick: p.data.nick,
-        sprite: Math.floor(Math.random() * SPRITES)
-      })
-      const index = size-1
-      p.data.index = index
-      p.emit('myself', index)
-    }
-    if (!players.length) return null
-    const state = stateFactory()
-    return { players, state }
+```ts
+export function startGameFactory (
+  io: Server,
+  roomId: string
+): StartGameDTO | null {
+
+  // Obtém os jogadores conectados à sala
+  const room = io.sockets.adapter.rooms.get(roomId)
+
+  if (!room) return null
+
+  const players: StartGameDTO['players'] = []
+  const playerIds: string[] = []
+
+  for (const socketId of room) {
+    const p: Socket | undefined = io.sockets.sockets.get(socketId)
+
+    if (!p) continue
+
+    // Registra o jogador no sistema de ranking
+    playerIds.push(socketId)
+
+    const size = players.push({
+      nick: p.data.nick,
+      sprite: Math.floor(Math.random() * SPRITES),
+      wins: p.data.wins ?? 0
+    })
+
+    const index = size - 1
+
+    p.data.index = index
+    p.emit('myself', index)
   }
+
+  if (!players.length) return null
+
+  // Cria o estado inicial da partida
+  const state = stateFactory()
+
+  // Inicializa o acompanhamento de vitórias da rodada
+  beginRankingRound(roomId, playerIds)
+
+  return { players, state }
+}
 ```
 
 - Localiza uma sala existente no servidor e inicializa a partida para os jogadores presentes nela. Ela distribui os sprites visuais de forma aleatória, define o índice de identificação de cada jogador na memória do servidor, envia essa confirmação para cada cliente e gera o estado inicial do mapa e dos elementos do jogo.
@@ -308,7 +437,7 @@ function slowFloorsFactory (
 }
 ```
 
-- Gera as células de piso lento usadas exclusivamente no refeitório. A função percorre apenas posições vazias (`null`) da matriz de blocos, protege as áreas iniciais dos quatro jogadores, embaralha as posições disponíveis e seleciona até **8 células**.
+- Gera as células de piso lento usadas exclusivamente no refeitório. A função percorre apenas posições vazias (`null`) da matriz de blocos, protege as áreas iniciais dos quatro jogadores, embaralha as posições disponíveis e seleciona até **12 células**.
 - Como a lista é criada no servidor e enviada dentro do `GameStateDTO`, todos os clientes recebem exatamente as mesmas posições de piso lento na mesma partida.
 
 **stateFactory**
@@ -400,12 +529,34 @@ function bonusFactory (blocks:(BlockDTO|null)[][]) : (BlockDTO|null)[][] {
 
 # 'Server' src/game.ts 
 
+### Atualização 11/11/2026 — integração das eliminações com o ranking
+
+- A função `onKill` conserva a propagação do evento `kl` para o `roomId` e **também chama `registerDefeat(io, socket)`**, que atualiza a rodada no servidor.
+
+- A apuração é desencadeada pelos eventos recebidos do cliente. Portanto, o servidor **não é autoritativo sobre o dano e as mortes**: o novo ranking não elimina por si só a possibilidade de clientes alterados enviarem informações indevidas.
+
+```ts
+export function onKill(
+  io: Server,
+  socket: Socket,
+  dto: KillDTO
+) {
+  dto.p = socket.data.index
+
+  io.to(socket.data.roomId).emit('kl', dto)
+
+  registerDefeat(io, socket)
+}
+```
+
+
 __IMPORTS__
 
 ```ts
 import { Server } from 'socket.io'
 import { FlingBombDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO } from '#/dto'
 import { Socket } from '~/extends'
+import { registerDefeat } from '~/ranking'
 ```
 
 - Realiza a importação das dependências e módulos necessários: o Server do Socket.IO para gerenciamento das conexões de rede, os DTOs responsáveis por estruturar os dados de ações de bomba, movimentação e combate, e a interface Socket estendida para referenciar a conexão individual de cada jogador.
@@ -465,10 +616,17 @@ export function onNullifyBlock (io:Server, socket:Socket, dto:NullifyBlockDTO) {
 
 - Recebe como parâmetro a instância do servidor, a conexão do jogador e os dados da anulação/remoção do bloco **NullifyBlockDTO**. A função retransmite o evento de destruição do bloco **'nb'** para todos os participantes presentes na mesma sala.
 
-```ts 
-export function onKill (io:Server, socket:Socket, dto:KillDTO) {
+```ts
+export function onKill(
+  io: Server,
+  socket: Socket,
+  dto: KillDTO
+) {
   dto.p = socket.data.index
+
   io.to(socket.data.roomId).emit('kl', dto)
+
+  registerDefeat(io, socket)
 }
 ```
 
@@ -578,6 +736,73 @@ export default function ioListener (io:Server) {
 
 # 'Server' src/manager.ts  
 
+### Atualização 11/11/2026 — ciclo das vitórias e lobby
+
+- `setUser` inicializa `socket.data.wins ??= 0`: o valor persiste enquanto aquela conexão existe, incluindo novas partidas.
+
+- `onDisconnect` chama `cancelRankingRound(socket.data.roomId)`: uma desconexão cancela a apuração da rodada em curso, evitando conceder vitória a uma rodada interrompida.
+
+- `joinRoom` transmite `open_game`, busca participantes e os transfere para uma sala de jogo; `lobbyToRoom` chama `startGameFactory` somente no momento de iniciar a partida.
+
+- **Comportamento atual a observar:** dentro de `enterLobby`, a comparação `if (socket.data.lobbyId !== lobbyId)` ocorre **depois** da atribuição `socket.data.lobbyId = lobbyId`. Por isso a condição não se torna verdadeira no fluxo normal; não é correto afirmar que a troca de lobby já zera as vitórias.
+
+
+
+Trechos relevantes do código atual:
+
+```ts
+export function setUser (io:Server, socket:Socket, user:UserDTO) {
+  if (typeof user.nick !== 'string' || user.nick.length < NICK.MIN || user.nick.length > NICK.MAX) {
+    return socket.emit('error', ERRORS.SET_USER_FAILED)
+  }
+  socket.data.nick = user.nick
+  socket.data.wins ??= 0
+  const dto = updateLobbyFactory(io, socket.data.lobbyId)
+  dto && sendToLobby(io, socket, 'update_lobby', dto)
+}
+```
+
+```ts
+export function onDisconnect (io:Server, socket:Socket) {
+  cancelRankingRound(socket.data.roomId)
+  updateRoomQueue(socket)
+  const dto = updateLobbyFactory(io, socket.data.lobbyId)
+  if (dto) {
+    const dis:DisconnectedDTO = {socketId:socket.id}
+    sendToLobby(io, socket, 'disconnected', dis)
+    sendToLobby(io, socket, 'update_lobby', dto)
+  }
+}
+```
+
+```ts
+async function enterLobby (
+  io:Server,
+  socket:Socket,
+  lobbyId:string
+) {
+  await socket.leave(socket.data.lobbyId)
+  await socket.join(lobbyId)
+
+  socket.data.lobbyId = lobbyId
+  socket.data.isPairing = false
+
+  const dto = updateLobbyFactory(io, lobbyId)
+
+  if (socket.data.lobbyId !== lobbyId) {
+    socket.data.wins = 0
+  }
+
+  dto && sendToLobby(
+    io,
+    socket,
+    'update_lobby',
+    dto
+  )
+}
+```
+
+
 **IMPORTS** 
 
 ```ts
@@ -595,16 +820,16 @@ import { generateId } from '~/util'
 
 **setUser** 
 
-```ts 
+```ts
 export function setUser (io:Server, socket:Socket, user:UserDTO) {
   if (typeof user.nick !== 'string' || user.nick.length < NICK.MIN || user.nick.length > NICK.MAX) {
     return socket.emit('error', ERRORS.SET_USER_FAILED)
   }
   socket.data.nick = user.nick
+  socket.data.wins ??= 0
   const dto = updateLobbyFactory(io, socket.data.lobbyId)
   dto && sendToLobby(io, socket, 'update_lobby', dto)
 }
-
 ```
 
 - Atribui o apelido nickname ao jogador no servidor. A função realiza a validação do campo **nick**, emitindo um erro caso ele não seja uma string ou não atenda aos limites mínimo e máximo estipulados NICK.**MIN** e **NICK.MAX**. Caso a validação seja aceita, armazena o apelido na sessão do socket **socket.data.nick**, gera a estrutura atualizada da sala através da fábrica **updateLobbyFactory** e transmite o evento **update_lobby** com os novos dados para os participantes.
@@ -625,22 +850,30 @@ export function createLobby (io : Server, socket : Socket) {
 
 **changeLobby**
 
-```ts 
-export async function changeLobby (io : Server, socket : Socket, lobbyId : string) {
-  if (typeof lobbyId !== 'string' || lobbyId.length !== ID_LENGTH) {
-    return socket.emit('error', ERRORS.LOBBY_NOT_FOUND)
+```ts
+async function enterLobby (
+  io:Server,
+  socket:Socket,
+  lobbyId:string
+) {
+  await socket.leave(socket.data.lobbyId)
+  await socket.join(lobbyId)
+
+  socket.data.lobbyId = lobbyId
+  socket.data.isPairing = false
+
+  const dto = updateLobbyFactory(io, lobbyId)
+
+  if (socket.data.lobbyId !== lobbyId) {
+    socket.data.wins = 0
   }
-  const lobby = io.sockets.adapter.rooms.get(lobbyId)
-  if (!lobby) {
-    return socket.emit('error', ERRORS.LOBBY_NOT_FOUND)
-  }
-  if (lobby.size === MAX_PLAYERS) {
-    return socket.emit('error', ERRORS.LOBBY_FULL)
-  }
-  if (lobby.has(socket.id)) {
-    return socket.emit('error', ERRORS.ALREADY_IN_LOBBY)
-  }
-  await enterLobby(io, socket, lobbyId)
+
+  dto && sendToLobby(
+    io,
+    socket,
+    'update_lobby',
+    dto
+  )
 }
 ```
 
@@ -648,18 +881,34 @@ export async function changeLobby (io : Server, socket : Socket, lobbyId : strin
 
 
 **joinRoom** 
-```ts 
+```ts
 export async function joinRoom (io:Server, socket:Socket, dto:JoinRoomDTO) {
   const lobby = io.sockets.adapter.rooms.get(socket.data.lobbyId)
   if (!lobby) {
     return socket.emit('error', ERRORS.LOBBY_NOT_FOUND)
   }
   for (const socketId of lobby) {
-    const s = io.sockets.sockets.get(socketId) as Socket
-    if (s.data.isPairing) {
-      return socket.emit('error', ERRORS.ALREADY_PAIRING)
+  const s = io.sockets.sockets.get(socketId) as Socket
+
+  console.log(
+    '[JOIN CHECK]',
+    {
+      nick: s.data.nick,
+      socket: s.id,
+      isPairing: s.data.isPairing,
+      roomId: s.data.roomId
     }
+  )
+
+  if (s.data.isPairing) {
+    console.log('[BLOQUEOU A SALA]', s.data.nick)
+
+    return socket.emit(
+      'error',
+      ERRORS.ALREADY_PAIRING
+    )
   }
+}
   io.to(socket.data.lobbyId).emit('open_game')
   const players = getLobbyPlayers(io, lobby)
   if (!dto.fillRoom || players.length === MAX_PLAYERS) {
@@ -670,7 +919,6 @@ export async function joinRoom (io:Server, socket:Socket, dto:JoinRoomDTO) {
     return joinRoomQueue(io, socket, players)
   }
 }
-
 ```
 
 - Realiza a inicialização de uma partida para o grupo. Ela garante que a sala esteja em estado válido e notifica a interface dos clientes para abrir a tela do jogo. Além disso, decide o fluxo de partida, direciona o grupo para o jogo imediato caso o lobby esteja completo/privado, ou aciona o algoritmo de pareamento para encontrar outros jogadores ou alocar o grupo na fila global de busca.
@@ -687,9 +935,9 @@ export function onReady (io:Server, socket:Socket) {
 
 **ononDisconnect**
 
-```ts 
-
+```ts
 export function onDisconnect (io:Server, socket:Socket) {
+  cancelRankingRound(socket.data.roomId)
   updateRoomQueue(socket)
   const dto = updateLobbyFactory(io, socket.data.lobbyId)
   if (dto) {
@@ -698,7 +946,6 @@ export function onDisconnect (io:Server, socket:Socket) {
     sendToLobby(io, socket, 'update_lobby', dto)
   }
 }
-
 ```
 
 - Gerencia os impactos da desconexão de um jogador no sistema de salas. A função é responsável por remover o participante das filas de pareamento ativas e recalcular o estado do lobby. Caso a sala continue existindo com outros membros, ela notifica os participantes remanescentes sobre a desconexão e transmite os dados atualizados do lobby para manter a interface de todos sincronizada. 
@@ -836,6 +1083,125 @@ export function sendToLobby (io:Server, socket:Socket, event:string, dto:any) {
 
 - A função  é responsável por transmitir mensaagems  e atualizações de estado **dto** para todos os participantes conectados na sala atual do jogador.
 
+# 'Server' src/ranking.ts — ranking de vitórias por sessão (11/11/2026)
+
+## Responsabilidade e estado
+
+O módulo mantém um `Map<string, Round>` em memória, indexado pelo **`roomId` da partida**. Cada `Round` armazena os identificadores de sockets sobreviventes (`Set<string>`) e, quando necessário, um temporizador para encerrar o resultado. **A contagem de vitórias (`socket.data.wins`) fica armazenada no socket**, não no `Map`, nem em um banco de dados.
+
+## Fluxo de uma rodada
+
+1. `startGameFactory` reúne os `socketId` e chama `beginRankingRound(roomId, playerIds)`. Partidas com menos de dois jogadores não geram uma rodada pontuável.
+2. `client/player.ts` envia a eliminação (`kl`); `server/game.ts` retransmite aos clientes e chama `registerDefeat`.
+3. `registerDefeat` remove o socket eliminado do conjunto `alive`. Uma nova chamada para a mesma eliminação não remove o jogador duas vezes.
+4. Ao restar um sobrevivente, agenda-se uma espera de **200 ms** para absorver possíveis mortes quase simultâneas. Se todos morrerem antes da conclusão, a rodada é cancelada como empate.
+5. Se houver vencedor conectado, soma-se `1` a `winner.data.wins` e emite-se `wins_update: { p: winner.data.index, wins: winner.data.wins }` para o `roomId`. Depois a rodada é descartada.
+6. `onDisconnect` também pode cancelar a rodada em andamento. Em reinício do processo do servidor, todo estado em memória desaparece.
+
+**Limites:** não há placar global, login, banco de dados ou persistência após desconexão. O placar exibe vitórias dos participantes atuais, mas o valor individual pode ter sido acumulado em partidas anteriores da mesma conexão. Isso não equivale a um histórico permanentemente associado a um único lobby.
+
+## Código atual
+
+```ts
+import { Server } from 'socket.io'
+import { Socket } from '~/extends'
+
+interface Round {
+  alive: Set<string>
+  finishTimer?: ReturnType<typeof setTimeout>
+}
+
+const rounds = new Map<string, Round>()
+
+// Registra os participantes de uma nova partida.
+export function beginRankingRound(
+  roomId: string,
+  playerIds: string[]
+) {
+  cancelRankingRound(roomId)
+
+  // Partidas individuais não contam como vitória.
+  if (playerIds.length < 2) return
+
+  rounds.set(roomId, {
+    alive: new Set(playerIds)
+  })
+}
+
+// Cancela o registro da partida.
+export function cancelRankingRound(roomId: string) {
+  const round = rounds.get(roomId)
+
+  if (round?.finishTimer) {
+    clearTimeout(round.finishTimer)
+  }
+
+  rounds.delete(roomId)
+}
+
+// Registra a eliminação de um participante.
+export function registerDefeat(
+  io: Server,
+  socket: Socket
+) {
+  const roomId = socket.data.roomId
+  const round = rounds.get(roomId)
+
+  if (!round) return
+
+  // Impede contabilizar a mesma morte duas vezes.
+  if (!round.alive.delete(socket.id)) return
+
+  // Todos morreram: não existe vencedor.
+  if (round.alive.size === 0) {
+    cancelRankingRound(roomId)
+    return
+  }
+
+  // A partida ainda possui mais de um sobrevivente.
+  if (round.alive.size !== 1) return
+
+  // Evita agendar a finalização repetidamente.
+  if (round.finishTimer) return
+
+  // Pequena tolerância para mortes simultâneas.
+  round.finishTimer = setTimeout(() => {
+    if (rounds.get(roomId) !== round) return
+
+    if (round.alive.size !== 1) {
+      cancelRankingRound(roomId)
+      return
+    }
+
+    const winnerId = [...round.alive][0]
+
+    const winner = io.sockets.sockets.get(
+      winnerId
+    ) as Socket | undefined
+
+    if (winner && winner.data.roomId === roomId) {
+      winner.data.wins = (winner.data.wins ?? 0) + 1
+
+      io.to(roomId).emit('wins_update', {
+        p: winner.data.index,
+        wins: winner.data.wins
+      })
+    }
+
+    cancelRankingRound(roomId)
+  }, 200)
+}
+```
+
+## Integração
+
+- Emissor: `server/src/ranking.ts` (evento servidor → cliente `wins_update`).
+- DTO: `shared/dto.ts` (`WinsUpdateDTO`).
+- Receptor: `client/src/game/components/canvas/index.tsx` (`onWinsUpdate`).
+- O servidor **não** registra `socket.on('wins_update', ...)` em `ioListener.ts`, pois o evento é de saída.
+
+---
+
 # 'Server' src/rooms.ts
 
 **rooms** 
@@ -952,6 +1318,18 @@ export function getSsl () {
 
 # 'Shared' constants.ts — constantes alteradas no projeto
 
+### Verificação das constantes em 11/11/2026
+
+`SPRITES = 12`, `STAGES = 3`, `SPEED = 1` e `TILE_SIZE = 16`. Proença é `2.png`, Frank `10.png` e Ino `11.png`. O refeitório corresponde ao índice 2. Valores extraídos do arquivo atual:
+
+```ts
+export const SPEED = 1
+export const SPRITES = 12
+export const STAGES = 3
+export const TILE_SIZE = 16
+```
+
+
 **SPRITES / STAGES**
 
 ```ts
@@ -966,6 +1344,29 @@ export const STAGES = 3
 - Essas constantes são consumidas pelo `server/src/factory.ts`: `SPRITES` controla o personagem sorteado em `startGameFactory`, enquanto `STAGES` controla o cenário sorteado em `stateFactory`.
 
 # 'Shared' dto.ts — estado compartilhado do piso lento
+
+### Atualização 11/11/2026 — placar na transferência de dados
+
+Além de `SlowFloorDTO` e `GameStateDTO.slowFloors`, o DTO compartilhado agora contém:
+
+```ts
+export interface PlayerDTO extends UserDTO {
+  sprite : number
+  wins?: number
+}
+
+export interface WinsUpdateDTO {
+  p: number
+  wins: number
+}
+```
+
+- `PlayerDTO.wins?`: total informado no início da partida pelo `server/src/factory.ts`.
+
+- `WinsUpdateDTO`: atualização parcial de vitória enviada pelo servidor, identificando o jogador por `p` (índice na partida) e o novo total por `wins`.
+
+- O evento não foi adicionado ao cliente emissor `services/socket.ts`, porque nenhuma mensagem de vitória deve ser enviada pelo navegador.
+
 
 ```ts
 export interface SlowFloorDTO {
@@ -1343,10 +1744,30 @@ export const PLAYER_K : Animation = {
 
 ---
 
-# 'Client' src/game/components/canvas/index.tsx
+# 'Client' src/game/components/canvas/index.tsx — referência atual (11/11/2026)
 
-**IMPORTS** 
-```ts 
+## Papel do componente
+
+Coordena o estado local da partida, desenha o Canvas 2D, trata eventos Socket.IO, controla `gameLoop` e exibe a classificação de vitórias. A tela interna mantém dimensão lógica de **240×208** pixels e desativa suavização (`imageSmoothingEnabled = false`) para preservar a pixel art.
+
+## Fluxo atual
+
+- `startGame(dto)`: converte `dto.state` com `BlocksFactory`, `EntitiesFactory`, `PlayersFactory`, `SlowFloorsFactory` e `StageFactory`; inicializa `victories` com `dto.players.map(p => p.wins ?? 0)`.
+- `render()`: cenário → pisos lentos → blocos → `renderExplosionPreview()` → entidades e jogadores. Se alguém estiver segurando bomba, jogadores e entidades trocam a ordem de renderização.
+- `onPlaceBomb`: recebe bomba de outro participante pelo evento `pb` e deriva o bônus de temporização do sprite de seu proprietário via `owner?.hasOverclock`. Não anexa uma referência `player` a bombas remotas.
+- `onKill`: trata `kl` e chama `checkWin()` para encerrar a rodada; o ranking numérico é mantido separadamente pelo servidor.
+- `onWinsUpdate`: atualiza `victories[dto.p]` com o total de `wins_update`, não incrementa manualmente.
+- Registro/limpeza do `wins_update` usa `socket.on` e `socket.off` no `useEffect`, evitando duplicação de ouvintes entre partidas.
+
+## Ranking visual e responsividade
+
+- Ordena por vitórias decrescentes e por índice original em caso de empate. A identidade visual do jogador local recebe `VOCÊ`; somente o líder isolado com vitórias recebe a coroa.
+- `rankingWidth` usa o espaço livre real à esquerda do Canvas (`getBoundingClientRect().left - 28`), com máximo de 280 px. As medições reagem a `ResizeObserver`, `window.resize` e `fullscreenchange`.
+- Quando `rankingWidth < 215`, `RankingToggle` mostra um botão para abrir/fechar o popup. A sobreposição ocorre só quando o jogador pede o placar compacto.
+
+## Código completo da versão corrente
+
+```tsx
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'react-toastify'
 import { FlingBombDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, StartGameDTO } from '#/dto'
@@ -1354,7 +1775,6 @@ import { BlocksFactory } from '~/game/entities/block'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { EntitiesFactory } from '~/game/entities/factory'
 import { PlayersFactory } from '~/game/entities/players'
-import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { StageFactory } from '~/game/entities/stage'
 import { GameState } from '~/game/entities/state'
 import { TimerFactory } from '~/game/entities/timer'
@@ -1362,25 +1782,18 @@ import { playBombSound } from '~/game/sound/bomb'
 import { playWinSound, stopWinSound } from '~/game/sound/win'
 import { Assets } from '~/game/util/assets'
 import { socket } from '~/services/socket'
-import { Pairing, Players, Timer } from './style'
+import { Pairing, Timer } from './style'
+import { SlowFloorsFactory } from '~/game/entities/slowFloor'
+import { renderExplosionPreview } from '~/game/util/explosionPreview'
+import { RankingPanel, RankingToggle } from './rankingStyle'
+import { WinsUpdateDTO } from '#/dto'
 
 interface CanvasProps {
   myself : number|null
   style  : React.CSSProperties
   setShowGame : React.Dispatch<React.SetStateAction<boolean>>
 }
-```
 
-- Carrega dependências do React, utilitários, fábricas do jogo e define a interface de propriedades do componente de tela. As importações trazem os hooks nativos do React, notificações **toast**, DTOs de comunicação da rede, fábricas de entidades (jogadores, bombas, blocos, palco e temporizador), efeitos sonoros e o cliente Socket.IO. 
-
-**CanvasProps**
-
-- A interface CanvasProps estabelece as propriedades recebidas pelo componente de exibição do jogo: o ID do jogador local **myself**, estilos visuais **style** e a função de controle de exibição do estado da partida **setShowGame**.
-
-
-**Canvas 1/3**
-
-```ts 
 export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -1388,6 +1801,9 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
   const timeRef = useRef<{endGame:NodeJS.Timeout|undefined, gameLoop:NodeJS.Timer|undefined}>({endGame:undefined, gameLoop:undefined})
   const [context, setContext] = useState<CanvasRenderingContext2D>()
   const [state, setState] = useState<GameState>()
+  const [victories, setVictories] = useState<number[]>([])
+  const [rankingWidth, setRankingWidth] = useState(0)
+  const [rankingOpen, setRankingOpen] = useState(false)
 
   function gameLoop () {
     try {
@@ -1404,54 +1820,58 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
     state?.players.tick(state)
   }
 
-  function render () {
-    if (!context || !canvasRef.current) return
+function render () {
+  if (!context || !canvasRef.current) return
 
-    context.clearRect(
-      0,
-      0,
-      canvasRef.current.width,
-      canvasRef.current.height
-    )
+  context.clearRect(
+    0,
+    0,
+    canvasRef.current.width,
+    canvasRef.current.height
+  )
 
-    state?.stage.render(context)
-    state?.slowFloors.render(context)
-    state?.blocks.render(context, state)
+  state?.stage.render(context)
+  state?.slowFloors.render(context)
+  state?.blocks.render(context, state)
+  renderExplosionPreview(context!, state!)
 
-    if (state!.players.players.find(p => p.holding)) {
-      state?.players.render(context)
-      state?.entities.render(context)
-    }
-    else {
-      state?.entities.render(context)
-      state?.players.render(context)
-    }
+  if (state!.players.players.find(p => p.holding)) {
+    state?.players.render(context)
+    state?.entities.render(context)
   }
-
-  function startGame (dto:StartGameDTO) {
-    socket.off('start_game', startGame)
-    setState({
-      ...dto.state,
-      blocks: BlocksFactory(dto.state.blocks),
-      entities: EntitiesFactory(),
-      players: PlayersFactory(dto.players),
-      slowFloors: SlowFloorsFactory(dto.state.slowFloors),
-      stage: StageFactory({name:dto.state.stage})
-    })
+  else {
+    state?.entities.render(context)
+    state?.players.render(context)
   }
-```
+}
 
-- Gerencia o estado interno, as referências de tela e o loop principal de atualização e renderização. O componente inicializa os refs de controle do **canvas** e de contagem/tempo, mantendo o estado global da partida **GameState** e o contexto 2D de pintura.
+function startGame (dto:StartGameDTO) {
+  socket.off('start_game', startGame)
 
-- **gameLoop**, **tick**, **render**: Formam o ciclo de atualização contínua do jogo. O `render` agora valida `context` e `canvasRef.current` antes de acessar o Canvas e desenha as camadas na ordem **stage → slowFloors → blocks → entities/players**. Assim, o piso lento aparece sobre o chão do cenário e abaixo dos elementos jogáveis.
+  console.log('CLIENT STAGE:', dto.state.stage)
+  console.log('CLIENT SLOW FLOORS:', dto.state.slowFloors)
 
-- **startGame**: Trata o evento de início da partida vindo do Socket e constrói as fábricas do estado. Além de stage, blocos, jogadores e entidades gerais, também converte `dto.state.slowFloors` com `SlowFloorsFactory`, preservando no cliente as mesmas células sorteadas pelo servidor.
+  setState({
+    ...dto.state,
+    blocks: BlocksFactory(dto.state.blocks),
+    entities: EntitiesFactory(),
+    players: PlayersFactory(dto.players),
+    slowFloors: SlowFloorsFactory(dto.state.slowFloors),
+    stage: StageFactory({name:dto.state.stage})
+  })
+  setVictories(dto.players.map(p => p.wins ?? 0))
+}
 
----
+function onWinsUpdate(dto: WinsUpdateDTO) {
+  setVictories(previous => {
+    const updated = [...previous]
 
-**Default function Canvas 2/3**
+    updated[dto.p] = dto.wins
 
-```ts 
+    return updated
+  })
+}
+
   function onReady () {
     readyRef.current++
     if (!state) return
@@ -1471,14 +1891,20 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
 
   function onPlaceBomb (dto:PlaceBombDTO) {
     if (dto.p === myself) return
-    state?.entities.add(BombFactory({
+    if (!state) return
+  
+    const owner = state.players.players[dto.p]
+  
+    state.entities.add(BombFactory({
       axes: dto.a,
       id: dto.i,
       playerIndex: dto.p,
       reach: dto.r,
       x: dto.x,
-      y: dto.y
+      y: dto.y,
+      detonationMultiplier: owner?.hasOverclock ? 0.75 : 1
     }))
+  
     playBombSound()
   }
 
@@ -1544,23 +1970,6 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
     }
   }
 
-```
-
-- Sincroniza as ações dos jogadores remotos via Socket.IO e gerencia a checagem de fim de partida. O bloco reúne as funções que escutam os pacotes recebidos do servidor para atualizar o estado local em tempo real, além de validar a condição de vitória.
-
-- **onReady**: Controla a confirmação de carregamento dos participantes. Quando todos os jogadores estão prontos, remove o ouvinte de sincronização, inicializa o temporizador da partida, ativa as trilhas sonoras e libera a movimentação dos personagens.
-
-- **onMove**, **onPlaceBomb**,  **onMoveBomb**, **onHoldBomb**,  **onFlingBomb**: Sincronizam as ações realizadas por outros jogadores (ignorando requisições do próprio cliente, myself). Atualizam posições, criam/movem bombas no mapa, gerenciam a mecânica de segurar e arremessar bombas e acionam os efeitos sonoros correspondentes.
-
-- **onNullifyBlock**, **onKill**: Tratam a destruição de blocos no cenário e a eliminação de personagens atingidos por explosões.
-
-- **checkWin**: Verifica continuamente a quantidade de jogadores ativos. Quando resta apenas um participante vivo, interrompe os sistemas do jogo (temporizador, preenchimento de mapa e áudios) e exibe a notificação visual e sonora de vitória antes de encerrar a partida.
-
---- 
-
-**Default function Canvas 3/3**
-
-```ts 
   useEffect(() => {
     socket.on('start_game', startGame)
     socket.on('ready', onReady)
@@ -1571,6 +1980,7 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
     socket.on('fb', onFlingBomb)
     socket.on('nb', onNullifyBlock)
     socket.on('kl', onKill)
+    socket.on('wins_update', onWinsUpdate)
     return () => {
       socket.off('start_game', startGame)
       socket.off('ready', onReady)
@@ -1581,6 +1991,7 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
       socket.off('fb', onFlingBomb)
       socket.off('nb', onNullifyBlock)
       socket.off('kl', onKill)
+      socket.off('wins_update', onWinsUpdate)
     }
   }, [state])
 
@@ -1614,30 +2025,344 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
     setContext(context2d)
   }, [])
 
+  // Ajusta o ranking ao espaço real disponível à esquerda do jogo.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    function updateRankingWidth() {
+      const canvasLeft = canvas!.getBoundingClientRect().left
+      const available = Math.max(0, Math.floor(canvasLeft - 28))
+      const nextWidth = Math.min(280, available)
+
+      setRankingWidth(previous => previous === nextWidth ? previous : nextWidth)
+    }
+
+    updateRankingWidth()
+
+    const observer = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateRankingWidth)
+
+    observer?.observe(canvas)
+    window.addEventListener('resize', updateRankingWidth)
+    document.addEventListener('fullscreenchange', updateRankingWidth)
+
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', updateRankingWidth)
+      document.removeEventListener('fullscreenchange', updateRankingWidth)
+    }
+  }, [])
+
+  const compactRanking = rankingWidth < 215
+
+  const ranking = (state?.players.players ?? [])
+  .map((player, index) => ({
+    index,
+    nick: player.nick,
+    wins: victories[index] ?? 0
+  }))
+  .sort((a, b) =>
+    b.wins - a.wins || a.index - b.index
+  )
+
   return (
     <>
     {!state && <Pairing>Pairing</Pairing>}
-    <Players>
-      {state?.players.players.map(({nick},i) => <p key={`${nick}${i}`}>{++i}. {nick}</p>)}
-    </Players>
+
+{compactRanking && (
+      <RankingToggle
+        type="button"
+        onClick={() => setRankingOpen(open => !open)}
+        aria-expanded={rankingOpen}
+        aria-label={rankingOpen ? 'Fechar ranking' : 'Abrir ranking'}
+      >
+        {rankingOpen ? '✕ Fechar' : '🏆 Ranking'}
+      </RankingToggle>
+    )}
+
+<RankingPanel
+  className={compactRanking ? (rankingOpen ? 'ranking-popup' : 'ranking-hidden') : ''}
+  style={compactRanking ? undefined : { width: rankingWidth }}
+>
+  <div className="ranking-heading">
+    <div className="ranking-title">
+      🏆 RANKING DA SALA
+      <span className="ranking-subtitle">
+        Vitórias nesta sessão
+      </span>
+    </div>
+
+    <span className="ranking-count">
+      {ranking.length}/4
+    </span>
+  </div>
+
+  {ranking.map((player, position) => {
+    const isLeader =
+      position === 0 &&
+      player.wins > 0 &&
+      (
+        ranking.length === 1 ||
+        player.wins > ranking[1].wins
+      )
+
+    const isMe = player.index === myself
+
+    return (
+      <div
+        key={player.index}
+        className={[
+          'ranking-row',
+          isLeader ? 'ranking-leader' : '',
+          isMe ? 'ranking-me' : ''
+        ].join(' ')}
+      >
+        <span className="ranking-pos">
+          {isLeader ? '👑' : `${position + 1}º`}
+        </span>
+
+        <div className="ranking-person">
+          <span
+           className="ranking-name"
+           title={player.nick ?? 'Jogador'}
+          >
+           {player.nick ?? 'Jogador'}
+         </span>
+
+          {isMe && (
+            <span className="ranking-you">
+              VOCÊ
+            </span>
+          )}
+        </div>
+
+        <span className="ranking-wins">
+          {player.wins}
+          <small>VIT.</small>
+        </span>
+      </div>
+    )
+  })}
+</RankingPanel>
+
     <Timer id='timer' />
     <canvas ref={canvasRef} width={240} height={208} style={style} />
     </>
   )
+
 }
 ```
 
-- Registra os ouvintes do **WebSocket**, inicializa os controles e a física em 60 FPS, e renderiza a interface do jogo. Este bloco utiliza hooks de efeito **useEffect** para gerenciar o ciclo de vida do componente, vinculando a comunicação em tempo real, a captura de teclado do jogador e o loop de renderização visual.
+# 'Client' src/game/components/canvas/rankingStyle.ts — painel de classificação
 
-- Primeiro **useEffect** (Ouvintes do Socket): Mapeia todos os eventos recebidos do servidor (como movimentação, bombas e eliminações) para suas respectivas funções e garante a remoção desses ouvintes quando o estado muda ou o componente é desmontado, evitando memory leaks.
+## Estrutura
 
-- Segundo **useEffect** (Controles Locais): Identifica o jogador local (myself), vincula a ele as configurações de estado e ativa a escuta dos comandos de teclado/entrada para movimentar o personagem.
+Componente `RankingPanel` (`styled.aside`) com tema escuro, cabeçalho, linhas com nome, posição, vitórias, coroa e borda azul para o jogador local. O CSS contém classes `.ranking-leader`, `.ranking-me`, `.ranking-name` e `.ranking-wins`. Apelidos grandes são truncados com reticências.
 
-- Terceiro **useEffect** (Loop Visual e Recursos): Carrega os recursos visuais (Assets) e inicia o intervalo do gameLoop travado em 60 FPS (1000 / 60 ms). No momento do desmonte, limpa os temporizadores, encerra os áudios e para a execução do jogo.
+O `@media (max-width: 900px)` reduz dimensões internas. As classes `.ranking-hidden` e `.ranking-popup` controlam o modo compacto, enquanto `RankingToggle` (`styled.button`) permite abrir o painel. A largura medida é transmitida via propriedade `style` pelo componente Canvas.
 
-- Quarto **useEffect** Inicialização do Canvas 2D: Obtém o contexto 2D da tag **canvas** e desativa o suavizamento de imagem **imageSmoothingEnabled** = **false**, preservando o estilo pixel art nítido dos gráficos.
+## Código completo
 
-- Retorno **JSX**: Renderiza a tela de pareamento **Pairing** enquanto o estado não carrega, a lista com o apelido dos jogadores conectados, o temporizador da partida e o elemento **canvas** com dimensão fixa de 240x208 pixels.
+```ts
+import styled from 'styled-components'
+
+export const RankingPanel = styled.aside`
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 30;
+
+  box-sizing: border-box;
+  width: 280px;
+  padding: 13px;
+
+  color: #f4f7ff;
+  background: linear-gradient(
+    180deg,
+    #1b2839 0%,
+    #101821 100%
+  );
+
+  border: 2px solid #4a607a;
+  box-shadow:
+    4px 4px 0 #070c13,
+    inset 0 0 0 2px #26384d;
+
+  font-family: Arial, sans-serif;
+
+  .ranking-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 0 12px;
+    border-bottom: 1px solid #405269;
+    margin-bottom: 10px;
+  }
+
+  .ranking-title {
+    color: #f5cc70;
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 0.8px;
+  }
+
+  .ranking-subtitle {
+    display: block;
+    margin-top: 4px;
+    color: #9faec2;
+    font-size: 10px;
+    font-weight: normal;
+    letter-spacing: 0;
+  }
+
+  .ranking-count {
+    padding: 5px 7px;
+    background: #293a4e;
+    color: #d6e1ef;
+    font-size: 11px;
+    font-weight: bold;
+  }
+
+  .ranking-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 7px;
+    margin-top: 7px;
+
+    background: #243244;
+    border: 1px solid #41546d;
+  }
+
+  .ranking-leader {
+    background: #393322;
+    border-color: #ad8740;
+  }
+
+  .ranking-me {
+    outline: 2px solid #67a5ff;
+    outline-offset: -2px;
+  }
+
+  .ranking-pos {
+    display: flex;
+    width: 27px;
+    flex-shrink: 0;
+    justify-content: center;
+    color: #c4d0dd;
+    font-size: 14px;
+    font-weight: bold;
+  }
+
+  .ranking-person {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .ranking-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+    font-weight: bold;
+  }
+
+  .ranking-you {
+    color: #89baff;
+    font-size: 9px;
+    font-weight: bold;
+  }
+
+  .ranking-wins {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: center;
+    min-width: 31px;
+    padding: 5px;
+    background: #101923;
+    color: #f4c86a;
+    font-size: 17px;
+    font-weight: bold;
+  }
+
+  .ranking-wins small {
+    color: #a8b6c7;
+    font-size: 8px;
+    font-weight: normal;
+  }
+
+  @media (max-width: 900px) {
+    top: 6px;
+    left: 6px;
+    width: 176px;
+    padding: 7px;
+
+    .ranking-title {
+      font-size: 11px;
+    }
+
+    .ranking-row {
+      min-height: 33px;
+      padding: 4px;
+      gap: 5px;
+    }
+
+    .ranking-name {
+      font-size: 11px;
+    }
+
+    .ranking-pos {
+      width: 20px;
+      font-size: 11px;
+    }
+
+    .ranking-wins {
+      font-size: 12px;
+    }
+  }
+
+  /* Mantém o placar dentro do espaço livre; em telas estreitas, usa popup. */
+  &.ranking-hidden {
+    display: none;
+  }
+
+  &.ranking-popup {
+    top: 56px;
+    left: 12px;
+    width: min(280px, calc(100vw - 24px));
+    max-height: calc(100svh - 70px);
+    overflow-y: auto;
+  }
+`
+
+export const RankingToggle = styled.button`
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 31;
+  padding: 9px 12px;
+  color: #f5cc70;
+  background: #1b2839;
+  border: 2px solid #4a607a;
+  box-shadow: 3px 3px 0 #070c13;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  touch-action: manipulation;
+`
+```
+
+---
 
 # 'Client' src/game/components/canvas/style.ts
 
@@ -2869,6 +3594,29 @@ function render (this:BlockFiller, context:CanvasRenderingContext2D) {
 
 # 'Client' src/game/entities/bomb.ts
 
+### Atualização 11/11/2026 — Proença e temporização das bombas
+
+Agora `BombProps.detonationMultiplier?` pode definir um multiplicador na criação da bomba; cada `Bomb` conserva `detonationMultiplier: number`. A propriedade é usada por `setDetonation` a cada reinício de temporizador (bombas colocadas, chutadas, carregadas ou arremessadas).
+
+**Temporizador-base:** `3000 * detonationMultiplier * multiplier` milissegundos; `removeTime` ocorre 500 ms após o momento de detonar. Bombas carregadas usam multiplicador adicional `2`.
+
+**Divergência encontrada na branch main:** bomba local do Proença é criada com `0.5` (1500 ms) em `BombFactory`; outros clientes a recriam com `0.75` (2250 ms) em `canvas/index.tsx`. Isto pode causar dessincronização visual e de dano. É uma pendência a corrigir no código; a documentação não altera esses valores.
+
+Inicialização local atual:
+```ts
+bomb.detonationMultiplier =
+  props.detonationMultiplier ??
+  (props.player?.hasOverclock ? 0.5 : 1)
+```
+Recepção remota atual:
+```ts
+detonationMultiplier: owner?.hasOverclock ? 0.75 : 1
+```
+
+Não atribuir `player` nas instâncias de bombas remotas apenas para descobrir a habilidade: o `Bomb.tick` usa `this.player` para devolver o estoque de bombas ao proprietário local.
+
+
+
 **IMPORTS**
 
 ```ts 
@@ -2893,13 +3641,14 @@ import { emitMoveBomb } from '~/services/socket'
 
 ```ts
 interface BombProps {
-  axes        : [number, number]
-  id         ?: string
-  player     ?: Player
-  playerIndex : number
-  reach       : number
-  x          ?: number
-  y          ?: number
+  axes: [number, number]
+  id?: string
+  player?: Player
+  playerIndex: number
+  reach: number
+  x?: number
+  y?: number
+  detonationMultiplier?: number
 }
 
 export interface Bomb {
@@ -2919,6 +3668,7 @@ export interface Bomb {
   playerIndex   : number
   reach         : number
   removeTime    : number
+  detonationMultiplier: number
   side          : SIDES
   x             : number
   y             : number
@@ -2934,7 +3684,7 @@ export interface Bomb {
   startFling           : (side:SIDES) => void
   tick                 : (state:GameState) => void
   render               : (context:CanvasRenderingContext2D) => void
-} 
+}
 ```
 
 - Define os contratos de dados e as propriedades de estado necessárias para a criação e manipulação da bomba. As interfaces estabelecem os parâmetros de inicialização e a estrutura completa de propriedades físicas, temporais, lógicas e métodos do ciclo de vida do objeto no jogo.
@@ -2950,6 +3700,9 @@ export function BombFactory (props : BombProps) : Bomb {
   bomb.anim = {frameCurrent:0, lastRender:0, sum:true}
   bomb.armed = true
   bomb.detonated = false
+  bomb.detonationMultiplier =
+  props.detonationMultiplier ??
+  (props.player?.hasOverclock ? 0.5 : 1)
   bomb.blast = BlastFactory()
   bomb.collidable = false
   bomb.directions = {up:0, right:0, down:0, left:0}
@@ -2978,15 +3731,9 @@ export function BombFactory (props : BombProps) : Bomb {
 
 **setDetonation**
 
-```ts 
-function getAxes (this:Bomb) : [number, number] {
-  const x = Math.round(this.y / TILE_SIZE) - 1
-  const y = Math.round(this.x / TILE_SIZE) - 1
-  return [x, y]
-}
-
+```ts
 function setDetonation (this:Bomb, multiplier=1) {
-  this.detonateTime = Date.now() + (3000 * multiplier)
+  this.detonateTime = Date.now() + (3000 * this.detonationMultiplier * multiplier)
   this.removeTime = this.detonateTime + 500
 }
 ```
@@ -4057,6 +4804,34 @@ Monitora o tempo restante da habilidade e restaura as físicas originais de coli
 
 # 'Client' src/game/entities/player.ts
 
+### Atualização 11/11/2026 — habilidades de personagem e movimento
+
+| Personagem | Sprite | Habilidades efetivamente implementadas |
+|---|---:|---|
+| Frank | 10 | `extraLife`: sobrevive à primeira morte local por explosão de bomba; `invulnerableUntil` dá 1500 ms de proteção e renderização piscante |
+| Ino | 11 | `speed = props.speed * 1.5` (50% mais rápida que a base); `ignoresSlowFloor` a torna imune ao piso lento |
+| Proença | 2 | `hasOverclock` acelera a bomba criada por ele; `hasBlastVision` dá acesso à projeção visual das bombas armadas |
+
+Essas propriedades são ativadas por `props.sprite` na `PlayerFactory`. **Atenção:** `player.sprite` já é uma imagem `HTMLImageElement`, não o ID numérico.
+
+```ts
+extraLife: props.sprite === 10,
+ignoresSlowFloor: props.sprite === 11,
+hasOverclock: props.sprite === 2,
+hasBlastVision: props.sprite === 2,
+invulnerableUntil: 0,
+speed: props.sprite === 11 ? props.speed * 1.5 : props.speed,
+speedMultiplier: 1,
+```
+
+`moveTick` lê `state.slowFloors.isPlayerOnFloor(this)` e escolhe `speedMultiplier = 0.3` quando o jogador está no piso e não é imune; fora dele retorna a `1`. As funções `moveUp`, `moveDown`, `moveLeft`, `moveRight` multiplicam `this.speed * this.speedMultiplier`.
+
+`kill(emit, cause)` distingue mortes de `'bomb'` e `'other'`; a habilidade do Frank não é consumida em causas diferentes de bomba. A proteção temporária pisca durante `render`.
+
+**Observação:** alguns trechos abaixo tinham origem no código anterior às habilidades de Ino e Proença. As definições de interface e fábrica foram atualizadas para o estado presente em `main`.
+
+
+
 **Imports**
 
 ```ts 
@@ -4076,7 +4851,7 @@ import { emitFlingBomb, emitHoldBomb, emitKill, emitMove, emitPlaceBomb } from '
 
 **Interfaces: LastPress/PlayerProps/Player**
 
-```ts 
+```ts
 interface LastPress {
   bomb : number
 }
@@ -4089,19 +4864,22 @@ interface PlayerProps extends PlayerDTO {
 }
 
 export interface Player {
-  active           : boolean
-  anim             : AnimControl['anim']
-  bombId           : string
-  bombKeys         : {[key:string]:'B'}
-  bombReach        : number
-  bombs            : number
-  collidable       : boolean
-  extraLife        : boolean
-  invulnerableUntil: number
-  hold             : boolean
-  holding          : 0|1
-  index      : number
-  kick       : boolean
+  active            : boolean
+  anim              : AnimControl['anim']
+  bombId            : string
+  bombKeys          : {[key:string]:'B'}
+  bombReach         : number
+  bombs             : number
+  collidable        : boolean
+  extraLife         : boolean
+  ignoresSlowFloor  : boolean
+  hasOverclock      : boolean
+  invulnerableUntil : number
+  hasBlastVision    : boolean
+  hold              : boolean
+  holding           : 0|1
+  index              : number
+  kick               : boolean
   lastPress  : LastPress
   moveKeys   : {[key:string]:SIDES}
   moving     : 0|1
@@ -4134,7 +4912,7 @@ export interface Player {
   placeBomb            : (state:GameState) => void
   holdBomb             : (state:GameState) => void
   flingBomb            : (state:GameState) => void
-  kill : (emit:boolean, cause?: 'bomb'|'other') => void
+  kill                 : (emit:boolean, cause?: 'bomb'|'other') => void
   tick                 : (state:GameState) => void
   render               : (context:CanvasRenderingContext2D) => void
 }
@@ -4159,6 +4937,9 @@ export function PlayerFactory (props:PlayerProps) : Player {
     bombs: 1,
     collidable: true,
     extraLife: props.sprite === 10,
+    ignoresSlowFloor: props.sprite === 11,
+    hasOverclock: props.sprite === 2,
+    hasBlastVision: props.sprite === 2,
     invulnerableUntil: 0,
     hold: false,
     holding: 0,
@@ -4180,7 +4961,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
     myself: false,
     nick: props.nick,
     side: 'D',
-    speed: props.speed,
+    speed: props.sprite === 11 ? props.speed * 1.5 : props.speed,
     speedMultiplier: 1,
     x: props.x,
     y: props.y,
@@ -4355,15 +5136,16 @@ function moveTick (
   this:Player,
   state:GameState
 ) {
+
   if (!this.moving) return
 
-  const onSlowFloor =
-    state.slowFloors.isPlayerOnFloor(this)
+const onSlowFloor =
+  state.slowFloors.isPlayerOnFloor(this)
 
-  this.speedMultiplier =
-    onSlowFloor
-      ? 0.5
-      : 1
+this.speedMultiplier =
+  onSlowFloor && !this.ignoresSlowFloor
+    ? 0.3
+    : 1
 
   this.moves[this.side]()
 
@@ -4384,7 +5166,7 @@ function moveTick (
 
 Executa o deslocamento quadro a quadro, aplica modificadores de velocidade e transmite a posição atualizada para a rede.
 
-- **Piso lento:** antes de mover, consulta `state.slowFloors.isPlayerOnFloor(this)`. Se o jogador estiver sobre uma célula especial, `speedMultiplier` passa para `0.5`; fora dela volta para `1`.
+- **Piso lento:** antes de mover, consulta `state.slowFloors.isPlayerOnFloor(this)`. Se o jogador estiver sobre uma célula especial **e não possuir imunidade** (`!ignoresSlowFloor`), `speedMultiplier` passa para `0.3` (30% da velocidade); fora dela ou para Ino, volta a `1`.
 - **Velocidade preservada:** o efeito multiplica a velocidade atual em vez de sobrescrever `speed`. Assim, bônus que aumentam ou reduzem a velocidade continuam compatíveis com a mecânica ambiental.
 - **Sincronização Multiplayer:** após o movimento do jogador local, executa as verificações de blocos e emite `emitMove` com as coordenadas atualizadas.
 
@@ -4852,50 +5634,24 @@ export interface GameState {
 - A propriedade **slowFloors** foi adicionada para manter a coleção de pisos lentos recebidos do servidor e disponibilizar sua consulta para o movimento dos jogadores e sua renderização no Canvas.
 - O tipo usado no cliente é `SlowFloors`, construído por `SlowFloorsFactory` a partir do array `SlowFloorDTO[]` recebido em `StartGameDTO`.
 
-# 'Client' src/game/entities/slowFloor.ts
+# 'Client' src/game/entities/slowFloor.ts — manchas do refeitório
 
+## Conceito e sincronização
 
-**IMPORTS E SPRITE**
+O servidor escolhe até **12 posições** aleatórias em células vazias do refeitório, preservando as regiões iniciais dos jogadores. Essas posições são enviadas em `GameStateDTO.slowFloors` para todos os clientes. A posição e a regra de lentidão são sincronizadas; a **variação visual** pode ser escolhida localmente por cliente.
+
+## Assets e cálculo
+
+Os arquivos `client/public/sprites/stages/slow_floor_0.png`, `slow_floor_1.png`, `slow_floor_2.png`, `slow_floor_3.png` são sprites 16×16 com transparência. `SlowFloorsFactory` escolhe um `spriteIndex` para cada célula; `render` desenha essa textura; `isPlayerOnFloor` consulta as coordenadas de grade do jogador.
+
+A lentidão é aplicada em `player.moveTick` com multiplicador `0.3`, isto é, **30% da velocidade corrente (redução de 70%)**. Ino é imune à penalidade.
+
+## Código completo
 
 ```ts
 import { TILE_SIZE } from '#/constants'
 import { SlowFloorDTO } from '#/dto'
 import { Player } from '~/game/entities/player'
-
-const slowFloorSprite = new Image()
-
-slowFloorSprite.src =
-  `${process.env.PUBLIC_URL}/sprites/stages/slow_floor.png`
-```
-
-- O arquivo importa o tamanho padrão dos tiles do mapa, a estrutura de transferência de dados utilizada pelos pisos lentos e a entidade `Player`, necessária para verificar a posição do jogador.
-
-- A constante **slowFloorSprite** cria uma nova instância de imagem e carrega o recurso visual localizado em:
-
-```text
-client/public/sprites/stages/slow_floor.png
-```
-
-- O sprite possui dimensões de **16x16 pixels** e fundo transparente. Ele funciona como uma camada visual sobre o piso original do cenário, permitindo que apenas a mancha desenhada fique visível enquanto o restante do chão do refeitório continua aparecendo normalmente.
-
----
-
-Sprites dos pisos lentos
-
-O recurso visual passou a possuir quatro variações diferentes:
-
-client/public/sprites/stages/slow_floor_0.png
-client/public/sprites/stages/slow_floor_1.png
-client/public/sprites/stages/slow_floor_2.png
-client/public/sprites/stages/slow_floor_3.png
-
-Todos os arquivos possuem dimensões de 16x16 pixels e fundo transparente.
-
-As imagens representam diferentes variações de manchas presentes no piso do refeitório.
-
-A utilização de múltiplas versões evita que todas as 12 células especiais apresentem exatamente a mesma aparência, aumentando a variedade visual do cenário.
-
-Carregamento das variações
 
 const slowFloorSprites = [
   'slow_floor_0.png',
@@ -4911,14 +5667,6 @@ const slowFloorSprites = [
   return image
 })
 
-O vetor slowFloorSprites contém os nomes das quatro variações disponíveis.
-
-A função map() cria uma nova instância de Image para cada arquivo e define automaticamente seu caminho dentro da pasta pública do cliente.
-
-Como todos os sprites são carregados antecipadamente, o método de renderização precisa apenas selecionar qual imagem será utilizada em cada posição.
-
-Interface SlowFloor
-
 interface SlowFloor {
   axes        : [number, number]
   spriteIndex : number
@@ -4926,13 +5674,11 @@ interface SlowFloor {
   y           : number
 }
 
-Além das coordenadas lógicas axes e das posições físicas x e y, cada piso lento possui agora a propriedade:
-
-spriteIndex : number
-
-Essa propriedade identifica qual das quatro variações visuais será utilizada naquela célula durante a partida.
-
-SlowFloorsFactory
+export interface SlowFloors {
+  floors          : SlowFloor[]
+  isPlayerOnFloor : (player:Player) => boolean
+  render          : (context:CanvasRenderingContext2D) => void
+}
 
 export function SlowFloorsFactory (
   dto:SlowFloorDTO[]
@@ -4962,27 +5708,18 @@ export function SlowFloorsFactory (
   return slowFloors
 }
 
-Cada posição recebida do servidor recebe uma das quatro imagens disponíveis.
+function isPlayerOnFloor (
+  this:SlowFloors,
+  player:Player
+) {
+  const [row, column] = player.getAxes()
 
-A escolha é realizada através de:
+  return this.floors.some(floor =>
+    floor.axes[0] === row &&
+    floor.axes[1] === column
+  )
+}
 
-Math.floor(
-  Math.random() * slowFloorSprites.length
-)
-
-Como existem quatro imagens, o resultado possível corresponde aos índices:
-
-0
-1
-2
-3
-
-A escolha ocorre apenas no momento da criação do estado visual do piso. Por isso, uma mancha não muda de aparência durante a execução da partida.
-
-A posição e o efeito da célula continuam sendo definidos pelo servidor. Apenas sua aparência específica é escolhida localmente pelo cliente.
-
-Renderização
-```ts
 function render (
   this:SlowFloors,
   context:CanvasRenderingContext2D
@@ -5002,207 +5739,27 @@ function render (
 }
 ```
 
-Para cada piso lento, a função recupera a imagem correspondente ao seu spriteIndex.
+# 'Client' src/game/entities/player.ts — referência de velocidade e imunidade
 
-Em seguida, desenha o sprite sobre sua posição no cenário utilizando context.drawImage().
+## `speedMultiplier` e `moveTick`
 
-Cada imagem ocupa exatamente uma célula de:
-
-16x16 pixels
-
-Como os arquivos possuem transparência, somente a mancha fica visível enquanto o piso original do refeitório permanece desenhado abaixo dela.
-
-Funcionamento atual da mecânica
-
-O piso lento do refeitório funciona atualmente da seguinte maneira:
-
-é exclusivo do cenário do refeitório;
-
-são geradas 12 células lentas por partida;
-
-as posições são sorteadas pelo servidor;
-
-áreas próximas aos pontos iniciais dos jogadores são protegidas;
-
-todos os participantes recebem as mesmas posições de lentidão;
-
-cada posição utiliza aleatoriamente uma entre quatro variações visuais;
-
-as manchas são sprites transparentes de 16x16 pixels;
-
-o efeito reduz temporariamente a velocidade do jogador enquanto ele permanece sobre a célula;
-
-ao abandonar a área afetada, a velocidade volta automaticamente ao valor normal;
-
-bônus de velocidade continuam preservados, pois a redução utiliza speedMultiplier em vez de sobrescrever permanentemente o atributo speed.
-
-**Interfaces**
-
-```ts
-interface SlowFloor {
-  axes : [number, number]
-  x    : number
-  y    : number
-}
-
-export interface SlowFloors {
-  floors          : SlowFloor[]
-  isPlayerOnFloor : (player:Player) => boolean
-  render          : (context:CanvasRenderingContext2D) => void
-}
-```
-
-- **SlowFloor** representa individualmente uma célula de piso lento dentro do cenário. A propriedade `axes` guarda sua posição lógica na matriz do mapa, enquanto `x` e `y` representam as coordenadas físicas utilizadas para renderização no Canvas.
-
-- **SlowFloors** representa o conjunto de todos os pisos lentos ativos durante a partida. A estrutura mantém uma lista `floors` e disponibiliza funções para verificar se um jogador está sobre uma dessas células e para desenhar os sprites no cenário.
-
----
-
-**SlowFloorsFactory**
-
-```ts
-export function SlowFloorsFactory (
-  dto:SlowFloorDTO[]
-) : SlowFloors {
-
-  const floors:SlowFloor[] = dto.map(floor => ({
-    axes: floor.axes,
-    x: TILE_SIZE + (floor.axes[1] * TILE_SIZE),
-    y: TILE_SIZE + (floor.axes[0] * TILE_SIZE)
-  }))
-
-  const slowFloors = {
-    floors
-  } as SlowFloors
-
-  slowFloors.isPlayerOnFloor =
-    isPlayerOnFloor.bind(slowFloors)
-
-  slowFloors.render =
-    render.bind(slowFloors)
-
-  return slowFloors
-}
-```
-
-- A função recebe a lista de posições enviada pelo servidor através de `SlowFloorDTO[]` e transforma cada coordenada da matriz em uma posição física dentro do Canvas.
-
-- As coordenadas são multiplicadas por `TILE_SIZE` e recebem um deslocamento adicional equivalente a um tile, pois a área jogável começa após a borda do cenário.
-
-- Após construir a lista de pisos, a função associa os métodos de detecção e renderização à estrutura `SlowFloors`.
-
----
-
-**isPlayerOnFloor**
-
-```ts
-function isPlayerOnFloor (
-  this:SlowFloors,
-  player:Player
-) {
-  const [row, column] = player.getAxes()
-
-  return this.floors.some(floor =>
-    floor.axes[0] === row &&
-    floor.axes[1] === column
-  )
-}
-```
-
-- Verifica se o jogador está atualmente posicionado sobre uma célula de piso lento.
-
-- A função utiliza `player.getAxes()` para obter a posição do personagem na matriz e compara essas coordenadas com todos os pisos registrados em `floors`.
-
-- O método `some()` retorna `true` assim que encontra uma célula com a mesma linha e coluna do jogador. Caso nenhuma posição coincida, retorna `false`.
-
-- Essa verificação é utilizada pela entidade `Player` para decidir se deve aplicar ou remover a redução de velocidade.
-
----
-
-**render**
-
-```ts
-function render (
-  this:SlowFloors,
-  context:CanvasRenderingContext2D
-) {
-  this.floors.forEach(floor => {
-    context.drawImage(
-      slowFloorSprite,
-      floor.x,
-      floor.y,
-      TILE_SIZE,
-      TILE_SIZE
-    )
-  })
-}
-```
-
-- Renderiza os pisos lentos no Canvas utilizando o sprite transparente `slow_floor.png`.
-
-- A função percorre todas as posições existentes em `floors` e desenha uma cópia do sprite de **16x16 pixels** exatamente sobre a célula correspondente.
-
-- Como o sprite possui áreas transparentes, o piso original do cenário permanece visível abaixo da mancha.
-
-- No ciclo de renderização do jogo, o piso lento é desenhado depois do cenário e antes dos blocos e personagens. Dessa forma, ele funciona visualmente como uma camada intermediária sobre o chão:
-
-```ts
-state?.stage.render(context)
-state?.slowFloors.render(context)
-state?.blocks.render(context, state)
-```
-
-- O sistema originalmente utilizava um retângulo marrom semitransparente através de `fillRect`. Essa representação provisória foi substituída pelo sprite em pixel art para integrar melhor a mecânica à identidade visual do refeitório.
-
----
-
-# 'Client' src/game/entities/player.ts
-
-## speedMultiplier
-
-Na interface `Player`, foi adicionada a propriedade:
-
-```ts
-speedMultiplier : number
-```
-
-- A propriedade **speedMultiplier** funciona como um modificador temporário aplicado sobre a velocidade normal do personagem.
-
-- Diferentemente de alterar diretamente a propriedade `speed`, o multiplicador permite aplicar o efeito ambiental do piso lento sem apagar bônus de velocidade que o jogador tenha coletado anteriormente.
-
----
-
-## PlayerFactory
-
-Na criação do jogador, o multiplicador é inicialmente definido como:
-
-```ts
-speed: props.speed,
-speedMultiplier: 1,
-```
-
-- O valor padrão `1` representa **100% da velocidade normal**.
-
-- Enquanto o jogador não estiver sobre um piso lento, sua movimentação utiliza integralmente o valor armazenado em `speed`.
-
----
-
-## moveTick
+`speedMultiplier` começa em 1; fora do refeitório permanece 1. Ao pisar sobre as manchas, personagens comuns usam `0.3`, preservando apenas 30% da velocidade atual. Ino (`sprite === 11`) ignora o efeito.
 
 ```ts
 function moveTick (
   this:Player,
   state:GameState
 ) {
+
   if (!this.moving) return
 
-  const onSlowFloor =
-    state.slowFloors.isPlayerOnFloor(this)
+const onSlowFloor =
+  state.slowFloors.isPlayerOnFloor(this)
 
-  this.speedMultiplier =
-    onSlowFloor
-      ? 0.3
-      : 1
+this.speedMultiplier =
+  onSlowFloor && !this.ignoresSlowFloor
+    ? 0.3
+    : 1
 
   this.moves[this.side]()
 
@@ -5221,99 +5778,15 @@ function moveTick (
 }
 ```
 
-- Antes de executar o movimento do personagem, a função verifica se ele está atualmente sobre uma das células especiais através de:
+**Velocidade efetiva = `speed × speedMultiplier`**. O modificador ambiental não apaga bônus adquiridos; ele apenas modifica o deslocamento enquanto o jogador permanece sobre a célula.
 
-```ts
-state.slowFloors.isPlayerOnFloor(this)
-```
+Os controles e a emissão de `MoveDTO` continuam dentro do fluxo do jogador local.
 
-- Caso a resposta seja positiva, `speedMultiplier` recebe o valor `0.3`.
+## Recursos visuais
 
-- Isso significa que, enquanto estiver sobre o piso lento, o jogador se movimenta com **50% da velocidade que possuir naquele momento**.
-
-- Ao sair da área afetada, o multiplicador retorna automaticamente para `1`, restaurando 100% da velocidade.
-
-- A utilização de um multiplicador preserva modificações provenientes de power-ups. Por exemplo, caso um jogador tenha aumentado sua propriedade `speed`, o piso reduz temporariamente essa velocidade adquirida em vez de substituir permanentemente o valor.
+Quatro arquivos de 16×16 pixels e transparência (`slow_floor_0.png` a `slow_floor_3.png`) substituem o retângulo temporário antigo.
 
 ---
-
-## Movimentação com speedMultiplier
-
-As funções direcionais passaram a utilizar a velocidade multiplicada pelo modificador:
-
-```ts
-function moveDown (this:Player) {
-  this.y += this.speed * this.speedMultiplier
-
-  // restante da função...
-}
-
-function moveUp (this:Player) {
-  this.y -= this.speed * this.speedMultiplier
-
-  // restante da função...
-}
-
-function moveRight (this:Player) {
-  this.x += this.speed * this.speedMultiplier
-
-  // restante da função...
-}
-
-function moveLeft (this:Player) {
-  this.x -= this.speed * this.speedMultiplier
-
-  // restante da função...
-}
-```
-
-- O deslocamento final do jogador passa a ser calculado pela expressão:
-
-```text
-velocidade final = speed × speedMultiplier
-```
-
-- Em condições normais:
-
-```text
-speedMultiplier = 1
-```
-
-portanto:
-
-```text
-velocidade final = speed × 1
-```
-
-- Sobre o piso lento:
-
-```text
-speedMultiplier = 0.5
-```
-
-portanto:
-
-```text
-velocidade final = speed × 0.5
-```
-
-- Dessa forma, a mecânica reduz temporariamente o deslocamento sem interferir permanentemente nos atributos adquiridos durante a partida.
-
----
-
-# Recurso visual adicionado
-
-```text
-client/public/sprites/stages/slow_floor.png
-```
-
-- Sprite em pixel art de **16x16 pixels** utilizado para representar visualmente as células de piso lento presentes no cenário do refeitório.
-
-- O arquivo possui fundo transparente e é desenhado sobre o piso original do mapa.
-
-- Sua função é indicar visualmente ao jogador quais regiões aplicam a penalidade de movimentação.
-
-- A aparência substitui o retângulo marrom provisório utilizado durante os testes iniciais da mecânica.
 
 # 'Client' src/game/entities/stage.ts
 
@@ -6002,6 +6475,140 @@ function collidedRight (p:Player, o:Collision) {
 
 **playerCollisions**: Dicionario que relaciona o impacto com um recuo correspondente. Associa a direção do movimento do jogador no momento da batida (Cima, Baixo, Esquerda, Direita) à função que irá empurrá-lo de volta para a borda do objeto, neutralizando a entrada nas coordenadas do bloco (ex: se o jogador estava indo para Cima U, bate no teto e sofre a correção collidedDown).
 
+
+# 'Client' src/game/util/explosionPreview.ts — visão de alcance do Proença
+
+## Comportamento e limites
+
+A projeção é calculada localmente para o personagem de `hasBlastVision === true` que esteja ativo; desenha o alcance potencial de **todas as bombas armadas**, independentemente de quem as colocou. O recurso é só visual e não altera colisão, dano ou tempo de detonação.
+
+A função percorre `state.entities.entities`, exige `armed === true`, `getAxes` e `reach`, marca a célula central e percorre cima/direita/baixo/esquerda (`step = 1; step < reach`). Paredes `I` bloqueiam a projeção; blocos `D` são destacados e interrompem o caminho.
+
+Para casas comuns o destaque usa preenchimento vermelho `rgba(255, 80, 80, 0.25)`; para blocos destrutíveis usa amarelo `rgba(255, 180, 55, 0.22)`. Chamadas `context.save()` e `context.restore()` isolam a mudança gráfica. O cálculo é feito a cada renderização do Canvas.
+
+**Limite:** usa a configuração atual dos blocos, sem simular alterações futuras entre várias bombas. É uma prévia tática, não uma previsão de todas as reações em cadeia.
+
+## Código completo
+
+```ts
+import { TILE_SIZE } from '#/constants'
+import { Bomb } from '~/game/entities/bomb'
+import { GameState } from '~/game/entities/state'
+
+// Direções: cima, direita, baixo e esquerda.
+const DIRECTIONS: [number, number][] = [
+  [-1, 0],
+  [0, 1],
+  [1, 0],
+  [0, -1]
+]
+
+// Desenha uma marcação sobre uma casa do mapa.
+function drawPreviewTile(
+  context: CanvasRenderingContext2D,
+  row: number,
+  column: number,
+  destructible = false
+) {
+  const x = (column + 1) * TILE_SIZE
+  const y = (row + 1) * TILE_SIZE
+
+  context.fillStyle = destructible
+    ? 'rgba(255, 180, 55, 0.22)'
+    : 'rgba(255, 80, 80, 0.25)'
+
+  context.strokeStyle = destructible
+    ? 'rgba(255, 210, 100, 0.85)'
+    : 'rgba(255, 110, 110, 0.75)'
+
+  context.fillRect(x, y, TILE_SIZE, TILE_SIZE)
+
+  context.strokeRect(
+    x + 0.5,
+    y + 0.5,
+    TILE_SIZE - 1,
+    TILE_SIZE - 1
+  )
+}
+
+// Desenha a visão de alcance do Proença.
+export function renderExplosionPreview(
+  context: CanvasRenderingContext2D,
+  state: GameState
+) {
+  const viewer = state.players.myself
+
+  // Somente o Proença vivo enxerga a prévia.
+  if (!viewer?.hasBlastVision || !viewer.active) return
+
+  const map = state.blocks.blocks
+
+  context.save()
+
+  // Percorre todas as entidades da partida.
+  for (const [, entity] of state.entities.entities) {
+    const bomb = entity as unknown as Partial<Bomb>
+
+    // Ignora entidades que não sejam bombas armadas.
+    if (
+      bomb.armed !== true ||
+      typeof bomb.getAxes !== 'function' ||
+      typeof bomb.reach !== 'number'
+    ) {
+      continue
+    }
+
+    const [row, column] = bomb.getAxes()
+
+    // Garante que a bomba esteja dentro do mapa.
+    if (
+      row < 0 ||
+      row >= map.length ||
+      column < 0 ||
+      column >= map[row].length
+    ) {
+      continue
+    }
+
+    // Marca a casa central da bomba.
+    drawPreviewTile(context, row, column)
+
+    // Calcula o alcance nas quatro direções.
+    for (const [dr, dc] of DIRECTIONS) {
+      for (let step = 1; step < bomb.reach; step++) {
+        const nextRow = row + dr * step
+        const nextColumn = column + dc * step
+
+        const block = map[nextRow]?.[nextColumn]
+
+        // Impede que a marcação ultrapasse o mapa.
+        if (block === undefined) break
+
+        // Parede indestrutível: interrompe o alcance.
+        if (block?.t === 'I') break
+
+        // Bloco destrutível: marca o obstáculo e para.
+        if (block?.t === 'D') {
+          drawPreviewTile(
+            context,
+            nextRow,
+            nextColumn,
+            true
+          )
+          break
+        }
+
+        // Casa livre, bomba ou bônus.
+        drawPreviewTile(context, nextRow, nextColumn)
+      }
+    }
+  }
+
+  context.restore()
+}
+```
+
+---
 
 # 'Client' src/hooks/useBoot.ts
 
@@ -8379,6 +8986,51 @@ O antigo `server/deploy.sh` e a branch `server` deixam de ser necessários no fl
 
 ---
 
+# **PUBLICAÇÃO DO CLIENTE — GITHUB PAGES (11/11/2026)**
+
+- Site público: `https://maxrp1.github.io/BomberIF/` (URL persistente; o conteúdo muda após a publicação).
+- Branch de artefatos estáticos: `client`; não confundir com a branch `main` que contém o código-fonte.
+- O script `client/deploy.sh` **remove o build anterior e executa `yarn build` antes de publicar**. Portanto, normalmente basta executá-lo a partir do diretório `client/`, sem repetir o build manualmente.
+- Dentro de `build/`, o script inicializa um repositório temporário, cria a branch `client` e executa `git push origin client --force`. Esse push forçado é restrito **à branch de publicação do frontend**; **não** é um procedimento recomendado para a branch `main`.
+
+```bash
+#!/bin/bash
+
+set -e
+
+echo "Gerando nova build..."
+rm -rf build
+yarn build
+
+echo "Publicando no GitHub Pages..."
+cd build
+
+git init
+
+git remote add origin https://github.com/MaxRp1/BomberIF.git
+
+git checkout -b client
+
+git add .
+
+git commit -m "Deploy"
+
+git push origin client --force
+
+echo "Deploy concluído."
+```
+
+Fluxo usual:
+
+```bash
+cd ~/BomberIF/client
+bash deploy.sh
+```
+
+Para retorno a uma versão anterior, é necessário distinguir o código-fonte da `main` do conteúdo estático da branch `client` e do serviço Render. Tags/branches de backup devem proteger cada publicação antes de uma alteração de risco.
+
+---
+
 # **GUIA DE MANUTENÇÃO DESTA DOCUMENTAÇÃO**
 ---
 
@@ -8397,6 +9049,11 @@ Esta seção existe para evitar que o código e o estudo técnico voltem a ficar
 | Alterar animação/spritesheet | `client/src/game/animations/*` e entidade que renderiza | Seção de animação correspondente e `render` da entidade |
 | Alterar controles | `player.ts`, `gamepad.ts` ou `touchControls/*` | Seções de entrada correspondentes |
 | Alterar regra de morte/vitória | `player.ts`, entidades que chamam `kill`, `canvas/index.tsx` | `Player.kill`, entidades causadoras e `Canvas/checkWin` |
+| Criar/alterar ranking por sessão | `server/src/ranking.ts`, `factory.ts`, `manager.ts`, `game.ts`, `shared/dto.ts`, `canvas/index.tsx` | Ciclo das rodadas, evento `wins_update`, contagem, desconexão e limites de persistência |
+| Alterar layout do ranking | `client/src/game/components/canvas/index.tsx`, `rankingStyle.ts` | Regras visuais, largura medida, modo compacto e o estado do painel |
+| Adicionar prévia de explosão | `client/src/game/util/explosionPreview.ts`, `player.ts`, `canvas/index.tsx`, `bomb.ts` | Filtro de personagem, alcance visual, colisões e ordem das camadas |
+| Alterar temporização exclusiva de personagem | `client/src/game/entities/bomb.ts`, `canvas/index.tsx`, `player.ts` | Multiplicador local e remoto, sincronização, transporte de bombas |
+| Publicar frontend | `client/deploy.sh`, `client/package.json`, branch `client` | Seção `PUBLICAÇÃO DO CLIENTE — GITHUB PAGES` |
 
 ### Regra prática
 
@@ -8404,19 +9061,25 @@ Ao fazer uma mudança no código, procure no documento pelo **caminho do arquivo
 
 ### Estado das alterações documentadas nesta revisão
 
-- Dois personagens adicionais foram incorporados ao sorteio, elevando `SPRITES` para 12 (`0.png` a `11.png`).
-- Frank (`10.png`) recebeu a primeira habilidade exclusiva de personagem: vida extra apenas contra a primeira explosão fatal.
-- A morte passou a aceitar uma causa (`'bomb'` ou `'other'`) para impedir que a vida extra interfira em outras condições de eliminação.
-- Foi adicionado feedback visual de piscar durante 1,5 s após o consumo da vida extra.
-- O conjunto de cenários foi consolidado em três índices válidos; `STAGES = 3` após a remoção intencional do mapa/índice duplicado. O refeitório permanece entre os três mapas sorteáveis.
-- `bgSound.ts` ainda contém a entrada de stage 3 como compatibilidade/legado, porém o sorteio atual com `STAGES = 3` utiliza apenas os índices 0, 1 e 2.
-- O cliente separa corretamente o backend local HTTPS do backend de produção no Render.
-- O CORS do servidor inclui o GitHub Pages atual (`maxrp1.github.io`) e permite GET/POST.
-- A animação da explosão foi reformulada: `ANIM_INTERVAL` passou para 80 ms, todos os segmentos utilizam o mesmo frame e o alcance visual cresce/retrai progressivamente através de `getVisibleDirection`.
-- O tempo de permanência da bomba após a detonação foi reduzido de 1000 ms para 500 ms para acompanhar a nova animação.
-- O `HomePage` mantém os listeners `open_game` e `myself` ativos durante toda a vida do componente, corrigindo o problema que impedia iniciar uma segunda partida na mesma sessão.
-- O backend no Render agora acompanha a branch `main` com `Auto-Deploy: On Commit`, executando o build automaticamente e tornando a antiga branch `server` desnecessária no fluxo oficial de produção.
-- O refeitório (`stage === 2`) passou a possuir **8 pisos lentos aleatórios**, gerados no servidor apenas em células vazias e fora das áreas protegidas de spawn.
-- As posições dos pisos lentos são sincronizadas através de `SlowFloorDTO[]` dentro de `GameStateDTO`, garantindo que todos os clientes enxerguem e processem as mesmas células.
-- O cliente ganhou `SlowFloorsFactory`, `GameState.slowFloors` e `speedMultiplier`; sobre o piso especial, o deslocamento usa 50% da velocidade atual e retorna automaticamente ao normal ao sair da célula.
-- A representação visual atual do piso lento é um preenchimento marrom semitransparente de 16x16 desenhado sobre o chão original. O sprite definitivo em pixel art ainda não faz parte desta revisão.
+- **Original preservado:** `doc/doc_bomberIF_completo_recuperado.md` representa o material recuperado anterior às extensões descritas aqui.
+- **Mapa e assets:** três cenários (laboratório, campo, refeitório); doze personagens sorteáveis (IDs `0..11`).
+- **Frank (10):** vida extra consumida pela primeira morte causada por bomba e 1,5 s de proteção com piscar.
+- **Ino (11):** velocidade-base inicializada com `props.speed * 1.5` e imunidade ao piso lento.
+- **Proença (2):** `hasOverclock` e `hasBlastVision`; visualizar marcações das bombas próprias e alheias e acelerar suas bombas (com ressalva de sincronização registrada abaixo).
+- **Refeitório:** `SLOW_FLOOR_COUNT = 12` posições livres e aleatórias, quatro sprites de 16×16 com fundo transparente, `speedMultiplier = 0.3` fora da imunidade.
+- **Explosões:** `ANIM_INTERVAL = 80` ms e remoção `500` ms após detonar; a animação de alcance é progressiva.
+- **Multiplayer:** handlers `open_game`/`myself` persistem na HomePage enquanto ela está montada; ranking usa `kl` e `wins_update`.
+- **Ranking:** `server/src/ranking.ts`, campo `wins` em `socket.data`, DTO de sincronização, painel com vitórias e classificação, ajuste responsivo usando `ResizeObserver` e botão compacto.
+- **Deploy:** Render conectado à `main`; Pages publicado pela branch `client` através de `client/deploy.sh`.
+
+### Pendências técnicas constatadas (documentação não altera código)
+
+1. **Multiplicador do Overclock divergente:** no cliente local (`client/src/game/entities/bomb.ts`), Proença usa `0.5` (bomba padrão de 3000 ms → 1500 ms). No receptor de bombas remotas (`canvas/index.tsx`), usa-se `0.75` (→ 2250 ms). São tempos distintos entre jogadores e podem resultar em efeitos fora de sincronismo. Antes de definir balanceamento, uniformizar o valor e testar multiplayer.
+2. **Reset por lobby não efetivo:** `server/src/manager.ts` atualiza `socket.data.lobbyId` antes de testar se o lobby mudou. A comparação posterior não detecta troca de lobby; o contador pode persistir no mesmo socket ao mudar de lobby. Registrar a limitação sem afirmar que o reset já funciona.
+3. **Placar não permanente:** sem armazenamento persistente, vitórias desaparecem na reconexão/reinicialização do servidor; também não existem identificadores de usuário autenticados.
+4. **Resultado baseado no cliente:** o evento de morte `kl` chega do navegador; ainda falta validação autoritativa de eliminação no servidor para ranking resistente a trapaças.
+5. **Trechos históricos:** se blocos extensos copiados do código original ainda aparecerem abaixo das notas **Atualização 11/11/2026**, interpretá-los como contexto da evolução e consultar a referência atual indicada antes de reutilizar código.
+
+---
+
+**Critério de manutenção:** sempre revisar `doc/doc_bomberIF_novo_atualizado.md` quando alterar regras, DTOs, mecanismos de rede, elementos visuais, ranking ou deploy. Não editar o documento original recuperado para explicar mudanças posteriores.

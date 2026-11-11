@@ -9197,7 +9197,7 @@ Este quadro integra a documentação de manutenção ao processo de testes. Os r
 
 **Abertura de partida:** `join_room` → `server/manager.ts` → `lobbyToRoom` / `findRoom` → `server/factory.ts:startGameFactory` → `start_game` + `myself` → `client/canvas/index.tsx:startGame` → criação de `PlayersFactory`, `BlocksFactory`, `SlowFloorsFactory` e demais entidades.
 
-**Vitória:** morte do jogador local → `emitKill` (`kl`) → `server/game.ts:onKill` → `registerDefeat` → identificação do último sobrevivente (após 200 ms) → incremento de `socket.data.wins` → `wins_update` → `setVictories` → ordenação do ranking por vitórias decrescentes.
+**Vitória:** morte do jogador local → `emitKill` (`kl`) → `server/game.ts:onKill` → `registerDefeat` → identificação do último sobrevivente (após 400 ms) → incremento de `socket.data.wins` → `wins_update` → `setVictories` → ordenação do ranking por vitórias decrescentes.
 
 **Bombas do Proença:** `Player.placeBomb` cria bomba local com referência ao dono; `BombFactory` armazena multiplicador; `PlaceBombDTO` é enviado por `pb`; `server/game.ts:onPlaceBomb` define `dto.p` usando o socket; outros clientes recriam a bomba somente com dados e multiplicador calculado a partir do personagem remoto. **Na revisão atual os multiplicadores são diferentes entre os dois caminhos.**
 

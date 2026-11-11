@@ -1,4 +1,4 @@
-import { BOMB_MOVE, BOMB_SPEED, TILE_SIZE } from '#/constants'
+import { BOMB_MOVE, BOMB_SPEED, OVERCLOCK_DETONATION_MULTIPLIER, TILE_SIZE } from '#/constants'
 import { SIDES } from '#/dto'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { BOMB } from '~/game/animations/bomb'
@@ -68,9 +68,8 @@ export function BombFactory (props : BombProps) : Bomb {
   bomb.anim = {frameCurrent:0, lastRender:0, sum:true}
   bomb.armed = true
   bomb.detonated = false
-  bomb.detonationMultiplier =
-  props.detonationMultiplier ??
-  (props.player?.hasOverclock ? 0.5 : 1)
+  bomb.detonationMultiplier = props.detonationMultiplier ??
+    (props.player?.hasOverclock ? OVERCLOCK_DETONATION_MULTIPLIER : 1)
   bomb.blast = BlastFactory()
   bomb.collidable = false
   bomb.directions = {up:0, right:0, down:0, left:0}

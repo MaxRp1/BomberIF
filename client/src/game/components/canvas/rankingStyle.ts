@@ -162,4 +162,34 @@ export const RankingPanel = styled.aside`
       font-size: 12px;
     }
   }
+
+  /* Mantém o placar dentro do espaço livre; em telas estreitas, usa popup. */
+  &.ranking-hidden {
+    display: none;
+  }
+
+  &.ranking-popup {
+    top: 56px;
+    left: 12px;
+    width: min(280px, calc(100vw - 24px));
+    max-height: calc(100svh - 70px);
+    overflow-y: auto;
+  }
+`
+
+export const RankingToggle = styled.button`
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 31;
+  padding: 9px 12px;
+  color: #f5cc70;
+  background: #1b2839;
+  border: 2px solid #4a607a;
+  box-shadow: 3px 3px 0 #070c13;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  touch-action: manipulation;
 `

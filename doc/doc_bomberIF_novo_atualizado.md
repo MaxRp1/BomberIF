@@ -4,6 +4,18 @@
 
 > **Escopo e integridade:** esta é a documentação da continuidade e evolução do projeto. A versão original de referência, `doc/doc_bomberIF_completo_recuperado.md`, não foi editada. Não confundir a documentação original recuperada com este arquivo de manutenção.
 
+## Revisão de estabilidade — 11/11/2026
+
+As correções desta branch abrangem: **Overclock compartilhado**, **vitórias zeradas ao trocar de lobby**, **mortes repetidas rejeitadas**, **empates reconhecidos dentro de 400 ms** e **saída voluntária/desconexão de jogadores vivos**.
+
+- Proença: `OVERCLOCK_DETONATION_MULTIPLIER = 0.5` é declarado em `shared/constants.ts` e importado por `bomb.ts` e `canvas/index.tsx`. O tempo-base da bomba é de 1500 ms nos dois caminhos; a latência pode atrasar a criação remota.
+- Lobbies: `server/src/manager.ts` captura `previousLobbyId` antes de atualizar o estado; ao mudar de lobby, zera `socket.data.wins`; ao repetir partidas no mesmo lobby, preserva as vitórias.
+- Ranking: `registerDefeat` retorna `false` em eliminações duplicadas. O servidor só repassa mortes aceitas, e permite 400 ms antes de atribuir vitória, para absorver eliminações quase simultâneas.
+- Saída e desconexão: `registerDeparture` trata a saída de jogador ainda vivo como eliminação visual e torna a rodada não pontuável; as demais mortes continuam sendo transmitidas. A saída de jogador já morto não cancela o resultado. `exitPairing(io,socket)` retira o socket da sala anterior, evitando jogadores fantasmas.
+- Testes: `server/test/ranking.test.ts` contém sete verificações automatizadas; execute `cd server && yarn test:ranking`. Builds e multiplayer real ainda precisam de validação.
+
+**Observação:** sair ou desconectar durante uma partida não concede automaticamente vitória no ranking. A interface pode terminar visualmente a partida ao restar um vivo, porém a pontuação só é confirmada por `wins_update`. Os eventos de morte ainda são iniciados pelo cliente (não há validação autoritativa do combate).
+
 ## Índice rápido das mudanças após outubro de 2026
 
 | Sistema | Estado em 11/11/2026 | Referências de código |
@@ -12,7 +24,7 @@
 | Cenários | 3 mapas sorteáveis; refeitório é `stage === 2` | `shared/constants.ts`, `server/src/factory.ts` |
 | Piso lento | 12 células aleatórias no refeitório; sprites `slow_floor_0..3.png`; velocidade multiplicada por `0.3` | `server/src/factory.ts`, `slowFloor.ts`, `player.ts` |
 | Explosões | Animação com intervalo de 80 ms; efeitos temporais e colisão continuam em `bomb.ts` / `blast.ts` | `client/src/game/animations/blast.ts`, `client/src/game/entities/blast.ts` |
-| Proença — Overclock | Multiplicador temporal armazenado em cada bomba; **há divergência entre criação local e remota**, descrita na seção de pendências | `player.ts`, `bomb.ts`, `canvas/index.tsx` |
+| Proença — Overclock | Multiplicador 0.5 compartilhado entre bomba local/remota; latência ainda pode causar pequeno descompasso | `player.ts`, `bomb.ts`, `canvas/index.tsx` |
 | Proença — Visão de Alcance | Projeção visual local de todas as bombas armadas, exclusiva do Proença | `client/src/game/util/explosionPreview.ts`, `canvas/index.tsx` |
 | Ranking | Vitórias acumuladas por conexão durante a sessão; sincronização via `wins_update` | `server/src/ranking.ts`, `shared/dto.ts`, `canvas/index.tsx` |
 | Interface | Painel de classificação com identificação do jogador, posição, vitórias e layout responsivo | `canvas/rankingStyle.ts`, `canvas/index.tsx` |
@@ -1083,103 +1095,98 @@ export function sendToLobby (io:Server, socket:Socket, event:string, dto:any) {
 
 - A função  é responsável por transmitir mensaagems  e atualizações de estado **dto** para todos os participantes conectados na sala atual do jogador.
 
-# 'Server' src/ranking.ts — ranking de vitórias por sessão (11/11/2026)
+# 'Server' src/ranking.ts — rodadas e apuração de vitórias
 
-## Responsabilidade e estado
+## Estado e fluxo de pontuação
 
-O módulo mantém um `Map<string, Round>` em memória, indexado pelo **`roomId` da partida**. Cada `Round` armazena os identificadores de sockets sobreviventes (`Set<string>`) e, quando necessário, um temporizador para encerrar o resultado. **A contagem de vitórias (`socket.data.wins`) fica armazenada no socket**, não no `Map`, nem em um banco de dados.
+O servidor armazena `rounds: Map<string,Round>` com `alive` (IDs dos participantes vivos), `scoreEnabled` e `finishTimer`. `beginRankingRound` inicializa partidas de dois ou mais jogadores; `registerDefeat` só aceita uma eliminação por socket.
 
-## Fluxo de uma rodada
+Ao restar um único sobrevivente numa rodada pontuável, uma tolerância de **400 ms** permite identificar empates. Se houver vencedor conectado, ainda no `roomId` da rodada, `socket.data.wins` aumenta em uma unidade e o servidor emite `wins_update: { p, wins }`.
 
-1. `startGameFactory` reúne os `socketId` e chama `beginRankingRound(roomId, playerIds)`. Partidas com menos de dois jogadores não geram uma rodada pontuável.
-2. `client/player.ts` envia a eliminação (`kl`); `server/game.ts` retransmite aos clientes e chama `registerDefeat`.
-3. `registerDefeat` remove o socket eliminado do conjunto `alive`. Uma nova chamada para a mesma eliminação não remove o jogador duas vezes.
-4. Ao restar um sobrevivente, agenda-se uma espera de **200 ms** para absorver possíveis mortes quase simultâneas. Se todos morrerem antes da conclusão, a rodada é cancelada como empate.
-5. Se houver vencedor conectado, soma-se `1` a `winner.data.wins` e emite-se `wins_update: { p: winner.data.index, wins: winner.data.wins }` para o `roomId`. Depois a rodada é descartada.
-6. `onDisconnect` também pode cancelar a rodada em andamento. Em reinício do processo do servidor, todo estado em memória desaparece.
+`registerDeparture` remove jogador vivo que saiu ou desconectou, envia `kl` aos restantes e desativa a pontuação; as eliminações continuam sendo registradas para não travar o jogo. Uma desconexão posterior à morte não invalida resultados legítimos. `cancelRankingRound` remove o registro e seu temporizador.
 
-**Limites:** não há placar global, login, banco de dados ou persistência após desconexão. O placar exibe vitórias dos participantes atuais, mas o valor individual pode ter sido acumulado em partidas anteriores da mesma conexão. Isso não equivale a um histórico permanentemente associado a um único lobby.
+O resultado depende dos eventos de morte enviados pelo cliente; não existe verificação autoritativa de colisões no servidor nem persistência de vitórias após reconexão.
 
-## Código atual
+## Código-fonte atual
 
 ```ts
-import { Server } from 'socket.io'
-import { Socket } from '~/extends'
+import type { Server } from 'socket.io'
+import type { Socket } from '~/extends'
+
+// Janela de tolerância para mortes quase simultâneas (rede e quadros distintos).
+const ROUND_FINISH_GRACE_MS = 400
 
 interface Round {
   alive: Set<string>
+  scoreEnabled: boolean
   finishTimer?: ReturnType<typeof setTimeout>
 }
 
 const rounds = new Map<string, Round>()
 
-// Registra os participantes de uma nova partida.
-export function beginRankingRound(
-  roomId: string,
-  playerIds: string[]
-) {
+// Cada nova partida usa os IDs dos sockets presentes em seu roomId.
+export function beginRankingRound(roomId: string, playerIds: string[]) {
   cancelRankingRound(roomId)
 
-  // Partidas individuais não contam como vitória.
-  if (playerIds.length < 2) return
+  const uniquePlayers = new Set(playerIds)
+  if (uniquePlayers.size < 2) return
 
   rounds.set(roomId, {
-    alive: new Set(playerIds)
+    alive: uniquePlayers,
+    scoreEnabled: true
   })
 }
 
-// Cancela o registro da partida.
+// Libera temporizador e dados da rodada. É seguro chamar mais de uma vez.
 export function cancelRankingRound(roomId: string) {
   const round = rounds.get(roomId)
 
-  if (round?.finishTimer) {
-    clearTimeout(round.finishTimer)
-  }
+  if (round?.finishTimer) clearTimeout(round.finishTimer)
 
   rounds.delete(roomId)
 }
 
-// Registra a eliminação de um participante.
-export function registerDefeat(
-  io: Server,
-  socket: Socket
-) {
+// true = morte válida e nova; false = duplicada ou fora da rodada.
+// O chamador retransmite 'kl' somente quando a morte foi registrada.
+export function registerDefeat(io: Server, socket: Socket): boolean {
   const roomId = socket.data.roomId
   const round = rounds.get(roomId)
+  if (!round || !round.alive.delete(socket.id)) return false
 
-  if (!round) return
-
-  // Impede contabilizar a mesma morte duas vezes.
-  if (!round.alive.delete(socket.id)) return
-
-  // Todos morreram: não existe vencedor.
+  // Empate ou partida interrompida já sem sobreviventes.
   if (round.alive.size === 0) {
     cancelRankingRound(roomId)
-    return
+    return true
   }
 
-  // A partida ainda possui mais de um sobrevivente.
-  if (round.alive.size !== 1) return
+  // Após uma saída/desconexão, continuamos retransmitindo mortes
+  // para que os clientes terminem a partida, mas não pontuamos.
+  if (!round.scoreEnabled) {
+    if (round.alive.size === 1) cancelRankingRound(roomId)
+    return true
+  }
 
-  // Evita agendar a finalização repetidamente.
-  if (round.finishTimer) return
+  if (round.alive.size > 1 || round.finishTimer) return true
 
-  // Pequena tolerância para mortes simultâneas.
+  // Um único sobrevivente: aguarda outras mortes antes de pontuar.
   round.finishTimer = setTimeout(() => {
     if (rounds.get(roomId) !== round) return
 
-    if (round.alive.size !== 1) {
+    if (!round.scoreEnabled || round.alive.size !== 1) {
       cancelRankingRound(roomId)
       return
     }
 
     const winnerId = [...round.alive][0]
+    const winner = io.sockets.sockets.get(winnerId) as Socket | undefined
 
-    const winner = io.sockets.sockets.get(
-      winnerId
-    ) as Socket | undefined
-
-    if (winner && winner.data.roomId === roomId) {
+    // Não pontua se o vencedor saiu ou foi movido para outra sala.
+    if (
+      winner &&
+      winner.connected &&
+      winner.data.roomId === roomId &&
+      winner.rooms.has(roomId)
+    ) {
       winner.data.wins = (winner.data.wins ?? 0) + 1
 
       io.to(roomId).emit('wins_update', {
@@ -1189,16 +1196,41 @@ export function registerDefeat(
     }
 
     cancelRankingRound(roomId)
-  }, 200)
+  }, ROUND_FINISH_GRACE_MS)
+
+  return true
+}
+
+// Abandono voluntário ou desconexão enquanto ainda estava vivo.
+// Torna a rodada NÃO pontuável, mas mantém o controle das demais mortes
+// para a interface dos participantes restantes não ficar travada.
+export function registerDeparture(io: Server, socket: Socket): boolean {
+  const roomId = socket.data.roomId
+  const round = rounds.get(roomId)
+
+  // Uma desconexão após a morte não anula uma vitória legítima.
+  if (!round || !round.alive.delete(socket.id)) return false
+
+  round.scoreEnabled = false
+
+  if (round.finishTimer) {
+    clearTimeout(round.finishTimer)
+    round.finishTimer = undefined
+  }
+
+  // Os outros clientes tratam a saída como eliminação visual.
+  io.to(roomId).emit('kl', { p: socket.data.index })
+
+  // Se restar até um participante, a partida se encerra no cliente.
+  if (round.alive.size <= 1) cancelRankingRound(roomId)
+
+  return true
 }
 ```
 
-## Integração
+## Testes
 
-- Emissor: `server/src/ranking.ts` (evento servidor → cliente `wins_update`).
-- DTO: `shared/dto.ts` (`WinsUpdateDTO`).
-- Receptor: `client/src/game/components/canvas/index.tsx` (`onWinsUpdate`).
-- O servidor **não** registra `socket.on('wins_update', ...)` em `ioListener.ts`, pois o evento é de saída.
+O arquivo `server/test/ranking.test.ts` cobre sete cenários (vitória, duplicatas, empate, saída depois da morte, saída enquanto vivo, saída na tolerância e partida individual). Executar `cd server && yarn test:ranking` e `cd server && yarn build`. Os testes de rede real devem ser executados separadamente.
 
 ---
 
@@ -3600,7 +3632,7 @@ Agora `BombProps.detonationMultiplier?` pode definir um multiplicador na criaç�
 
 **Temporizador-base:** `3000 * detonationMultiplier * multiplier` milissegundos; `removeTime` ocorre 500 ms após o momento de detonar. Bombas carregadas usam multiplicador adicional `2`.
 
-**Divergência encontrada na branch main:** bomba local do Proença é criada com `0.5` (1500 ms) em `BombFactory`; outros clientes a recriam com `0.75` (2250 ms) em `canvas/index.tsx`. Isto pode causar dessincronização visual e de dano. É uma pendência a corrigir no código; a documentação não altera esses valores.
+**Correção desta branch:** bombas locais e remotas de Proença usam o mesmo multiplicador compartilhado `0.5` (tempo-base 1500 ms). Permanece o atraso de comunicação entre navegadores.
 
 Inicialização local atual:
 ```ts
@@ -9072,10 +9104,10 @@ Ao fazer uma mudança no código, procure no documento pelo **caminho do arquivo
 - **Ranking:** `server/src/ranking.ts`, campo `wins` em `socket.data`, DTO de sincronização, painel com vitórias e classificação, ajuste responsivo usando `ResizeObserver` e botão compacto.
 - **Deploy:** Render conectado à `main`; Pages publicado pela branch `client` através de `client/deploy.sh`.
 
-### Pendências técnicas constatadas (documentação não altera código)
+### Melhorias concluídas e pendências abertas
 
-1. **Multiplicador do Overclock divergente:** no cliente local (`client/src/game/entities/bomb.ts`), Proença usa `0.5` (bomba padrão de 3000 ms → 1500 ms). No receptor de bombas remotas (`canvas/index.tsx`), usa-se `0.75` (→ 2250 ms). São tempos distintos entre jogadores e podem resultar em efeitos fora de sincronismo. Antes de definir balanceamento, uniformizar o valor e testar multiplayer.
-2. **Reset por lobby não efetivo:** `server/src/manager.ts` atualiza `socket.data.lobbyId` antes de testar se o lobby mudou. A comparação posterior não detecta troca de lobby; o contador pode persistir no mesmo socket ao mudar de lobby. Registrar a limitação sem afirmar que o reset já funciona.
+1. **Overclock unificado:** `shared/constants.ts` define multiplicador `0.5`, importado na criação local e remota. Ainda é possível existir atraso por latência, pois não há timestamp de detonação autoritativo.
+2. **Reset por lobby corrigido:** `previousLobbyId` é guardado antes de atualizar `socket.data.lobbyId`, e `wins` é zerado somente ao entrar em outro lobby.
 3. **Placar não permanente:** sem armazenamento persistente, vitórias desaparecem na reconexão/reinicialização do servidor; também não existem identificadores de usuário autenticados.
 4. **Resultado baseado no cliente:** o evento de morte `kl` chega do navegador; ainda falta validação autoritativa de eliminação no servidor para ranking resistente a trapaças.
 5. **Trechos históricos:** se blocos extensos copiados do código original ainda aparecerem abaixo das notas **Atualização 11/11/2026**, interpretá-los como contexto da evolução e consultar a referência atual indicada antes de reutilizar código.
@@ -9084,6 +9116,8 @@ Ao fazer uma mudança no código, procure no documento pelo **caminho do arquivo
 
 
 ## MATRIZ DE VALIDAÇÃO E RASTREABILIDADE — 11/11/2026
+
+**Agora há testes automatizados:** `cd server && yarn test:ranking` (sete cenários de regressão). Teste de rede real e execução dos builds permanecem necessários.
 
 Este quadro integra a documentação de manutenção ao processo de testes. Os resultados **não foram executados automaticamente nesta revisão documental**: são critérios esperados a verificar na instância de desenvolvimento, no navegador e, quando necessário, em produção. Não confundir código compilado com comportamento comprovado em várias conexões.
 

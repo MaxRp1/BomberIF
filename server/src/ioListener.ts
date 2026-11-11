@@ -20,7 +20,7 @@ export default function ioListener (io:Server) {
     socket.on('change_lobby', lobbyId => changeLobby(io, socket, lobbyId))
     socket.on('join_room',    dto => joinRoom(io, socket, dto))
     socket.on('ready',        () => onReady(io, socket))
-    socket.on('exit_pairing', () => exitPairing(socket))
+    socket.on('exit_pairing', () => exitPairing(io, socket))
     socket.on('disconnect',   () => onDisconnect(io, socket))
 
     socket.on('call_offer',    dto => sendToLobby(io, socket, 'call_offer', dto))

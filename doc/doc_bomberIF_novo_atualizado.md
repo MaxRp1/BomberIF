@@ -9049,6 +9049,11 @@ Esta seção existe para evitar que o código e o estudo técnico voltem a ficar
 | Alterar animação/spritesheet | `client/src/game/animations/*` e entidade que renderiza | Seção de animação correspondente e `render` da entidade |
 | Alterar controles | `player.ts`, `gamepad.ts` ou `touchControls/*` | Seções de entrada correspondentes |
 | Alterar regra de morte/vitória | `player.ts`, entidades que chamam `kill`, `canvas/index.tsx` | `Player.kill`, entidades causadoras e `Canvas/checkWin` |
+| Criar/alterar ranking por sessão | `server/src/ranking.ts`, `factory.ts`, `manager.ts`, `game.ts`, `shared/dto.ts`, `canvas/index.tsx` | Ciclo das rodadas, evento `wins_update`, contagem, desconexão e limites de persistência |
+| Alterar layout do ranking | `client/src/game/components/canvas/index.tsx`, `rankingStyle.ts` | Regras visuais, largura medida, modo compacto e o estado do painel |
+| Adicionar prévia de explosão | `client/src/game/util/explosionPreview.ts`, `player.ts`, `canvas/index.tsx`, `bomb.ts` | Filtro de personagem, alcance visual, colisões e ordem das camadas |
+| Alterar temporização exclusiva de personagem | `client/src/game/entities/bomb.ts`, `canvas/index.tsx`, `player.ts` | Multiplicador local e remoto, sincronização, transporte de bombas |
+| Publicar frontend | `client/deploy.sh`, `client/package.json`, branch `client` | Seção `PUBLICAÇÃO DO CLIENTE — GITHUB PAGES` |
 
 ### Regra prática
 

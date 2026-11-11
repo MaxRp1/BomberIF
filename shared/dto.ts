@@ -96,6 +96,12 @@ export interface PlaceBombDTO {
 
 export interface PlayerDTO extends UserDTO {
   sprite : number
+  wins?: number
+}
+
+export interface WinsUpdateDTO {
+  p: number
+  wins: number
 }
 
 export interface StartGameDTO {

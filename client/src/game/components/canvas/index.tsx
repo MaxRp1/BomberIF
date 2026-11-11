@@ -12,9 +12,11 @@ import { playBombSound } from '~/game/sound/bomb'
 import { playWinSound, stopWinSound } from '~/game/sound/win'
 import { Assets } from '~/game/util/assets'
 import { socket } from '~/services/socket'
-import { Pairing, Players, Timer } from './style'
+import { Pairing, Timer } from './style'
 import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { renderExplosionPreview } from '~/game/util/explosionPreview'
+import { RankingPanel } from './rankingStyle'
+import { WinsUpdateDTO } from '#/dto'
 
 interface CanvasProps {
   myself : number|null
@@ -29,6 +31,7 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
   const timeRef = useRef<{endGame:NodeJS.Timeout|undefined, gameLoop:NodeJS.Timer|undefined}>({endGame:undefined, gameLoop:undefined})
   const [context, setContext] = useState<CanvasRenderingContext2D>()
   const [state, setState] = useState<GameState>()
+  const [victories, setVictories] = useState<number[]>([])
 
   function gameLoop () {
     try {
@@ -59,7 +62,7 @@ function render () {
   state?.slowFloors.render(context)
   state?.blocks.render(context, state)
   renderExplosionPreview(context!, state!)
-  
+
   if (state!.players.players.find(p => p.holding)) {
     state?.players.render(context)
     state?.entities.render(context)
@@ -83,6 +86,17 @@ function startGame (dto:StartGameDTO) {
     players: PlayersFactory(dto.players),
     slowFloors: SlowFloorsFactory(dto.state.slowFloors),
     stage: StageFactory({name:dto.state.stage})
+  })
+  setVictories(dto.players.map(p => p.wins ?? 0))
+}
+
+function onWinsUpdate(dto: WinsUpdateDTO) {
+  setVictories(previous => {
+    const updated = [...previous]
+
+    updated[dto.p] = dto.wins
+
+    return updated
   })
 }
 
@@ -194,6 +208,7 @@ function startGame (dto:StartGameDTO) {
     socket.on('fb', onFlingBomb)
     socket.on('nb', onNullifyBlock)
     socket.on('kl', onKill)
+    socket.on('wins_update', onWinsUpdate)
     return () => {
       socket.off('start_game', startGame)
       socket.off('ready', onReady)
@@ -204,6 +219,7 @@ function startGame (dto:StartGameDTO) {
       socket.off('fb', onFlingBomb)
       socket.off('nb', onNullifyBlock)
       socket.off('kl', onKill)
+      socket.on('wins_update', onWinsUpdate)
     }
   }, [state])
 
@@ -237,12 +253,82 @@ function startGame (dto:StartGameDTO) {
     setContext(context2d)
   }, [])
 
+  const ranking = (state?.players.players ?? [])
+  .map((player, index) => ({
+    index,
+    nick: player.nick,
+    wins: victories[index] ?? 0
+  }))
+  .sort((a, b) =>
+    b.wins - a.wins || a.index - b.index
+  )
+
   return (
     <>
     {!state && <Pairing>Pairing</Pairing>}
-    <Players>
-      {state?.players.players.map(({nick},i) => <p key={`${nick}${i}`}>{++i}. {nick}</p>)}
-    </Players>
+
+<RankingPanel>
+  <div className="ranking-heading">
+    <div className="ranking-title">
+      🏆 RANKING DA SALA
+      <span className="ranking-subtitle">
+        Vitórias nesta sessão
+      </span>
+    </div>
+
+    <span className="ranking-count">
+      {ranking.length}/4
+    </span>
+  </div>
+
+  {ranking.map((player, position) => {
+    const isLeader =
+      position === 0 &&
+      player.wins > 0 &&
+      (
+        ranking.length === 1 ||
+        player.wins > ranking[1].wins
+      )
+
+    const isMe = player.index === myself
+
+    return (
+      <div
+        key={player.index}
+        className={[
+          'ranking-row',
+          isLeader ? 'ranking-leader' : '',
+          isMe ? 'ranking-me' : ''
+        ].join(' ')}
+      >
+        <span className="ranking-pos">
+          {isLeader ? '👑' : `${position + 1}º`}
+        </span>
+
+        <div className="ranking-person">
+          <span
+           className="ranking-name"
+           title={player.nick ?? 'Jogador'}
+          >
+           {player.nick ?? 'Jogador'}
+         </span>
+
+          {isMe && (
+            <span className="ranking-you">
+              VOCÊ
+            </span>
+          )}
+        </div>
+
+        <span className="ranking-wins">
+          {player.wins}
+          <small>VIT.</small>
+        </span>
+      </div>
+    )
+  })}
+</RankingPanel>
+
     <Timer id='timer' />
     <canvas ref={canvasRef} width={240} height={208} style={style} />
     </>

@@ -1,6 +1,7 @@
 import { Server } from 'socket.io'
 import { FlingBombDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO } from '#/dto'
 import { Socket } from '~/extends'
+import { registerDefeat } from '~/ranking'
 
 export function onMove (io:Server, socket:Socket, dto:MoveDTO) {
   dto.p = socket.data.index
@@ -31,9 +32,16 @@ export function onNullifyBlock (io:Server, socket:Socket, dto:NullifyBlockDTO) {
   io.to(socket.data.roomId).emit('nb', dto)
 }
 
-export function onKill (io:Server, socket:Socket, dto:KillDTO) {
+export function onKill(
+  io: Server,
+  socket: Socket,
+  dto: KillDTO
+) {
   dto.p = socket.data.index
+
   io.to(socket.data.roomId).emit('kl', dto)
+
+  registerDefeat(io, socket)
 }
 
 /* {

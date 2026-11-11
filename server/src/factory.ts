@@ -8,30 +8,56 @@ import {
   StartGameDTO
 } from '#/dto'
 import { Socket } from '~/extends'
+import { beginRankingRound } from '~/ranking'
 
 const CAFETERIA_STAGE = 2
 const SLOW_FLOOR_COUNT = 12
 
-// estabelece os jogadores e o estado inicial do jogo
-export function startGameFactory (io : Server, roomId : string) : StartGameDTO|null {
+// Estabelece os jogadores e o estado inicial do jogo
+export function startGameFactory (
+  io: Server,
+  roomId: string
+): StartGameDTO | null {
+
+  // Obtém os jogadores conectados à sala
   const room = io.sockets.adapter.rooms.get(roomId)
+
   if (!room) return null
-  const players:StartGameDTO['players'] = []
+
+  const players: StartGameDTO['players'] = []
+  const playerIds: string[] = []
+
   for (const socketId of room) {
-    const p:Socket|undefined = io.sockets.sockets.get(socketId)
+    const p: Socket | undefined = io.sockets.sockets.get(socketId)
+
     if (!p) continue
+
+    // Registra o jogador no sistema de ranking
+    playerIds.push(socketId)
+
     const size = players.push({
       nick: p.data.nick,
-      sprite: Math.floor(Math.random() * SPRITES)
+      sprite: Math.floor(Math.random() * SPRITES),
+      wins: p.data.wins ?? 0
     })
-    const index = size-1
+
+    const index = size - 1
+
     p.data.index = index
     p.emit('myself', index)
   }
+
   if (!players.length) return null
+
+  // Cria o estado inicial da partida
   const state = stateFactory()
+
+  // Inicializa o acompanhamento de vitórias da rodada
+  beginRankingRound(roomId, playerIds)
+
   return { players, state }
 }
+
 // atualiza a lista de jogadores na lobby
 export function updateLobbyFactory (io : Server, lobbyId : string) : LobbyDTO|null {
   const lobby = io.sockets.adapter.rooms.get(lobbyId)

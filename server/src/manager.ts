@@ -7,12 +7,14 @@ import { Socket } from '~/extends'
 import { startGameFactory, updateLobbyFactory } from '~/factory'
 import { rooms } from '~/rooms'
 import { generateId } from '~/util'
+import { cancelRankingRound } from '~/ranking'
 
 export function setUser (io:Server, socket:Socket, user:UserDTO) {
   if (typeof user.nick !== 'string' || user.nick.length < NICK.MIN || user.nick.length > NICK.MAX) {
     return socket.emit('error', ERRORS.SET_USER_FAILED)
   }
   socket.data.nick = user.nick
+  socket.data.wins ??= 0
   const dto = updateLobbyFactory(io, socket.data.lobbyId)
   dto && sendToLobby(io, socket, 'update_lobby', dto)
 }
@@ -85,6 +87,7 @@ export function onReady (io:Server, socket:Socket) {
 }
 
 export function onDisconnect (io:Server, socket:Socket) {
+  cancelRankingRound(socket.data.roomId)
   updateRoomQueue(socket)
   const dto = updateLobbyFactory(io, socket.data.lobbyId)
   if (dto) {
@@ -106,6 +109,10 @@ async function enterLobby (
   socket.data.isPairing = false
 
   const dto = updateLobbyFactory(io, lobbyId)
+
+  if (socket.data.lobbyId !== lobbyId) {
+    socket.data.wins = 0
+  }
 
   dto && sendToLobby(
     io,

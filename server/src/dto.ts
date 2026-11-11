@@ -4,4 +4,7 @@ export interface PlayerDTO {
   lobbyId   : string
   nick      : string
   roomId    : string
+  p: number
+  wins: number
 }
+

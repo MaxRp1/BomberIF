@@ -29,6 +29,7 @@ As correções desta branch abrangem: **Overclock compartilhado**, **vitórias z
 | Ranking | Vitórias acumuladas por conexão durante a sessão; sincronização via `wins_update` | `server/src/ranking.ts`, `shared/dto.ts`, `canvas/index.tsx` |
 | Interface | Painel de classificação com identificação do jogador, posição, vitórias e layout responsivo | `canvas/rankingStyle.ts`, `canvas/index.tsx` |
 | Publicação | Backend Render via `main`, frontend Pages via branch `client` | `server/build.sh`, `client/deploy.sh` |
+| Compilação dev | `ts-loader` configurado explicitamente para `shared/`, evitando TS18002 no modo desenvolvimento | `client/craco.config.js`, `client/tsconfig.json` |
 
 **Linha do tempo verificada no Git:** 23/10 — pisos lentos e manchas visuais; 03/11 — habilidade da Ino; 10/11 — duas habilidades do Proença; 11/11 — ranking por sala/sessão e responsividade. As seções seguintes reúnem o funcionamento atual e também registram limitações e pontos a corrigir sem alterar o código do jogo.
 
@@ -1456,6 +1457,79 @@ export interface GameStateDTO {
 
 ---
 # **CLIENT**
+
+# 'Client' craco.config.js — configuração TypeScript e Webpack em desenvolvimento (11/11/2026)
+
+## Erro corrigido — TS18002 no `yarn dev`
+
+O frontend utiliza Create React App com CRACO. O projeto é um monorepositório: o código da interface está em `client/src/`, enquanto tipos e constantes são importados de `shared/`, um diretório irmão de `client/` (aliases `~` e `#`).
+
+**Sintoma anterior:** ao executar `cd client && yarn dev`, a primeira importação de `../shared/constants.ts` podia falhar com `TS18002: The 'files' list in config file 'tsconfig.json' is empty`, porque a regra genérica `ts-loader` procurava `tsconfig.json` a partir do diretório do arquivo compartilhado, e não encontrava o arquivo de configuração do cliente.
+
+**Correção aplicada nesta branch:**
+
+- `ts-loader` é limitado ao diretório `shared/`, pois os arquivos TypeScript da aplicação `client/src/` já são processados pelo pipeline Babel do CRA.
+- `options.configFile` aponta para o caminho **absoluto** de `client/tsconfig.json`; `options.context` define `client/` como base de resolução.
+- `transpileOnly: true` evita uma segunda checagem redundante de tipos no loader; o verificador do CRA continua encarregado da checagem geral.
+- `compilerOptions.noEmit = false` é sobrescrito **somente no ts-loader**, que precisa transformar os arquivos compartilhados em JavaScript; o `client/tsconfig.json` continua com `noEmit: true` para o uso normal do TypeScript.
+- Não foi necessário criar um `tsconfig.json` na raiz nem alterar o servidor.
+
+**Arquivo completo nesta branch:**
+
+```js
+const { homedir } = require('node:os')
+const { join, resolve } = require('node:path')
+
+module.exports = {
+  webpack: {
+    alias: {
+      '~': resolve(__dirname, 'src'),
+      '#': resolve(__dirname, '..', 'shared')
+    },
+    configure: webpackConfig => {
+      const scopePluginIndex = webpackConfig.resolve.plugins.findIndex(
+        ({ constructor }) => constructor && constructor.name === 'ModuleScopePlugin'
+      )
+      webpackConfig.resolve.plugins.splice(scopePluginIndex, 1)
+      // CRA já compila client/src com Babel. Este loader é necessário
+      // somente para os módulos TypeScript compartilhados fora de client/.
+      webpackConfig.module.rules.push({
+        test: /\.tsx?$/,
+        include: resolve(__dirname, '..', 'shared'),
+        loader: 'ts-loader',
+        options: {
+          configFile: resolve(__dirname, 'tsconfig.json'),
+          context: __dirname,
+          transpileOnly: true,
+          // client/tsconfig.json usa noEmit para typecheck, mas o loader
+          // precisa emitir JavaScript para o Webpack.
+          compilerOptions: { noEmit: false }
+        }
+      })
+      return webpackConfig
+    }
+  },
+  devServer: {
+    https: {
+      cert: join(homedir(), '.ssl', 'cert.pem'),
+      key: join(homedir(), '.ssl', 'key.pem')
+    }
+  }
+}
+```
+
+### Verificação
+
+```bash
+cd ~/BomberIF/client
+yarn dev
+```
+
+Se a compilação de desenvolvimento iniciar sem `TS18002`, seguir com os testes de duas abas. Também executar `yarn build`, pois as configurações de compilação de desenvolvimento e de produção podem diferir. **Esta alteração foi escrita no GitHub e ainda precisa de validação local no Kali.**
+
+---
+
+
 ---
 
 # 'Client' src/constants.ts
@@ -9122,6 +9196,7 @@ Esta seção existe para evitar que o código e o estudo técnico voltem a ficar
 | Adicionar prévia de explosão | `client/src/game/util/explosionPreview.ts`, `player.ts`, `canvas/index.tsx`, `bomb.ts` | Filtro de personagem, alcance visual, colisões e ordem das camadas |
 | Alterar temporização exclusiva de personagem | `client/src/game/entities/bomb.ts`, `canvas/index.tsx`, `player.ts` | Multiplicador local e remoto, sincronização, transporte de bombas |
 | Publicar frontend | `client/deploy.sh`, `client/package.json`, branch `client` | Seção `PUBLICAÇÃO DO CLIENTE — GITHUB PAGES` |
+| Corrigir bundler TypeScript | `client/craco.config.js`, `client/tsconfig.json`, `shared/` | Capítulo `Client craco.config.js` e testes `yarn dev` / `yarn build` |
 
 ### Regra prática
 

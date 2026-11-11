@@ -7,7 +7,7 @@ import { Socket } from '~/extends'
 import { startGameFactory, updateLobbyFactory } from '~/factory'
 import { rooms } from '~/rooms'
 import { generateId } from '~/util'
-import { cancelRankingRound } from '~/ranking'
+import { registerDeparture } from '~/ranking'
 
 export function setUser (io:Server, socket:Socket, user:UserDTO) {
   if (typeof user.nick !== 'string' || user.nick.length < NICK.MIN || user.nick.length > NICK.MAX) {
@@ -87,7 +87,7 @@ export function onReady (io:Server, socket:Socket) {
 }
 
 export function onDisconnect (io:Server, socket:Socket) {
-  cancelRankingRound(socket.data.roomId)
+  registerDeparture(io, socket)
   updateRoomQueue(socket)
   const dto = updateLobbyFactory(io, socket.data.lobbyId)
   if (dto) {
@@ -102,7 +102,9 @@ async function enterLobby (
   socket:Socket,
   lobbyId:string
 ) {
-  await socket.leave(socket.data.lobbyId)
+  const previousLobbyId = socket.data.lobbyId
+
+  await socket.leave(previousLobbyId)
   await socket.join(lobbyId)
 
   socket.data.lobbyId = lobbyId
@@ -110,7 +112,7 @@ async function enterLobby (
 
   const dto = updateLobbyFactory(io, lobbyId)
 
-  if (socket.data.lobbyId !== lobbyId) {
+  if (previousLobbyId !== lobbyId) {
     socket.data.wins = 0
   }
 
@@ -185,26 +187,20 @@ function updateRoomQueue (socket:Socket) {
   else           rooms.delete(socket.data.roomId)
 }
 
-export function exitPairing (socket:Socket) {
-  console.log(
-    '[EXIT] antes',
-    {
-      nick: socket.data.nick,
-      isPairing: socket.data.isPairing,
-      roomId: socket.data.roomId
-    }
-  )
+export function exitPairing (io:Server, socket:Socket) {
+  const roomId = socket.data.roomId
 
+  // Sair pelo botão Voltar também é uma desistência da rodada.
+  // Remove o jogador vivo da contagem e avisa os outros participantes.
+  registerDeparture(io, socket)
   updateRoomQueue(socket)
   socket.data.isPairing = false
 
-  console.log(
-    '[EXIT] depois',
-    {
-      nick: socket.data.nick,
-      isPairing: socket.data.isPairing
-    }
-  )
+  // Um socket não pode continuar na sala de uma partida encerrada.
+  if (roomId) {
+    void socket.leave(roomId)
+    socket.data.roomId = ''
+  }
 }
 
 export function sendToLobby (io:Server, socket:Socket, event:string, dto:any) {

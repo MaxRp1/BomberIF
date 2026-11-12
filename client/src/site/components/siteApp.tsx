@@ -2,14 +2,14 @@ import '~/index.css'
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useSearchParams } from 'react-router-dom'
-import { LobbyDTO, UserDTO } from '#/dto'
+import { LobbyDTO, LobbyWinsUpdateDTO, UserDTO } from '#/dto'
 import useBoot from '~/hooks/useBoot'
 import { CallFactory } from '~/services/call'
 import { errorHandler } from '~/services/errorHandler'
 import { EVENTS } from '~/services/events'
 import randomuser from '~/services/randomuser'
 import { emitChangeLobby, emitCreateLobby, emitSetUser, socket } from '~/services/socket'
-import { updateLobby } from '~/store/lobby/actions'
+import { updateLobby, updateLobbyWins } from '~/store/lobby/actions'
 import { OptionsDTO } from '~/store/options/reducer'
 import { saveOptions } from '~/store/options/thunk'
 import { setUserNick } from '~/store/user/actions'
@@ -99,13 +99,25 @@ export default function SiteApp ({ children } : SiteAppProps) {
   }, [booting, lobby, options])
 
   useEffect(() => {
+    // Handlers com referência estável para que o cleanup realmente remova listeners.
+    function onUpdateLobby (dto: LobbyDTO) {
+      dispatch(updateLobby(dto))
+    }
+
+    function onLobbyWinsUpdate (dto: LobbyWinsUpdateDTO) {
+      dispatch(updateLobbyWins(dto))
+    }
+
     socket.on('error', errorHandler)
-    socket.on('update_lobby', lobby => dispatch(updateLobby(lobby)))
+    socket.on('update_lobby', onUpdateLobby)
+    socket.on('lobby_wins_update', onLobbyWinsUpdate)
+
     return () => {
       socket.off('error', errorHandler)
-      socket.off('update_lobby', lobby => dispatch(updateLobby(lobby)))
+      socket.off('update_lobby', onUpdateLobby)
+      socket.off('lobby_wins_update', onLobbyWinsUpdate)
     }
-  }, [])
+  }, [dispatch])
 
   return children
 

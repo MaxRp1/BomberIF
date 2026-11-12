@@ -1,4 +1,4 @@
-import { PRESS_INTERVAL, TILE_SIZE } from '#/constants'
+import { MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_COOLDOWN_MS, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
@@ -7,7 +7,7 @@ import { GamepadFactory } from '~/game/entities/gamepad'
 import { GameState } from '~/game/entities/state'
 import { playBombSound } from '~/game/sound/bomb'
 import { playKillSound } from '~/game/sound/kill'
-import { emitFlingBomb, emitHoldBomb, emitKill, emitMove, emitPlaceBomb } from '~/services/socket'
+import { emitFlingBomb, emitHoldBomb, emitKill, emitMove, emitPlaceBomb, emitStunFire } from '~/services/socket'
 
 interface LastPress {
   bomb : number
@@ -33,6 +33,11 @@ export interface Player {
   hasOverclock      : boolean
   invulnerableUntil : number
   hasBlastVision    : boolean
+  isMamedes         : boolean
+  spriteId          : number
+  stunnedUntil      : number
+  skillReadyAt      : number
+  lastSkillRequestAt: number
   hold              : boolean
   holding           : 0|1
   index              : number
@@ -66,6 +71,8 @@ export interface Player {
   stopMove             : (side:SIDES) => void
   invertControls       : () => void
   handleBomb           : (state:GameState) => void
+  useStunSkill        : () => void
+  applyStun           : () => void
   placeBomb            : (state:GameState) => void
   holdBomb             : (state:GameState) => void
   flingBomb            : (state:GameState) => void
@@ -98,6 +105,11 @@ export function PlayerFactory (props:PlayerProps) : Player {
     ignoresSlowFloor: props.sprite === 11,
     hasOverclock: props.sprite === 2,
     hasBlastVision: props.sprite === 2,
+    isMamedes: props.sprite === MAMEDES_SPRITE_ID,
+    spriteId: props.sprite,
+    stunnedUntil: 0,
+    skillReadyAt: 0,
+    lastSkillRequestAt: 0,
     invulnerableUntil: 0,
     hold: false,
     holding: 0,
@@ -137,6 +149,8 @@ export function PlayerFactory (props:PlayerProps) : Player {
   player.stopMove = stopMove.bind(player)
   player.invertControls = invertControls.bind(player)
   player.handleBomb = handleBomb.bind(player)
+  player.useStunSkill = useStunSkill.bind(player)
+  player.applyStun = applyStun.bind(player)
   player.placeBomb = placeBomb.bind(player)
   player.holdBomb = holdBomb.bind(player)
   player.flingBomb = flingBomb.bind(player)
@@ -184,8 +198,9 @@ function onVisibilityChange (this:Player) {
 
 function keydownListener (this:Player, event:KeyboardEvent, state:GameState) {
   event.preventDefault()
-  if (!this.active) return
+  if (!this.active || Date.now() < this.stunnedUntil) return
   const key = event.key.toUpperCase()
+  if (key === 'E' && !event.repeat) this.useStunSkill()
   if (this.moveKeys[key]) {
     this.startMove(this.moveKeys[key])
   }
@@ -222,6 +237,7 @@ function removeGamepadSupport (this:Player, state:GameState) {
 }
 
 function startMove (this:Player, side:SIDES) {
+  if (!this.active || Date.now() < this.stunnedUntil) return
   this.movingSide[side] = true
   this.side = side
   this.moving = 1
@@ -232,7 +248,7 @@ function moveTick (
   state:GameState
 ) {
 
-  if (!this.moving) return
+  if (!this.moving || Date.now() < this.stunnedUntil) return
 
 const onSlowFloor =
   state.slowFloors.isPlayerOnFloor(this)
@@ -312,7 +328,7 @@ function moveLeft (this:Player) {
 
 function onMove (this:Player, dto:MoveDTO) {
   this.holding = dto.h
-  this.moving = dto.m
+  this.moving = Date.now() < this.stunnedUntil ? 0 : dto.m
   this.side = dto.s
   this.x = dto.x
   this.y = dto.y
@@ -321,6 +337,7 @@ function onMove (this:Player, dto:MoveDTO) {
 function stopMove (this:Player, side:SIDES) {
   this.movingSide[side] = false
   this.moving = 0
+  if (Date.now() < this.stunnedUntil) return
   for (const side in this.movingSide) {
     if (this.movingSide[side as SIDES]) {
       this.side = side as SIDES
@@ -344,6 +361,7 @@ function invertControls (this:Player) {
 }
 
 function handleBomb (this:Player, state:GameState) {
+  if (!this.active || Date.now() < this.stunnedUntil) return
   if (this.hold) {
     if (this.holding) {
       this.flingBomb(state)
@@ -354,6 +372,32 @@ function handleBomb (this:Player, state:GameState) {
   }
   else {
     this.placeBomb(state)
+  }
+}
+
+// Habilidade ativa exclusiva do Mamedes: E / LB / botão na tela.
+// O cooldown só começa após o servidor confirmar o disparo.
+function useStunSkill (this:Player) {
+  const now = Date.now()
+  if (!this.myself || !this.active || !this.isMamedes) return
+  if (now < this.stunnedUntil || now < this.skillReadyAt) return
+  if (now - this.lastSkillRequestAt < 250) return
+
+  this.lastSkillRequestAt = now
+  emitStunFire({ s: this.side })
+}
+
+// Todos os clientes recebem o mesmo alvo da confirmação do servidor.
+function applyStun (this:Player) {
+  if (!this.active) return
+
+  this.stunnedUntil = Math.max(this.stunnedUntil, Date.now() + STUN_DURATION_MS)
+  const wasMoving = this.moving !== 0
+  this.moving = 0
+  this.movingSide = { U: false, D: false, L: false, R: false }
+
+  if (this.myself && wasMoving) {
+    emitMove({ h:this.holding, m:0, p:this.index, s:this.side, x:this.x, y:this.y })
   }
 }
 
@@ -545,5 +589,25 @@ function render (this:Player, context:CanvasRenderingContext2D) {
     else {
       context.drawImage(this.sprite, PLAYER_L.FRAME_WIDTH, PLAYER_L.FRAME_HEIGHT*PLAYER_L.ROW, PLAYER_L.FRAME_WIDTH, PLAYER_L.FRAME_HEIGHT, this.x, this.y, PLAYER_L.FRAME_WIDTH, PLAYER_L.FRAME_HEIGHT)
     }
+  }
+
+  // Animação arco-íris no jogador atordoado, sem trocar o sprite.
+  if (Date.now() < this.stunnedUntil) {
+    const pride = ['#e92737', '#ff8f1f', '#fff033', '#30c865', '#357fff', '#923bd0']
+    const phase = Math.floor(Date.now() / 120) % pride.length
+
+    context.save()
+    context.globalAlpha = 0.25
+    for (let index = 0; index < pride.length; index++) {
+      context.fillStyle = pride[(index + phase) % pride.length]
+      context.fillRect(this.x + 1, this.y + 7 + index * 3, 15, 3)
+    }
+    context.globalAlpha = 0.9
+    context.shadowBlur = 9
+    context.shadowColor = pride[phase]
+    context.strokeStyle = pride[phase]
+    context.lineWidth = 1.5
+    context.strokeRect(this.x - 1, this.y + 6, 19, 22)
+    context.restore()
   }
 }

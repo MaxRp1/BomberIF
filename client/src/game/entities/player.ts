@@ -1,4 +1,4 @@
-import { MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_COOLDOWN_MS, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
+import { MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'

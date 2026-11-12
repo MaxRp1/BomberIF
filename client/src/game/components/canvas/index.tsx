@@ -331,6 +331,9 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       const player = state.players.players[myself]
       if (!player?.isMamedes) return
 
+      // Também reflete a morte do personagem, que muta Player fora do React.
+      setSkillActive(player.active)
+
       const now = Date.now()
       setSkillRemaining(Math.ceil(Math.max(0, player.skillReadyAt - now) / 1000))
       setStunRemaining(Math.ceil(Math.max(0, player.stunnedUntil - now) / 1000))

@@ -18,11 +18,13 @@ export function beginRankingRound(roomId: string, playerIds: string[]) {
   cancelRankingRound(roomId)
 
   const uniquePlayers = new Set(playerIds)
-  if (uniquePlayers.size < 2) return
+  if (uniquePlayers.size === 0) return
 
+  // Mesmo com apenas um jogador, a morte precisa ser confirmada por 'kl'.
+  // A pontuação continua exclusiva de partidas com pelo menos dois jogadores.
   rounds.set(roomId, {
     alive: uniquePlayers,
-    scoreEnabled: true
+    scoreEnabled: uniquePlayers.size >= 2
   })
 }
 

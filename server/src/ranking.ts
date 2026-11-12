@@ -1,5 +1,6 @@
 import type { Server } from 'socket.io'
 import type { Socket } from '~/extends'
+import type { LobbyWinsUpdateDTO } from '#/dto'
 
 // Janela de tolerância para mortes quase simultâneas (rede e quadros distintos).
 const ROUND_FINISH_GRACE_MS = 400
@@ -81,6 +82,20 @@ export function registerDefeat(io: Server, socket: Socket): boolean {
         p: winner.data.index,
         wins: winner.data.wins
       })
+
+      // O lobby permanece associado ao socket enquanto ele está jogando.
+      // Envia somente o placar do vencedor, sem recriar a lista inteira.
+      const lobbyId = winner.data.lobbyId
+
+      if (lobbyId && winner.rooms.has(lobbyId)) {
+        const lobbyUpdate: LobbyWinsUpdateDTO = {
+          lobbyId,
+          socketId: winner.id,
+          wins: winner.data.wins
+        }
+
+        io.to(lobbyId).emit('lobby_wins_update', lobbyUpdate)
+      }
     }
 
     cancelRankingRound(roomId)

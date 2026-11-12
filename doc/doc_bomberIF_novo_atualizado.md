@@ -7925,7 +7925,7 @@ export default function lobbyReducer (
 ## Testes e limitações
 
 - **Backend:** `cd server && yarn test:ranking` verifica 8 casos, incluindo emissão de `lobby_wins_update` e ausência do evento quando o vencedor já não pertence ao lobby.
-- **Frontend:** `cd client && CI=true yarn test --watchAll=false --runInBand` executa os testes de reducer, incluindo apelidos repetidos, eventos atrasados e snapshot inicial.
+- **Frontend:** `client/src/store/lobby/reducer.test.js` reúne os quatro testes do reducer em JavaScript, compatível com os globais `test` e `expect` fornecidos pelo Jest do Create React App. Execute `cd client && CI=true yarn test --watchAll=false --runInBand` para cobrir apelidos repetidos, eventos atrasados e snapshot inicial. **O antigo `reducer.test.ts` foi removido**, porque o projeto não declarava os tipos globais do Jest para a checagem TypeScript; não foi necessário adicionar dependências nem alterar o `tsconfig.json`.
 - **Builds:** `cd server && yarn build`, depois `cd client && yarn build`.
 - **Teste manual com duas abas:** ambas entram no mesmo lobby; após a primeira vitória, o novo placar deve aparecer sem recarregar; ao trocar de lobby, os pontos começam em zero; ao voltar à sala original, prevalecem os pontos atuais da conexão.
 - **Responsividade:** verificar a composição lado a lado numa tela larga e os componentes empilhados abaixo de 1100 px, sem cobrir a faixa inferior.

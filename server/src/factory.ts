@@ -67,7 +67,9 @@ export function updateLobbyFactory (io : Server, lobbyId : string) : LobbyDTO|nu
     const p:Socket|undefined = io.sockets.sockets.get(socketId)
     if (!p) continue
     players.push({
-      nick: p.data.nick
+      nick: p.data.nick,
+      socketId: p.id,
+      wins: p.data.wins ?? 0
     })
   }
   if (players.length) {

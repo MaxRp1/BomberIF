@@ -8,7 +8,8 @@ import { setFillRoom } from '~/store/options/actions'
 import { OptionsDTO } from '~/store/options/reducer'
 import { playLobbySound, stopLobbySound } from '~/game/sound/lobby'
 import { joinRoom } from './method'
-import { Container, LobbyContainer, LobbyId, Options, OptionsContainer, Play, PlayContainer, PlayBorder, Player, PlayersContainer } from './style'
+import LobbyRanking from './ranking'
+import { Container, LobbyContainer, LobbyId, Options, OptionsContainer, Play, PlayArea, PlayContainer, PlayBorder, Player, PlayersContainer } from './style'
 //let winPlaying = false
 
 interface LobbyProps {
@@ -37,11 +38,14 @@ export default function Lobby ({ lobby, setShowOptions } : LobbyProps) {
 
   return (
     <Container>
-      <PlayContainer>
-        <PlayBorder onClick={handlePlayClick}><Play>Jogar!</Play></PlayBorder>
-        <Toggle on={options.fillRoom} onClick={() => dispatch(setFillRoom())}>Preencher Sala</Toggle>
-        <OnlinePlayers/>
-      </PlayContainer>
+      <PlayArea>
+        <PlayContainer>
+          <PlayBorder onClick={handlePlayClick}><Play>Jogar!</Play></PlayBorder>
+          <Toggle on={options.fillRoom} onClick={() => dispatch(setFillRoom())}>Preencher Sala</Toggle>
+          <OnlinePlayers/>
+        </PlayContainer>
+        <LobbyRanking players={lobby.players}/>
+      </PlayArea>
       <LobbyContainer>
         <OptionsContainer>
           <LobbyId onClick={() => copyToClipboard(lobby.lobbyId)}>{lobby.lobbyId}</LobbyId>

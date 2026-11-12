@@ -61,9 +61,22 @@ export interface KillDTO {
   p : number // player index
 }
 
+// Dados de cada integrante do lobby; o socketId evita confundir apelidos iguais.
+export interface LobbyPlayerDTO extends UserDTO {
+  socketId : string
+  wins     : number
+}
+
 export interface LobbyDTO {
   lobbyId : string
-  players : UserDTO[]
+  players : LobbyPlayerDTO[]
+}
+
+// Atualização incremental do placar após um resultado confirmado pelo servidor.
+export interface LobbyWinsUpdateDTO {
+  lobbyId  : string
+  socketId : string
+  wins     : number
 }
 
 export interface MoveBombDTO {

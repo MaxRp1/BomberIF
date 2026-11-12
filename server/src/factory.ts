@@ -63,7 +63,7 @@ export function startGameFactory (
   // Inicializa o acompanhamento de vitórias da rodada
   beginRankingRound(roomId, playerIds)
 
-  return { players, state }
+  return { roomId, players, state }
 }
 
 // atualiza a lista de jogadores na lobby

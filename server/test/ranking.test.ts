@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Server } from 'socket.io'
 import type { Socket } from '../src/extends'
+import { onKill } from '../src/game'
 import {
   beginRankingRound,
   cancelRankingRound,
@@ -147,11 +148,36 @@ test('se o último sobrevivente sai durante a tolerância não há vitória', as
   }
 })
 
-test('partida individual não concede vitória', () => {
+test('partida individual confirma a morte e retorna kl sem conceder vitória', () => {
   const s = scenario('test-solo', 1)
   try {
-    assert.equal(registerDefeat(s.io, s.players[0]), false)
+    // onKill representa a entrada real do evento enviado pelo navegador.
+    onKill(s.io, s.players[0], { p: 999 })
+
+    assert.deepEqual(s.kills().map(item => item.payload), [{ p: 0 }])
+    assert.equal(s.players[0].data.alive, false)
+    assert.equal(s.players[0].data.wins, 0)
     assert.equal(s.wins().length, 0)
+    assert.equal(s.lobbyWins().length, 0)
+
+    // O mesmo socket não pode gerar duas confirmações de morte.
+    onKill(s.io, s.players[0], { p: 999 })
+    assert.equal(s.kills().length, 1)
+  } finally {
+    s.cleanup()
+  }
+})
+
+test('quando todos morrem, confirma as eliminações sem atribuir vitória', async () => {
+  const s = scenario('test-all-dead', 2)
+  try {
+    onKill(s.io, s.players[0], { p: 99 })
+    onKill(s.io, s.players[1], { p: 99 })
+    await delay(GRACE_WAIT_MS)
+
+    assert.deepEqual(s.kills().map(item => item.payload), [{ p: 0 }, { p: 1 }])
+    assert.equal(s.wins().length, 0)
+    assert.equal(s.lobbyWins().length, 0)
   } finally {
     s.cleanup()
   }

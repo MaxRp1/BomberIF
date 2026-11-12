@@ -64,7 +64,7 @@ export default function GameApp ({myself, setShowGame}:GameAppProps) {
       <ButtonsContainer>
         <Back onClick={() => setShowGame(false)}/>
       </ButtonsContainer>
-      <Canvas myself={myself} style={getCanvasStyle()} setShowGame={setShowGame} />
+      <Canvas myself={myself} style={getCanvasStyle()} setShowGame={setShowGame} touchEnabled={options.touchControls} touchPortrait={isPortrait} />
     </Container>
   )
 

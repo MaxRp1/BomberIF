@@ -8,6 +8,7 @@ import { startGameFactory, updateLobbyFactory } from '~/factory'
 import { rooms } from '~/rooms'
 import { generateId } from '~/util'
 import { registerDeparture } from '~/ranking'
+import { clearStunShotsForSocket } from '~/stun'
 
 export function setUser (io:Server, socket:Socket, user:UserDTO) {
   if (typeof user.nick !== 'string' || user.nick.length < NICK.MIN || user.nick.length > NICK.MAX) {
@@ -87,6 +88,8 @@ export function onReady (io:Server, socket:Socket) {
 }
 
 export function onDisconnect (io:Server, socket:Socket) {
+  clearStunShotsForSocket(socket.id)
+  socket.data.alive = false
   registerDeparture(io, socket)
   updateRoomQueue(socket)
   const dto = updateLobbyFactory(io, socket.data.lobbyId)
@@ -190,6 +193,8 @@ function updateRoomQueue (socket:Socket) {
 
 export function exitPairing (io:Server, socket:Socket) {
   const roomId = socket.data.roomId
+  clearStunShotsForSocket(socket.id)
+  socket.data.alive = false
 
   // Sair pelo botão Voltar também é uma desistência da rodada.
   // Remove o jogador vivo da contagem e avisa os outros participantes.

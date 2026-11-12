@@ -14,6 +14,7 @@ interface GamepadHost {
   id        : string
   index     : number
   lastPress : LastPress
+  skillHeld : boolean
   moveKeys  : {[key:number]:SIDES}
   player    : Player
   invertControls : () => void
@@ -32,6 +33,7 @@ export function GamepadFactory (props:GamepadProps) : GamepadHost {
     id: props.id,
     index: props.index,
     lastPress: {bomb:0},
+    skillHeld: false,
     moveKeys: {12:'U', 13:'D', 14:'L', 15:'R'},
     player: props.player,
     render: () => {}
@@ -46,6 +48,15 @@ function tick (this:GamepadHost, state:GameState) {
   if (!this.player.active) return
   const gamepad = navigator.getGamepads()[this.index]
   if (!gamepad) return
+
+  // Botão 4 = LB / L1 (borda de pressionamento para não disparar sem parar).
+  const skillPressed = !!gamepad.buttons[4]?.pressed
+  if (skillPressed && !this.skillHeld) this.player.useStunSkill()
+  this.skillHeld = skillPressed
+
+  // Bloqueia movimento, bombas e ações durante o stun.
+  if (Date.now() < this.player.stunnedUntil) return
+
   let useAxes = true
   for (const key in this.moveKeys) {
     if (gamepad.buttons[key].pressed) {

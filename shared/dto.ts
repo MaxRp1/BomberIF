@@ -29,6 +29,32 @@ export interface FlingBombDTO {
   y : number // player y position
 }
 
+// Tecla E, botão LB/L1 ou botão na tela -> servidor.
+export interface StunFireDTO {
+  s: SIDES
+}
+
+// Disparo autorizado pelo servidor -> todos na partida.
+export interface StunShotDTO {
+  i: string
+  p: number
+  s: SIDES
+  x: number
+  y: number
+}
+
+// Colisão identificada pelo cliente do lançador -> servidor.
+export interface StunHitDTO {
+  i: string
+  target: number
+}
+
+// Efeito confirmado pelo servidor -> todos os jogadores.
+export interface StunApplyDTO {
+  i: string
+  p: number
+}
+
 export interface SlowFloorDTO {
   axes: [number, number]
 }

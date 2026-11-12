@@ -31,11 +31,96 @@ As correções desta branch abrangem: **Overclock compartilhado**, **vitórias z
 | Publicação | Backend Render via `main`, frontend Pages via branch `client` | `server/build.sh`, `client/deploy.sh` |
 | Compilação dev | `ts-loader` configurado explicitamente para `shared/`, evitando TS18002 no modo desenvolvimento | `client/craco.config.js`, `client/tsconfig.json` |
 | Ranking no lobby (12/11) | Mostra vitórias dos integrantes da sala antes da partida, atualizadas em tempo real por `lobby_wins_update` | `server/src/factory.ts`, `server/src/ranking.ts`, `shared/dto.ts`, `lobby/ranking.tsx` |
+| Mamedes (sprite 8, 12/11) | Tiro ativo de stun 2 s, cooldown 20 s, teclado E, LB/L1, botão de toque e efeito arco-íris | `server/src/stun.ts`, `player.ts`, `stunProjectile.ts`, `canvas/index.tsx`, `shared/dto.ts` |
 
 **Linha do tempo verificada no Git:** 23/10 — pisos lentos e manchas visuais; 03/11 — habilidade da Ino; 10/11 — duas habilidades do Proença; 11/11 — ranking por sala/sessão e responsividade. As seções seguintes reúnem o funcionamento atual e também registram limitações e pontos a corrigir sem alterar o código do jogo.
 
 
 ---
+
+# **FUNCIONALIDADE 12/11/2026 — MAMEDES (SPRITE 8): PROJÉTIL DE STUN**
+
+## Regras de jogo (parâmetros iniciais de balanceamento)
+
+| Parâmetro | Valor atual |
+|---|---|
+| Personagem | Mamedes, sprite `8.png` (`MAMEDES_SPRITE_ID = 8`) |
+| Tipo de habilidade | **Ativa**, dispara um projétil na direção para a qual o personagem está virado |
+| Ativação no teclado | **E** (pressão inicial, sem disparar repetidamente com `event.repeat`) |
+| Ativação no controle | **LB/L1**, botão de índice 4 na Gamepad API |
+| Ativação por toque/mouse | Botão próprio no canto direito da tela do jogo, com estado disponível/recarga |
+| Duração do stun | `STUN_DURATION_MS = 2000` (2 segundos) |
+| Cooldown | `STUN_COOLDOWN_MS = 20000` (20 segundos) |
+| Velocidade do projétil | `STUN_PROJECTILE_SPEED = 0.24` pixel por milissegundo |
+| Tempo máximo do projétil | `STUN_PROJECTILE_LIFETIME_MS = 1400` |
+| Efeito no atingido | Paralisia: impede movimentação, uso de bombas e habilidades enquanto durar |
+| Efeito visual | Faixas e contorno animado com **seis cores do arco-íris**, visíveis para todos |
+| Dano direto | Nenhum; o alvo pode ser eliminado por explosões normais enquanto estiver atordoado |
+| Alvos válidos | Jogadores ativos diferentes do lançador |
+| Obstáculos | Tiro é removido ao atingir blocos indestrutíveis (`I`), destrutíveis (`D`) ou bombas (`O`) |
+
+**Balanceamento:** duração e recarga são valores iniciais para testes com 2–4 jogadores, não parâmetros considerados definitivos.
+
+## Cliente: criação, colisão, controles e brilho
+
+O `PlayerFactory` em `client/src/game/entities/player.ts` associa o recurso somente ao personagem de sprite 8, usando `isMamedes = props.sprite === MAMEDES_SPRITE_ID`. Além do método `useStunSkill()`, `Player` possui `stunnedUntil` e `skillReadyAt`. O método `applyStun()` zera `moving`, limpa direções mantidas pressionadas e bloqueia ações até terminar o prazo. O jogador local envia um `MoveDTO` com `m:0` ao receber a paralisação.
+
+**Teclado:** `keydownListener` reconhece E. **Controle:** `client/src/game/entities/gamepad.ts` reconhece o botão 4 na transição de solto para pressionado. **Toque e mouse:** `SkillButton` é renderizado no `canvas/index.tsx` apenas se o usuário local é Mamedes, com recarga em segundos; o botão se adapta à ativação dos controles de toque. A tela de jogo recebe `touchEnabled` e `touchPortrait` de `gameApp/index.tsx`.
+
+O novo arquivo `client/src/game/entities/stunProjectile.ts` implementa `StunProjectileFactory`, uma entidade visual adicionada em `state.entities`. O deslocamento é calculado por tempo real (`Date.now()`), com pequenos passos de até 3 pixels para não atravessar blocos entre quadros. O projétil se move até acertar uma parede/bomba, um adversário ou acabar o prazo. Somente o cliente **do próprio lançador** informa um impacto ao servidor; os demais clientes desenham o mesmo projétil e aguardam a confirmação de efeito.
+
+O efeito Pride é desenhado diretamente sobre o personagem no método `render` com `CanvasRenderingContext2D`: seis faixas translúcidas (vermelho, laranja, amarelo, verde, azul e violeta) se alternam, acompanhadas de um contorno luminoso. Não exige editar o spritesheet `8.png` nem os sprites dos atingidos.
+
+## Servidor: aceitação e validação dos tiros
+
+O módulo `server/src/stun.ts` contém `onStunFire` e `onStunHit`. A sequência de eventos é:
+
+1. O usuário aciona E, LB/L1 ou o botão: `Player.useStunSkill()` emite `stun_fire: { s }` para o servidor.
+2. O servidor confirma `spriteId === 8`, partida ativa, socket pertencente à sala, ausência de stun e `skillReadyAt` vencido. A **origem do tiro é calculada da posição enviada previamente pelo jogador**, não de coordenadas fornecidas no disparo.
+3. Se aceito, o servidor registra um identificador único do projétil, fixa o próximo disparo em `Date.now() + 20000` e envia `stun_shot: { i, p, s, x, y }` a todos da partida, inclusive ao lançador.
+4. Cada cliente desenha e movimenta a entidade `StunProjectile`. O lançador verifica colisão com outro jogador ativo e informa `stun_hit: { i, target }`.
+5. O servidor verifica propriedade do tiro, `roomId`, tempo de vida, alvo vivo e conectado, evita autoacerto, impede duplicação e verifica se a posição do alvo é **plausível** na trajetória/alcance, admitindo tolerância para latência.
+6. Havendo impacto válido, o servidor marca `target.data.stunnedUntil` e emite `stun_apply: { i, p }` à sala. Cada cliente aplica a paralisia e o efeito arco-íris ao jogador `p`; o projétil com ID `i` é removido se ainda estiver visível.
+7. Ao sair/desconectar, `clearStunShotsForSocket` remove tiros pendentes do proprietário. A fábrica da partida inicializa sprite, posição, estado ativo e temporizadores de stun e cooldown para cada novo jogo.
+
+O `server/src/game.ts` acompanha as posições recebidas por `mv`, rejeita movimento e comandos de bomba de participantes atordoados e marca os mortos como `alive = false`. O `server/src/ioListener.ts` registra os eventos `stun_fire` e `stun_hit`. Em `server/src/factory.ts`, `startGameFactory` armazena `spriteId` e a posição inicial da partida em `socket.data`.
+
+### Tipos de rede
+
+```ts
+export interface StunFireDTO { s: SIDES }
+export interface StunShotDTO { i: string; p: number; s: SIDES; x: number; y: number }
+export interface StunHitDTO { i: string; target: number }
+export interface StunApplyDTO { i: string; p: number }
+```
+
+Fonte: `shared/dto.ts`. O `server/src/dto.ts` foi ampliado com `spriteId`, `playerX`, `playerY`, `alive`, `skillReadyAt` e `stunnedUntil`.
+
+### Limitações conhecidas e considerações de segurança
+
+O servidor **autoriza disparos, recargas e alvos**, mas o cliente do lançador ainda é responsável pela colisão fina com obstáculos e jogadores. O servidor verifica plausibilidade geométrica com tolerância, mas **não simula todos os blocos e movimentos com autoridade própria**. Uma validação anti-trapaça completa exigiria uma simulação autoritativa. Como o alcance visual e a aplicação do efeito ocorrem após mensagens pela rede, clientes com latência alta podem apresentar pequenos desvios no momento do acerto e início/fim da paralisação.
+
+O stun **não é dano nem eliminação** e não altera diretamente o ranking. A regra de 2 s permite que bombas colocadas anteriormente explodam normalmente.
+
+## Testes
+
+O novo teste `server/test/stun.test.ts` cobre oito situações: tiro exclusivo do sprite 8, cooldown de 20 s, rejeição de lançador atordoado/morto, duração de 2 s, não repetição de impacto, impossibilidade de alegar tiro alheio, rejeição de trajetória/alvo inválidos, bloqueio de movimento/bombas e saída da sala.
+
+```bash
+cd ~/BomberIF/server
+yarn test:stun
+yarn test:ranking
+yarn build
+
+cd ../client
+yarn build
+yarn dev
+```
+
+**Verificações manuais essenciais:** forçar o sprite 8 em desenvolvimento; lançar E/LB/toque; observar a trajetória parar em diferentes blocos; acertar outro jogador e conferir 2 s de paralisia nas duas telas; verificar o brilho nas seis cores; observar a contagem de 20 s; garantir que não dispara durante o stun nem enquanto a recarga está ativa; verificar saída da partida, empate e repetição de partidas. Os testes de compilação e multiplayer precisam ser executados no Kali antes de mesclar à `main` ou realizar deploy.
+
+---
+
 # **SERVER**
 ---
 
@@ -9472,6 +9557,7 @@ Esta seção existe para evitar que o código e o estudo técnico voltem a ficar
 | Alterar CORS, URL ou deploy | `server/src/constants.ts`, `client/src/constants.ts`, `server/build.sh` e configuração do Render | Seções `Server constants.ts`, `Client constants.ts` e `DEPLOY ATUAL DO SERVIDOR — RENDER` |
 | Alterar animação/spritesheet | `client/src/game/animations/*` e entidade que renderiza | Seção de animação correspondente e `render` da entidade |
 | Alterar controles | `player.ts`, `gamepad.ts` ou `touchControls/*` | Seções de entrada correspondentes |
+| Alterar habilidade Mamedes | `shared/constants.ts`, `shared/dto.ts`, `server/src/stun.ts`, `server/src/game.ts`, `player.ts`, `stunProjectile.ts`, `canvas/index.tsx`, `gamepad.ts`, `canvas/style.ts` | Capítulo `FUNCIONALIDADE 12/11/2026 — MAMEDES (SPRITE 8)` e testes `yarn test:stun` |
 | Alterar regra de morte/vitória | `player.ts`, entidades que chamam `kill`, `canvas/index.tsx` | `Player.kill`, entidades causadoras e `Canvas/checkWin` |
 | Criar/alterar ranking por sessão | `server/src/ranking.ts`, `factory.ts`, `manager.ts`, `game.ts`, `shared/dto.ts`, `canvas/index.tsx` | Ciclo das rodadas, evento `wins_update`, contagem, desconexão e limites de persistência |
 | Alterar layout do ranking | `client/src/game/components/canvas/index.tsx`, `rankingStyle.ts` | Regras visuais, largura medida, modo compacto e o estado do painel |
@@ -9489,6 +9575,7 @@ Ao fazer uma mudança no código, procure no documento pelo **caminho do arquivo
 
 - **Original preservado:** `doc/doc_bomberIF_completo_recuperado.md` representa o material recuperado anterior às extensões descritas aqui.
 - **Mapa e assets:** três cenários (laboratório, campo, refeitório); doze personagens sorteáveis (IDs `0..11`).
+- **Mamedes (8):** habilidade ativa de projétil paralizante (2 s), recarga de 20 s, E/LB/botão na tela, brilho animado nas cores do arco-íris.
 - **Frank (10):** vida extra consumida pela primeira morte causada por bomba e 1,5 s de proteção com piscar.
 - **Ino (11):** velocidade-base inicializada com `props.speed * 1.5` e imunidade ao piso lento.
 - **Proença (2):** `hasOverclock` e `hasBlastVision`; visualizar marcações das bombas próprias e alheias e acelerar suas bombas (com ressalva de sincronização registrada abaixo).
@@ -9548,6 +9635,12 @@ Este quadro integra a documentação de manutenção ao processo de testes. Os r
 | T25 | Apelidos repetidos | Duas conexões entram com o mesmo apelido e somente uma vence | Só o `socketId` vencedor tem pontuação alterada | `factory.ts`, `lobby/ranking.tsx`, `reducer.ts` |
 | T26 | Troca de sala | Jogar, trocar para outro lobby e retornar | Pontos zeram ao mudar de lobby; eventos atrasados não poluem novo lobby | `manager.ts`, `reducer.ts` |
 | T27 | Layout de lobby | Inspecionar a tela larga e em largura inferior a 1100 px | Placar ao lado do botão Jogar em tela larga; empilhado em telas estreitas; faixa inferior legível | `lobby/style.ts`, `lobby/rankingStyle.ts` |
+
+| T28 | Mamedes: disparo | Jogar com sprite 8, pressionar E, LB/L1 ou botão; repetir com outro sprite | Somente Mamedes dispara e exibe habilidade, com origem e direção consistentes | `player.ts`, `gamepad.ts`, `canvas/index.tsx`, `server/src/stun.ts` |
+| T29 | Mamedes: stun e efeito | Acertar outro jogador em multiplayer | Alvo deixa de mover/lançar bombas por 2 s e brilha nas cores do arco-íris em ambas as telas | `player.ts`, `stunProjectile.ts`, `server/src/stun.ts` |
+| T30 | Mamedes: cooldown | Disparar novamente antes e depois de 20 s | Servidor rejeita uso precoce, libera após recarga; contador na HUD acompanha tempo | `server/src/stun.ts`, `canvas/index.tsx` |
+| T31 | Mamedes: obstáculos | Atirar contra parede, bloco destrutível e bomba | Projétil para nos obstáculos e não atravessa a arena | `stunProjectile.ts`, `block.ts` |
+| T32 | Mamedes: segurança | Enviar hit duplicado ou trocar de sala durante projétil | Um tiro não paralisa duas vezes; tiros de sala anterior não afetam a partida atual | `server/src/stun.ts`, `manager.ts` |
 
 ### Distinção entre build, teste local e teste publicado
 

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { OVERCLOCK_DETONATION_MULTIPLIER } from '#/constants'
+import { OVERCLOCK_DETONATION_MULTIPLIER, STUN_COOLDOWN_MS } from '#/constants'
 import { toast } from 'react-toastify'
-import { FlingBombDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, StartGameDTO } from '#/dto'
+import { FlingBombDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
 import { BlocksFactory } from '~/game/entities/block'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { EntitiesFactory } from '~/game/entities/factory'
+import { StunProjectileFactory } from '~/game/entities/stunProjectile'
 import { PlayersFactory } from '~/game/entities/players'
 import { StageFactory } from '~/game/entities/stage'
 import { GameState } from '~/game/entities/state'
@@ -13,7 +14,7 @@ import { playBombSound } from '~/game/sound/bomb'
 import { playWinSound, stopWinSound } from '~/game/sound/win'
 import { Assets } from '~/game/util/assets'
 import { socket } from '~/services/socket'
-import { Pairing, Timer } from './style'
+import { Pairing, SkillButton, Timer } from './style'
 import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { renderExplosionPreview } from '~/game/util/explosionPreview'
 import { RankingPanel, RankingToggle } from './rankingStyle'
@@ -23,9 +24,11 @@ interface CanvasProps {
   myself : number|null
   style  : React.CSSProperties
   setShowGame : React.Dispatch<React.SetStateAction<boolean>>
+  touchEnabled: boolean
+  touchPortrait: boolean
 }
 
-export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
+export default function Canvas ({myself, style, setShowGame, touchEnabled, touchPortrait}:CanvasProps) {
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const readyRef = useRef(0)
@@ -35,6 +38,9 @@ export default function Canvas ({myself, style, setShowGame}:CanvasProps) {
   const [victories, setVictories] = useState<number[]>([])
   const [rankingWidth, setRankingWidth] = useState(0)
   const [rankingOpen, setRankingOpen] = useState(false)
+  const [skillRemaining, setSkillRemaining] = useState(0)
+  const [stunRemaining, setStunRemaining] = useState(0)
+  const [skillActive, setSkillActive] = useState(false)
 
   function gameLoop () {
     try {
@@ -91,6 +97,9 @@ function startGame (dto:StartGameDTO) {
     stage: StageFactory({name:dto.state.stage})
   })
   setVictories(dto.players.map(p => p.wins ?? 0))
+  setSkillActive(false)
+  setSkillRemaining(0)
+  setStunRemaining(0)
 }
 
 function onWinsUpdate(dto: WinsUpdateDTO) {
@@ -113,6 +122,8 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     state.entities.add(timer)
     Assets.start()
     state.players.players.forEach(p => p.active = true)
+    // Active é mutado fora do estado React; esta flag força atualizar o botão.
+    setSkillActive(true)
   }
 
   function onMove (dto:MoveDTO) {
@@ -165,6 +176,28 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     state?.blocks.destroyBlock(dto.a)
   }
 
+  // O disparo só é criado quando o servidor confirmar a habilidade.
+  function onStunShot (dto: StunShotDTO) {
+    if (!state || state.entities.has(dto.i)) return
+    const shooter = state.players.players[dto.p]
+    if (!shooter?.isMamedes) return
+
+    state.entities.add(StunProjectileFactory(dto))
+    if (dto.p === myself) {
+      shooter.skillReadyAt = Date.now() + STUN_COOLDOWN_MS
+      setSkillRemaining(Math.ceil(STUN_COOLDOWN_MS / 1000))
+    }
+  }
+
+  function onStunApply (dto: StunApplyDTO) {
+    if (!state) return
+    const projectile = state.entities.get(dto.i)
+    if (projectile) state.entities.remove(projectile)
+
+    state.players.players[dto.p]?.applyStun()
+    if (dto.p === myself) setStunRemaining(2)
+  }
+
   function onKill (dto:KillDTO) {
     if (dto.p !== myself) {
       state?.players.players[dto.p].kill(false)
@@ -212,6 +245,8 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     socket.on('nb', onNullifyBlock)
     socket.on('kl', onKill)
     socket.on('wins_update', onWinsUpdate)
+    socket.on('stun_shot', onStunShot)
+    socket.on('stun_apply', onStunApply)
     return () => {
       socket.off('start_game', startGame)
       socket.off('ready', onReady)
@@ -223,6 +258,8 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       socket.off('nb', onNullifyBlock)
       socket.off('kl', onKill)
       socket.off('wins_update', onWinsUpdate)
+      socket.off('stun_shot', onStunShot)
+      socket.off('stun_apply', onStunApply)
     }
   }, [state])
 
@@ -286,6 +323,26 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     }
   }, [])
 
+  // HUD de recarga apenas para o Mamedes controlado localmente.
+  useEffect(() => {
+    if (typeof myself !== 'number' || !state) return
+
+    const interval = setInterval(() => {
+      const player = state.players.players[myself]
+      if (!player?.isMamedes) return
+
+      // Também reflete a morte do personagem, que muta Player fora do React.
+      setSkillActive(player.active)
+
+      const now = Date.now()
+      setSkillRemaining(Math.ceil(Math.max(0, player.skillReadyAt - now) / 1000))
+      setStunRemaining(Math.ceil(Math.max(0, player.stunnedUntil - now) / 1000))
+    }, 150)
+
+    return () => clearInterval(interval)
+  }, [myself, state])
+
+  const localPlayer = typeof myself === 'number' ? state?.players.players[myself] : undefined
   const compactRanking = rankingWidth < 215
 
   const ranking = (state?.players.players ?? [])
@@ -378,6 +435,22 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
   })}
 </RankingPanel>
 
+    {localPlayer?.isMamedes && (
+      <SkillButton
+        type="button"
+        $touch={touchEnabled}
+        $portrait={touchPortrait}
+        disabled={!skillActive || !localPlayer.active || skillRemaining > 0 || stunRemaining > 0}
+        onClick={() => localPlayer.useStunSkill()}
+        title="Habilidade de Mamedes: E no teclado ou LB/L1 no controle"
+        aria-label={skillRemaining > 0
+          ? `Raio do Mamedes: ${skillRemaining} segundos de recarga`
+          : 'Disparar raio de stun do Mamedes'}
+      >
+        <strong>🌈 RAIO</strong>
+        <span>{stunRemaining > 0 ? 'ATORDOADO' : skillRemaining > 0 ? `${skillRemaining}s` : 'E · LB/L1'}</span>
+      </SkillButton>
+    )}
     <Timer id='timer' />
     <canvas ref={canvasRef} width={240} height={208} style={style} />
     </>

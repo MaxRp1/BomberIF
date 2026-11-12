@@ -1,6 +1,7 @@
 import { Server } from 'socket.io'
 import { onFlingBomb, onHoldBomb, onKill, onMove, onMoveBomb, onNullifyBlock, onPlaceBomb } from '~/game'
 import { changeLobby, createLobby, exitPairing, joinRoom, onDisconnect, onReady, sendToLobby, setUser } from '~/manager'
+import { onStunFire, onStunHit } from '~/stun'
 
 export default function ioListener (io:Server) {
 
@@ -34,6 +35,8 @@ export default function ioListener (io:Server) {
     socket.on('fb', dto => onFlingBomb(io, socket, dto))
     socket.on('nb', dto => onNullifyBlock(io, socket, dto))
     socket.on('kl', dto => onKill(io, socket, dto))
+    socket.on('stun_fire', dto => onStunFire(io, socket, dto))
+    socket.on('stun_hit', dto => onStunHit(io, socket, dto))
 
   })
 

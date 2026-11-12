@@ -6,5 +6,11 @@ export interface PlayerDTO {
   roomId    : string
   p: number
   wins: number
+  spriteId: number
+  playerX: number
+  playerY: number
+  alive: boolean
+  skillReadyAt: number
+  stunnedUntil: number
 }
 

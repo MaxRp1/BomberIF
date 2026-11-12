@@ -3,12 +3,23 @@ import { FlingBombDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockD
 import { Socket } from '~/extends'
 import { registerDefeat } from '~/ranking'
 
+function isStunned(socket: Socket) {
+  return socket.data.stunnedUntil > Date.now()
+}
+
 export function onMove (io:Server, socket:Socket, dto:MoveDTO) {
+  if (!dto || isStunned(socket)) return
+  if (!Number.isFinite(dto.x) || !Number.isFinite(dto.y)) return
+  if (dto.x < 0 || dto.x > 240 || dto.y < 0 || dto.y > 208) return
+
+  socket.data.playerX = dto.x
+  socket.data.playerY = dto.y
   dto.p = socket.data.index
   io.to(socket.data.roomId).emit('mv', dto)
 }
 
 export function onPlaceBomb (io:Server, socket:Socket, dto:PlaceBombDTO) {
+  if (isStunned(socket)) return
   dto.p = socket.data.index
   io.to(socket.data.roomId).emit('pb', dto)
 }
@@ -19,11 +30,13 @@ export function onMoveBomb (io:Server, socket:Socket, dto:MoveBombDTO) {
 }
 
 export function onHoldBomb (io:Server, socket:Socket, dto:HoldBombDTO) {
+  if (isStunned(socket)) return
   dto.p = socket.data.index
   io.to(socket.data.roomId).emit('hb', dto)
 }
 
 export function onFlingBomb (io:Server, socket:Socket, dto:FlingBombDTO) {
+  if (isStunned(socket)) return
   dto.p = socket.data.index
   io.to(socket.data.roomId).emit('fb', dto)
 }
@@ -39,6 +52,7 @@ export function onKill(
 ) {
   // A identidade vem do socket, não do payload do navegador.
   if (!registerDefeat(io, socket)) return
+  socket.data.alive = false
 
   dto.p = socket.data.index
   io.to(socket.data.roomId).emit('kl', { p: dto.p })

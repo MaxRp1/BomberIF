@@ -1,5 +1,5 @@
 import io from 'socket.io-client'
-import { CallAnswerDTO, CallOfferDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, JoinRoomDTO, KillDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, UserDTO } from '#/dto'
+import { CallAnswerDTO, CallOfferDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, JoinRoomDTO, KillDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
 import { SERVER_URL } from '~/constants'
 
 export const socket = io(SERVER_URL)
@@ -72,4 +72,13 @@ export function emitReady () {
 
 export function emitSetUser (dto:UserDTO) {
   socket.emit('set_user', dto)
+}
+// O servidor decide se o disparo é permitido (sprite, cooldown, stun).
+export function emitStunFire(dto: StunFireDTO) {
+  socket.emit('stun_fire', dto)
+}
+
+// Apenas o proprietário do projétil relata uma colisão com adversário.
+export function emitStunHit(dto: StunHitDTO) {
+  socket.emit('stun_hit', dto)
 }

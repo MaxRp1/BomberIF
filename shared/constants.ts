@@ -29,6 +29,10 @@ export const MAX_SPEED = 1.4
 
 export const NICK = { MIN: 2, MAX: 12 }
 
+// Tempo de detonação das bombas colocadas por Proença (50% do tempo padrão).
+// Compartilhado pelo proprietário e por quem recebe a bomba via Socket.IO.
+export const OVERCLOCK_DETONATION_MULTIPLIER = 0.5
+
 export const PRESS_INTERVAL = 150
 
 export const SPEED = 1

@@ -1,81 +1,80 @@
+import type { Server } from 'socket.io'
+import type { Socket } from '~/extends'
 
-import { Server } from 'socket.io'
-import { Socket } from '~/extends'
+// Janela de tolerância para mortes quase simultâneas (rede e quadros distintos).
+const ROUND_FINISH_GRACE_MS = 400
 
 interface Round {
   alive: Set<string>
+  scoreEnabled: boolean
   finishTimer?: ReturnType<typeof setTimeout>
 }
 
 const rounds = new Map<string, Round>()
 
-// Registra os participantes de uma nova partida.
-export function beginRankingRound(
-  roomId: string,
-  playerIds: string[]
-) {
+// Cada nova partida usa os IDs dos sockets presentes em seu roomId.
+export function beginRankingRound(roomId: string, playerIds: string[]) {
   cancelRankingRound(roomId)
 
-  // Partidas individuais não contam como vitória.
-  if (playerIds.length < 2) return
+  const uniquePlayers = new Set(playerIds)
+  if (uniquePlayers.size < 2) return
 
   rounds.set(roomId, {
-    alive: new Set(playerIds)
+    alive: uniquePlayers,
+    scoreEnabled: true
   })
 }
 
-// Cancela o registro da partida.
+// Libera temporizador e dados da rodada. É seguro chamar mais de uma vez.
 export function cancelRankingRound(roomId: string) {
   const round = rounds.get(roomId)
 
-  if (round?.finishTimer) {
-    clearTimeout(round.finishTimer)
-  }
+  if (round?.finishTimer) clearTimeout(round.finishTimer)
 
   rounds.delete(roomId)
 }
 
-// Registra a eliminação de um participante.
-export function registerDefeat(
-  io: Server,
-  socket: Socket
-) {
+// true = morte válida e nova; false = duplicada ou fora da rodada.
+// O chamador retransmite 'kl' somente quando a morte foi registrada.
+export function registerDefeat(io: Server, socket: Socket): boolean {
   const roomId = socket.data.roomId
   const round = rounds.get(roomId)
+  if (!round || !round.alive.delete(socket.id)) return false
 
-  if (!round) return
-
-  // Impede contabilizar a mesma morte duas vezes.
-  if (!round.alive.delete(socket.id)) return
-
-  // Todos morreram: não existe vencedor.
+  // Empate ou partida interrompida já sem sobreviventes.
   if (round.alive.size === 0) {
     cancelRankingRound(roomId)
-    return
+    return true
   }
 
-  // A partida ainda possui mais de um sobrevivente.
-  if (round.alive.size !== 1) return
+  // Após uma saída/desconexão, continuamos retransmitindo mortes
+  // para que os clientes terminem a partida, mas não pontuamos.
+  if (!round.scoreEnabled) {
+    if (round.alive.size === 1) cancelRankingRound(roomId)
+    return true
+  }
 
-  // Evita agendar a finalização repetidamente.
-  if (round.finishTimer) return
+  if (round.alive.size > 1 || round.finishTimer) return true
 
-  // Pequena tolerância para mortes simultâneas.
+  // Um único sobrevivente: aguarda outras mortes antes de pontuar.
   round.finishTimer = setTimeout(() => {
     if (rounds.get(roomId) !== round) return
 
-    if (round.alive.size !== 1) {
+    if (!round.scoreEnabled || round.alive.size !== 1) {
       cancelRankingRound(roomId)
       return
     }
 
     const winnerId = [...round.alive][0]
+    const winner = io.sockets.sockets.get(winnerId) as Socket | undefined
 
-    const winner = io.sockets.sockets.get(
-      winnerId
-    ) as Socket | undefined
-
-    if (winner && winner.data.roomId === roomId) {
+    // Não pontua se o vencedor saiu ou foi movido para outra sala.
+    if (
+      winner &&
+      winner.connected &&
+      winner.data.roomId === roomId &&
+      winner.rooms.has(roomId)
+    ) {
       winner.data.wins = (winner.data.wins ?? 0) + 1
 
       io.to(roomId).emit('wins_update', {
@@ -85,5 +84,33 @@ export function registerDefeat(
     }
 
     cancelRankingRound(roomId)
-  }, 200)
+  }, ROUND_FINISH_GRACE_MS)
+
+  return true
+}
+
+// Abandono voluntário ou desconexão enquanto ainda estava vivo.
+// Torna a rodada NÃO pontuável, mas mantém o controle das demais mortes
+// para a interface dos participantes restantes não ficar travada.
+export function registerDeparture(io: Server, socket: Socket): boolean {
+  const roomId = socket.data.roomId
+  const round = rounds.get(roomId)
+
+  // Uma desconexão após a morte não anula uma vitória legítima.
+  if (!round || !round.alive.delete(socket.id)) return false
+
+  round.scoreEnabled = false
+
+  if (round.finishTimer) {
+    clearTimeout(round.finishTimer)
+    round.finishTimer = undefined
+  }
+
+  // Os outros clientes tratam a saída como eliminação visual.
+  io.to(roomId).emit('kl', { p: socket.data.index })
+
+  // Se restar até um participante, a partida se encerra no cliente.
+  if (round.alive.size <= 1) cancelRankingRound(roomId)
+
+  return true
 }

@@ -12,10 +12,20 @@ module.exports = {
         ({ constructor }) => constructor && constructor.name === 'ModuleScopePlugin'
       )
       webpackConfig.resolve.plugins.splice(scopePluginIndex, 1)
+      // CRA já compila client/src com Babel. Este loader é necessário
+      // somente para os módulos TypeScript compartilhados fora de client/.
       webpackConfig.module.rules.push({
         test: /\.tsx?$/,
-        use: 'ts-loader',
-        exclude: /node_modules/
+        include: resolve(__dirname, '..', 'shared'),
+        loader: 'ts-loader',
+        options: {
+          configFile: resolve(__dirname, 'tsconfig.json'),
+          context: __dirname,
+          transpileOnly: true,
+          // client/tsconfig.json usa noEmit para typecheck, mas o loader
+          // precisa emitir JavaScript para o Webpack.
+          compilerOptions: { noEmit: false }
+        }
       })
       return webpackConfig
     }

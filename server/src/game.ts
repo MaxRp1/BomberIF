@@ -37,11 +37,11 @@ export function onKill(
   socket: Socket,
   dto: KillDTO
 ) {
+  // A identidade vem do socket, não do payload do navegador.
+  if (!registerDefeat(io, socket)) return
+
   dto.p = socket.data.index
-
-  io.to(socket.data.roomId).emit('kl', dto)
-
-  registerDefeat(io, socket)
+  io.to(socket.data.roomId).emit('kl', { p: dto.p })
 }
 
 /* {

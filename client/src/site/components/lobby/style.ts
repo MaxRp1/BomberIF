@@ -51,6 +51,34 @@ export const OptionsContainer = styled.div`
   width: 100%;
 `
 
+// Controles à esquerda e placar à direita, aproveitando a área vaga do lobby.
+// O Container antigo mantém left:-16% por causa da faixa verde inferior.
+// right:-12% compensa esse deslocamento sem mover a faixa de jogadores.
+export const PlayArea = styled.div`
+  position: absolute;
+  top: 50%;
+  right: -12%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: clamp(16px, 2.4vw, 40px);
+  transform: translateY(-50%);
+  max-width: calc(100vw - 16px);
+
+  @media (max-width: 1100px) {
+    top: 44%;
+    right: -12%;
+    flex-direction: column;
+    gap: 12px;
+    width: min(310px, 92vw);
+  }
+
+  @media (max-width: 1100px) and (max-height: 650px) {
+    top: 40%;
+  }
+`
+
 export const PlayBorder = styled.button`
   background-color: rgba(0, 225, 255, 1);
   padding: 0.3rem;
@@ -75,7 +103,9 @@ export const PlayContainer = styled.div`
   flex-direction: column;
   justify-content: center;
   max-width: 192px;
+  min-width: 150px;
   width: 100%;
+  flex-shrink: 0;
   z-index: 1;
   & > *:not(:last-child) {
     margin-bottom: 1rem;

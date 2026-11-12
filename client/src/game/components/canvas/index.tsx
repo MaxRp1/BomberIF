@@ -40,6 +40,7 @@ export default function Canvas ({myself, style, setShowGame, touchEnabled, touch
   const [rankingOpen, setRankingOpen] = useState(false)
   const [skillRemaining, setSkillRemaining] = useState(0)
   const [stunRemaining, setStunRemaining] = useState(0)
+  const [skillActive, setSkillActive] = useState(false)
 
   function gameLoop () {
     try {
@@ -96,6 +97,9 @@ function startGame (dto:StartGameDTO) {
     stage: StageFactory({name:dto.state.stage})
   })
   setVictories(dto.players.map(p => p.wins ?? 0))
+  setSkillActive(false)
+  setSkillRemaining(0)
+  setStunRemaining(0)
 }
 
 function onWinsUpdate(dto: WinsUpdateDTO) {
@@ -118,6 +122,8 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     state.entities.add(timer)
     Assets.start()
     state.players.players.forEach(p => p.active = true)
+    // Active é mutado fora do estado React; esta flag força atualizar o botão.
+    setSkillActive(true)
   }
 
   function onMove (dto:MoveDTO) {
@@ -431,7 +437,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
         type="button"
         $touch={touchEnabled}
         $portrait={touchPortrait}
-        disabled={!localPlayer.active || skillRemaining > 0 || stunRemaining > 0}
+        disabled={!skillActive || !localPlayer.active || skillRemaining > 0 || stunRemaining > 0}
         onClick={() => localPlayer.useStunSkill()}
         title="Habilidade de Mamedes: E no teclado ou LB/L1 no controle"
         aria-label={skillRemaining > 0

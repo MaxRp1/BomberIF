@@ -9709,3 +9709,46 @@ Automação no servidor: `cd server && yarn test:ranking` (a suíte inclui os te
 A tela de vitória/derrota **não é implementada nesta correção**. O comportamento atual ainda reproduz o som via `client/src/game/sound/win.ts:playWinSound` e mostra um toast em `Canvas.checkWin`. Para uma tela completa, recomenda-se definir um evento de resultado de rodada confirmado pelo servidor (incluindo empate e desconexão), pausar o loop e mostrar um overlay responsivo com vencedor, placar e botões de lobby/próxima rodada. Deve-se preservar a tolerância de 400 ms de `server/src/ranking.ts` para impedir comemorações incorretas após mortes simultâneas, e garantir fallback caso o navegador bloqueie a reprodução de áudio.
 
 Arquivos envolvidos para futura tela: `server/src/ranking.ts`, `shared/dto.ts`, `client/src/game/components/canvas/index.tsx`, novos componentes/estilos de resultado e `client/src/game/sound/win.ts`. Reavaliar lógica de `Canvas.checkWin` na transição para um resultado único do servidor.
+
+---
+
+## FUNCIONALIDADE 12/11/2026 — TELA DE RESULTADO SINCRONIZADA (BRANCH DE VALIDAÇÃO)
+
+**Status:** implementação submetida em branch de funcionalidade, ainda sujeita aos testes de compilação, partida real e aprovação do PR. Não considerar automaticamente disponível na versão publicada.
+
+### Problema e experiência proposta
+Antes, `Canvas.checkWin()` encerrava a interface do perdedor assim que identificava apenas um jogador ativo, enquanto o vencedor aguardava a reprodução do áudio de vitória. Os dois participantes tinham experiências diferentes, e um empate por mortes quase simultâneas poderia ser anunciado incorretamente. A nova implementação aguarda o **resultado confirmado pelo servidor**, exibe o mesmo vencedor para todos (nome, sprite e índice do jogador), congela a arena e retorna os clientes ao lobby após 5 segundos.
+
+### Contrato de rede e arquivos
+- `shared/dto.ts`: `StartGameDTO.roomId` liga o cliente à rodada atual; `RoundResultDTO` contém `roomId`, `outcome` e, quando há vitória, `winner: {index, nick, sprite}`.
+- `server/src/factory.ts`: `startGameFactory()` envia também `roomId` ao iniciar a partida.
+- `server/src/ranking.ts`: `finishRound()` transmite `round_result` para o `roomId` da rodada. Em vitória, aguarda `ROUND_FINISH_GRACE_MS = 400` ms, soma uma vitória e envia `wins_update`, `lobby_wins_update` e `round_result`. O próprio servidor obtém nome, índice e sprite do socket vencedor, evitando adivinhar o resultado no cliente. A validação da morte continua baseada no evento `kl` enviado pelo cliente; não é antitrapaça autoritativa completa.
+- `client/src/game/components/canvas/index.tsx`: o evento `kl` mantém a morte visual, mas não fecha mais a partida. O novo listener `round_result` filtra pelo `roomId` recebido em `start_game`, ignora eventos repetidos, congela o loop, desativa controles, encerra música/efeitos da arena e exibe o resultado. O tempo de retorno é `RESULT_DISPLAY_MS = 5000` ms e **não depende do fim do áudio**.
+- `client/src/game/components/roundResult/index.tsx` e `style.ts`: overlay responsivo de resultado, com nome do vencedor, coroa, frame frontal do sprite real recortado da folha (`PLAYER_D`: largura 17 px, altura 26,6 px, frame parado na coluna 1), zoom sem suavização, mensagem de retorno e barra visual de 5 segundos. O overlay aparece para vencedor e perdedores.
+- `server/test/ranking.test.ts`: cenários de vitória, 4 jogadores, janela de 400 ms, desempate, saída de usuário e modo solo.
+
+### Estados do resultado
+| outcome | Situação | Interface | Pontuação |
+|---|---|---|---|
+| `victory` | Só um sobrevivente após 400 ms em rodada válida | Todos veem `VITÓRIA!`, nome e sprite do mesmo vencedor por 5 s | +1 ao vencedor |
+| `draw` | Todos os jogadores morreram, sem sobrevivente | Todos veem `EMPATE!` por 5 s | 0 |
+| `abandoned` | Jogador vivo sai/desconecta e a rodada deixa de ser pontuável | Participantes restantes veem `FIM DE PARTIDA` e mensagem de interrupção por 5 s | 0 |
+| `solo` | Único participante morre | Sem tela de campeão; retorno rápido ao lobby em 750 ms | 0 |
+
+A mensagem visual pode indicar `VOCÊ NÃO FOI JUBILADO!` somente para o vencedor local, mas nome, personagem e resultado principal são idênticos nas telas de todos. O botão manual **Voltar** continua disponível fora do overlay; fechar a tela automaticamente emite `exit_pairing` pelo cleanup de `GameApp`, sem destruir o lobby. O efeito sonoro pode tocar para todos na tela de vitória, mas a navegação não fica bloqueada se o áudio falhar.
+
+### Testes necessários antes do merge/deploy
+1. `cd server && yarn test:ranking && yarn test:stun && yarn build`; `cd client && yarn build`.
+2. Duas abas ou dispositivos: jogador A vence e jogador B perde; conferir **mesmo nome, mesmo sprite e mesmo tempo aproximado de permanência** nas duas telas.
+3. Confirmar coroa, texto, sprite pixelado correto e botão de habilidade inacessível durante a tela; verificar também mobile/tela cheia.
+4. Executar rodada com três e quatro participantes; somente o último sobrevivente pontua, todos veem o mesmo resultado.
+5. Eliminar os dois quase ao mesmo tempo: nenhuma vitória; `EMPATE!` para todos.
+6. Sair ou desconectar enquanto vivo: resultado de interrupção para restantes, sem pontos indevidos; não confundir com empate.
+7. Morrer solo: mantém retorno rápido sem resultado de vitória.
+8. Após retorno, iniciar outra partida e confirmar que `roundId` e handlers não reaproveitam resultado anterior; placar continua acumulando vitórias de sessão.
+
+### Limites e manutenção
+- A confirmação depende da conexão Socket.IO; uma desconexão total do próprio cliente durante a rodada ainda pode exigir tratamento de recuperação específico.
+- A tela não cria cadastro, classificação permanente, opção de revanche imediata ou estatísticas adicionais.
+- A documentação anterior que descreve `Canvas.checkWin` com retorno imediato dos perdedores permanece **histórica** e é substituída por este fluxo depois da aprovação da funcionalidade.
+- Ao ajustar duração visual, editar `RESULT_DISPLAY_MS` no Canvas e `ProgressFill` no CSS para manter a barra sincronizada.

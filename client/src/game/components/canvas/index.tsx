@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { OVERCLOCK_DETONATION_MULTIPLIER, STUN_COOLDOWN_MS } from '#/constants'
-import { toast } from 'react-toastify'
-import { FlingBombDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
+import { FlingBombDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
 import { BlocksFactory } from '~/game/entities/block'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { EntitiesFactory } from '~/game/entities/factory'
@@ -19,6 +18,9 @@ import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { renderExplosionPreview } from '~/game/util/explosionPreview'
 import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
+import RoundResult from '~/game/components/roundResult'
+
+const RESULT_DISPLAY_MS = 5000
 
 interface CanvasProps {
   myself : number|null
@@ -32,9 +34,12 @@ export default function Canvas ({myself, style, setShowGame, touchEnabled, touch
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const readyRef = useRef(0)
+  const roomIdRef = useRef('')
+  const finishedRef = useRef(false)
   const timeRef = useRef<{endGame:NodeJS.Timeout|undefined, gameLoop:NodeJS.Timer|undefined}>({endGame:undefined, gameLoop:undefined})
   const [context, setContext] = useState<CanvasRenderingContext2D>()
   const [state, setState] = useState<GameState>()
+  const [roundResult, setRoundResult] = useState<RoundResultDTO|null>(null)
   const [victories, setVictories] = useState<number[]>([])
   const [rankingWidth, setRankingWidth] = useState(0)
   const [rankingOpen, setRankingOpen] = useState(false)
@@ -85,6 +90,11 @@ function render () {
 function startGame (dto:StartGameDTO) {
   socket.off('start_game', startGame)
 
+  roomIdRef.current = dto.roomId
+  finishedRef.current = false
+  readyRef.current = 0
+  setRoundResult(null)
+
   console.log('CLIENT STAGE:', dto.state.stage)
   console.log('CLIENT SLOW FLOORS:', dto.state.slowFloors)
 
@@ -113,6 +123,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
 }
 
   function onReady () {
+    if (finishedRef.current) return
     readyRef.current++
     if (!state) return
     if (readyRef.current < state.players.players.length) return
@@ -200,46 +211,43 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
 
   function onKill (dto:KillDTO) {
     if (dto.p !== myself) {
-      state?.players.players[dto.p].kill(false)
+      state?.players.players[dto.p]?.kill(false)
     }
-    checkWin()
+    // Ninguém sai mais antecipadamente: todos aguardam o resultado do servidor.
   }
 
-  function checkWin () {
-    if (!state) return
+  function onRoundResult (dto: RoundResultDTO) {
+    if (!state || !roomIdRef.current || dto.roomId !== roomIdRef.current) return
+    if (finishedRef.current) return
+    finishedRef.current = true
 
-    const players = state.players.players
-    const alive = players.filter(p => p.active)
-    if (alive.length > 1) return
-
-    // Uma segunda morte pode transformar um vencedor provisório em empate.
-    clearTimeout(timeRef.current.endGame)
-
-    const timer = state.entities.get('timer')
-    if (timer) state.entities.remove(timer)
-    const blockFiller = state.entities.get('blockFiller')
-    if (blockFiller) state.entities.remove(blockFiller)
+    // Congela a arena, os controles e o temporizador para ambos os jogadores.
+    clearInterval(timeRef.current.gameLoop)
+    state.players.players.forEach(player => {
+      player.active = false
+      player.moving = 0
+    })
+    setSkillActive(false)
     Assets.stop()
 
-    // Morte em partida solo ou eliminação simultânea de todos os jogadores.
-    // O servidor já confirmou 'kl'; não existe vencedor para anunciar.
-    const timeout = 750
-    if (alive.length === 0) {
-      stopWinSound()
-      timeRef.current.endGame = setTimeout(() => setShowGame(false), timeout)
+    clearTimeout(timeRef.current.endGame)
+    stopWinSound()
+
+    // O modo solo continua voltando rapidamente e não exibe falso vencedor.
+    if (dto.outcome === 'solo') {
+      timeRef.current.endGame = setTimeout(() => setShowGame(false), 750)
       return
     }
 
-    const winner = alive[0]
-    if (winner.myself) {
-      timeRef.current.endGame = setTimeout(() => {
-        toast.success('Não foi jubilado!', {icon:'👑',theme:'colored',autoClose:6000})
-        playWinSound(() => setShowGame(false))
-      }, timeout)
-    }
-    else {
-      timeRef.current.endGame = setTimeout(() => setShowGame(false), timeout)
-    }
+    // Todos recebem exatamente o mesmo vencedor (nome + sprite) do servidor.
+    setRoundResult(dto)
+    if (dto.outcome === 'victory') playWinSound(() => {})
+
+    // A saída nunca depende da reprodução do áudio.
+    timeRef.current.endGame = setTimeout(
+      () => setShowGame(false),
+      RESULT_DISPLAY_MS
+    )
   }
 
   useEffect(() => {
@@ -252,6 +260,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     socket.on('fb', onFlingBomb)
     socket.on('nb', onNullifyBlock)
     socket.on('kl', onKill)
+    socket.on('round_result', onRoundResult)
     socket.on('wins_update', onWinsUpdate)
     socket.on('stun_shot', onStunShot)
     socket.on('stun_apply', onStunApply)
@@ -265,6 +274,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       socket.off('fb', onFlingBomb)
       socket.off('nb', onNullifyBlock)
       socket.off('kl', onKill)
+      socket.off('round_result', onRoundResult)
       socket.off('wins_update', onWinsUpdate)
       socket.off('stun_shot', onStunShot)
       socket.off('stun_apply', onStunApply)
@@ -461,6 +471,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     )}
     <Timer id='timer' />
     <canvas ref={canvasRef} width={240} height={208} style={style} />
+    {roundResult && <RoundResult result={roundResult} myself={myself} />}
     </>
   )
 

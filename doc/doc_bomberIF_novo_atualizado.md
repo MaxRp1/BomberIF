@@ -30,6 +30,7 @@ As correções desta branch abrangem: **Overclock compartilhado**, **vitórias z
 | Interface | Painel de classificação com identificação do jogador, posição, vitórias e layout responsivo | `canvas/rankingStyle.ts`, `canvas/index.tsx` |
 | Publicação | Backend Render via `main`, frontend Pages via branch `client` | `server/build.sh`, `client/deploy.sh` |
 | Compilação dev | `ts-loader` configurado explicitamente para `shared/`, evitando TS18002 no modo desenvolvimento | `client/craco.config.js`, `client/tsconfig.json` |
+| Ranking no lobby (12/11) | Mostra vitórias dos integrantes da sala antes da partida, atualizadas em tempo real por `lobby_wins_update` | `server/src/factory.ts`, `server/src/ranking.ts`, `shared/dto.ts`, `lobby/ranking.tsx` |
 
 **Linha do tempo verificada no Git:** 23/10 — pisos lentos e manchas visuais; 03/11 — habilidade da Ino; 10/11 — duas habilidades do Proença; 11/11 — ranking por sala/sessão e responsividade. As seções seguintes reúnem o funcionamento atual e também registram limitações e pontos a corrigir sem alterar o código do jogo.
 
@@ -385,28 +386,29 @@ export function startGameFactory (
 **updateLobbyFactory**
 
 ```ts
-  // atualiza a lista de jogadores na lobby
-  export function updateLobbyFactory (io : Server, lobbyId : string) : LobbyDTO|null {
-    const lobby = io.sockets.adapter.rooms.get(lobbyId)
-    if (!lobby) return null
-    const players:LobbyDTO['players'] = []
-    for (const socketId of lobby) {
-      const p:Socket|undefined = io.sockets.sockets.get(socketId)
-      if (!p) continue
-      players.push({
-        nick: p.data.nick
-      })
-    }
-    if (players.length) {
-      return {
-        lobbyId, players
-      }
-    }
-    return null
+export function updateLobbyFactory (io : Server, lobbyId : string) : LobbyDTO|null {
+  const lobby = io.sockets.adapter.rooms.get(lobbyId)
+  if (!lobby) return null
+  const players:LobbyDTO['players'] = []
+  for (const socketId of lobby) {
+    const p:Socket|undefined = io.sockets.sockets.get(socketId)
+    if (!p) continue
+    players.push({
+      nick: p.data.nick,
+      socketId: p.id,
+      wins: p.data.wins ?? 0
+    })
   }
+  if (players.length) {
+    return {
+      lobbyId, players
+    }
+  }
+  return null
+}
 ```
 
-- Localiza um lobby existente atráves o ID e atualiza todos os jogadores presentes nele, percorre todas as conexões ativas do lobby, extrai o nick de cada jogador e retorna um pacote de dados (LobbyDTO) contendo a lista atualizada. Caso o lobby não exista ou esteja vazio, a função retorna null.
+- Busca os sockets ativos do lobby e fornece o snapshot `LobbyDTO` com `nick`, `socketId` e `wins` para cada participante. Essa estrutura permite mostrar o ranking no lobby antes da partida; uma sala inexistente/vazia retorna `null`.
 
 **slowFloorsFactory**
 
@@ -802,11 +804,12 @@ async function enterLobby (
   socket.data.lobbyId = lobbyId
   socket.data.isPairing = false
 
-  const dto = updateLobbyFactory(io, lobbyId)
-
+  // Zera antes de criar o DTO, para os demais verem o placar correto.
   if (previousLobbyId !== lobbyId) {
     socket.data.wins = 0
   }
+
+  const dto = updateLobbyFactory(io, lobbyId)
 
   dto && sendToLobby(
     io,
@@ -879,11 +882,12 @@ async function enterLobby (
   socket.data.lobbyId = lobbyId
   socket.data.isPairing = false
 
-  const dto = updateLobbyFactory(io, lobbyId)
-
+  // Zera antes de criar o DTO, para os demais verem o placar correto.
   if (previousLobbyId !== lobbyId) {
     socket.data.wins = 0
   }
+
+  const dto = updateLobbyFactory(io, lobbyId)
 
   dto && sendToLobby(
     io,
@@ -983,11 +987,12 @@ async function enterLobby (
   socket.data.lobbyId = lobbyId
   socket.data.isPairing = false
 
-  const dto = updateLobbyFactory(io, lobbyId)
-
+  // Zera antes de criar o DTO, para os demais verem o placar correto.
   if (previousLobbyId !== lobbyId) {
     socket.data.wins = 0
   }
+
+  const dto = updateLobbyFactory(io, lobbyId)
 
   dto && sendToLobby(
     io,
@@ -1147,6 +1152,7 @@ O resultado depende dos eventos de morte enviados pelo cliente; não existe veri
 ```ts
 import type { Server } from 'socket.io'
 import type { Socket } from '~/extends'
+import type { LobbyWinsUpdateDTO } from '#/dto'
 
 // Janela de tolerância para mortes quase simultâneas (rede e quadros distintos).
 const ROUND_FINISH_GRACE_MS = 400
@@ -1228,6 +1234,20 @@ export function registerDefeat(io: Server, socket: Socket): boolean {
         p: winner.data.index,
         wins: winner.data.wins
       })
+
+      // O lobby permanece associado ao socket enquanto ele está jogando.
+      // Envia somente o placar do vencedor, sem recriar a lista inteira.
+      const lobbyId = winner.data.lobbyId
+
+      if (lobbyId && winner.rooms.has(lobbyId)) {
+        const lobbyUpdate: LobbyWinsUpdateDTO = {
+          lobbyId,
+          socketId: winner.id,
+          wins: winner.data.wins
+        }
+
+        io.to(lobbyId).emit('lobby_wins_update', lobbyUpdate)
+      }
     }
 
     cancelRankingRound(roomId)
@@ -7602,6 +7622,318 @@ export function addLobbyToUrl(lobbyId: string) {
 }
 ```
 
+# **REVISÃO 12/11/2026 — RANKING NA TELA DE LOBBY**
+
+## Objetivo e posicionamento
+
+A tela que exibe `Jogar!`, `Preencher Sala`, o código de convite e a faixa inferior com nomes dos participantes agora apresenta um **placar compacto antes da partida**. Os controles ficam à esquerda e o placar à direita, aproveitando a área livre da ilustração. A faixa verde inferior e seu comportamento foram preservados.
+
+A composição nova pertence ao `PlayArea` de `client/src/site/components/lobby/style.ts`: em monitores amplos usa **duas colunas** (controles + placar); em larguras até 1100 px, organiza em **coluna** para não ultrapassar a tela. O ranking possui rolagem se houver pouco espaço vertical. O `Container` histórico ainda usa `left: -16%`; a regra `right: -12%` do `PlayArea` compensa esse deslocamento sem reposicionar o rodapé verde. **Essas escolhas são locais à tela de lobby**; a reestruturação global do frontend permanece um trabalho futuro.
+
+## Dados de rede e fluxo completo
+
+1. A estrutura `LobbyDTO.players` deixou de ser apenas `UserDTO[]` e agora contém `LobbyPlayerDTO[]`, com `nick`, `socketId` e `wins`. O identificador do socket diferencia pessoas com apelidos iguais; não há autenticação permanente.
+2. Quando um jogador cria ou entra em um lobby, `server/src/manager.ts:enterLobby` primeiro zera `socket.data.wins` **se o lobby mudou** e só depois chama `updateLobbyFactory`. Dessa forma o snapshot inicial não carrega pontos do lobby anterior.
+3. `server/src/factory.ts:updateLobbyFactory` coleta apelido, identificador da conexão e vitórias atuais de cada socket da sala e envia `update_lobby` à interface.
+4. Após uma vitória válida, `server/src/ranking.ts` continua emitindo `wins_update` para os participantes da partida e **também envia** `lobby_wins_update` para o lobby do vencedor, com `{lobbyId, socketId, wins}`.
+5. `client/src/site/components/siteApp.tsx` recebe `lobby_wins_update` enquanto a aplicação está montada e despacha `updateLobbyWins` ao Redux. O reducer só altera o jogador com `socketId` correspondente e descarta eventos que pertençam a outra sala.
+6. `LobbyRanking` lê `lobby.players`, ordena por `wins` decrescentes (empatados respeitam a ordem original), destaca `VOCÊ` pelo socket local e exibe uma coroa somente quando há líder isolado com vitória.
+7. O placar continua baseado em **pontos por conexão e por lobby**, e não em contas permanentes. Mudança de lobby ou nova conexão pode zerar a pontuação.
+
+## DTOs compartilhados
+
+```ts
+export interface LobbyPlayerDTO extends UserDTO {
+  socketId: string
+  wins: number
+}
+
+export interface LobbyDTO {
+  lobbyId: string
+  players: LobbyPlayerDTO[]
+}
+
+export interface LobbyWinsUpdateDTO {
+  lobbyId: string
+  socketId: string
+  wins: number
+}
+```
+
+## Componentes novos
+
+### `client/src/site/components/lobby/ranking.tsx`
+
+```tsx
+import { LobbyDTO } from '#/dto'
+import { socket } from '~/services/socket'
+import {
+  Board,
+  BoardCount,
+  BoardFooter,
+  BoardHeader,
+  BoardList,
+  BoardRow
+} from './rankingStyle'
+
+interface LobbyRankingProps {
+  players: LobbyDTO['players']
+}
+
+/**
+ * Placar da sala antes de iniciar a partida.
+ * O servidor envia vitórias por socketId; apelidos repetidos são permitidos.
+ */
+export default function LobbyRanking ({ players }: LobbyRankingProps) {
+  const ranking = players
+    .map((player, order) => ({ ...player, order }))
+    .sort((a, b) => b.wins - a.wins || a.order - b.order)
+
+  const hasLeader =
+    ranking.length > 0 &&
+    ranking[0].wins > 0 &&
+    (ranking.length === 1 || ranking[0].wins > ranking[1].wins)
+
+  return (
+    <Board aria-label="Classificação de vitórias da sala">
+      <BoardHeader>
+        <div>
+          <strong>🏆 PLACAR DA SALA</strong>
+          <small>VITÓRIAS NESTE LOBBY</small>
+        </div>
+        <BoardCount>{players.length}/4</BoardCount>
+      </BoardHeader>
+
+      <BoardList>
+        {ranking.map((player, position) => {
+          const isLeader = hasLeader && position === 0
+          const isMe = player.socketId === socket.id
+
+          return (
+            <BoardRow
+              key={player.socketId}
+              className={`${isLeader ? 'leader' : ''} ${isMe ? 'me' : ''}`}
+            >
+              <span className="rank">
+                {isLeader ? '👑' : `${position + 1}º`}
+              </span>
+              <span className="identity">
+                <span className="name" title={player.nick ?? 'Jogador'}>
+                  {player.nick ?? 'Jogador'}
+                </span>
+                {isMe && <small>VOCÊ</small>}
+              </span>
+              <span className="points">
+                <strong>{player.wins}</strong>
+                <small>VIT.</small>
+              </span>
+            </BoardRow>
+          )
+        })}
+      </BoardList>
+
+      <BoardFooter>Pontos zeram ao mudar de lobby</BoardFooter>
+    </Board>
+  )
+}
+```
+
+### `client/src/site/components/lobby/rankingStyle.ts`
+
+```ts
+import styled from 'styled-components'
+
+// Paleta coerente com o ranking exibido durante a partida.
+export const Board = styled.aside`
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: clamp(220px, 18vw, 280px);
+  max-height: min(55svh, 370px);
+  overflow-y: auto;
+  padding: 13px;
+  color: #f4f7ff;
+  background: linear-gradient(180deg, #1b2839 0%, #101821 100%);
+  border: 2px solid #4a607a;
+  box-shadow: 4px 4px 0 #070c13, inset 0 0 0 2px #26384d;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+
+  @media (max-width: 1100px) {
+    width: min(300px, 88vw);
+    max-height: min(34svh, 250px);
+    padding: 10px;
+  }
+`
+
+export const BoardHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #405269;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+
+  strong {
+    display: block;
+    color: #f5cc70;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+  }
+
+  small {
+    display: block;
+    margin-top: 4px;
+    color: #aabbd0;
+    font-size: 9px;
+    letter-spacing: 0.4px;
+  }
+`
+
+export const BoardCount = styled.span`
+  flex-shrink: 0;
+  padding: 5px 7px;
+  color: #e2eaf4;
+  background: #293a4e;
+  font-weight: 700;
+`
+
+export const BoardList = styled.ol`
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+`
+
+export const BoardRow = styled.li`
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 6px;
+  background: #243244;
+  border: 1px solid #41546d;
+
+  &.leader {
+    background: #393322;
+    border-color: #ad8740;
+  }
+
+  &.me {
+    outline: 2px solid #67a5ff;
+    outline-offset: -2px;
+  }
+
+  .rank {
+    flex: 0 0 29px;
+    text-align: center;
+    color: #c4d0dd;
+    font-weight: 700;
+    font-size: 13px;
+  }
+
+  .identity {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .identity small {
+    font-size: 9px;
+    font-weight: 700;
+    color: #89baff;
+  }
+
+  .points {
+    flex: 0 0 33px;
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    padding: 4px;
+    background: #101923;
+    color: #f4c86a;
+  }
+
+  .points strong { font-size: 16px; }
+  .points small { font-size: 8px; color: #a8b6c7; }
+`
+
+export const BoardFooter = styled.p`
+  margin: 10px 0 0;
+  text-align: center;
+  color: #9faec2;
+  font-size: 9px;
+`
+```
+
+## Redux: estado e atualização incremental
+
+- `client/src/store/lobby/actions.ts`: `updateLobbyWins(dto)` despacha `UPDATE_LOBBY_WINS` sem tocar no som nem na URL.
+- `client/src/store/lobby/reducer.ts`: só atualiza o participante identificado por `socketId` quando o `lobbyId` da mensagem corresponde ao lobby atualmente aberto. Apelidos repetidos não prejudicam a atualização.
+- `client/src/site/components/siteApp.tsx`: registra e remove **as mesmas referências de callbacks** em `socket.on` e `socket.off`, corrigindo o cleanup anterior que usava lambdas distintas.
+
+```ts
+import { LobbyDTO, LobbyWinsUpdateDTO } from '#/dto'
+
+type Action =
+  | { type: 'UPDATE_LOBBY'; payload: LobbyDTO }
+  | { type: 'UPDATE_LOBBY_WINS'; payload: LobbyWinsUpdateDTO }
+
+export const dto: LobbyDTO | null = null
+
+export default function lobbyReducer (
+  state: LobbyDTO | null = dto,
+  action: Action
+): LobbyDTO | null {
+  switch (action.type) {
+    case 'UPDATE_LOBBY':
+      return { ...action.payload }
+
+    case 'UPDATE_LOBBY_WINS':
+      // Ignora atualizações atrasadas de lobbies anteriores.
+      if (!state || state.lobbyId !== action.payload.lobbyId) return state
+
+      return {
+        ...state,
+        players: state.players.map(player =>
+          player.socketId === action.payload.socketId
+            ? { ...player, wins: action.payload.wins }
+            : player
+        )
+      }
+
+    default:
+      return state
+  }
+}
+```
+
+## Testes e limitações
+
+- **Backend:** `cd server && yarn test:ranking` verifica 8 casos, incluindo emissão de `lobby_wins_update` e ausência do evento quando o vencedor já não pertence ao lobby.
+- **Frontend:** `cd client && CI=true yarn test --watchAll=false --runInBand` executa os testes de reducer, incluindo apelidos repetidos, eventos atrasados e snapshot inicial.
+- **Builds:** `cd server && yarn build`, depois `cd client && yarn build`.
+- **Teste manual com duas abas:** ambas entram no mesmo lobby; após a primeira vitória, o novo placar deve aparecer sem recarregar; ao trocar de lobby, os pontos começam em zero; ao voltar à sala original, prevalecem os pontos atuais da conexão.
+- **Responsividade:** verificar a composição lado a lado numa tela larga e os componentes empilhados abaixo de 1100 px, sem cobrir a faixa inferior.
+
+A implementação não altera as regras de cálculo do ranking da partida, nem cria persistência de contas. **Os testes de compilação e visual no Kali ainda devem ser executados antes de mesclar esta branch à `main`.**
+
+---
+
 # 'Client' src/site/components/lobby/index.tsx
 
 **COMPONENTES PRINCIPAIS**
@@ -7618,7 +7950,7 @@ Clique no ID do lobby: Copia o código para a área de transferência do usuári
 
 Renderização da lista de jogadores (*lobby.players.map(...)*).
 
-```ts
+```tsx
 import { useDispatch, useSelector } from 'react-redux'
 import { LobbyDTO } from '#/dto'
 import { useEffect } from 'react'
@@ -7629,83 +7961,58 @@ import { setFillRoom } from '~/store/options/actions'
 import { OptionsDTO } from '~/store/options/reducer'
 import { playLobbySound, stopLobbySound } from '~/game/sound/lobby'
 import { joinRoom } from './method'
-import { Container, LobbyContainer, LobbyId, Options, OptionsContainer, Play, PlayContainer, PlayBorder, Player, PlayersContainer } from './style'
+import LobbyRanking from './ranking'
+import { Container, LobbyContainer, LobbyId, Options, OptionsContainer, Play, PlayArea, PlayContainer, PlayBorder, Player, PlayersContainer } from './style'
+//let winPlaying = false
 
-// let winPlaying = false
-
-/**
- * Propriedades esperadas pelo componente Lobby.
- */
 interface LobbyProps {
-  /** Objeto contendo os dados da sala, incluindo ID e lista de jogadores conectados. */
-  lobby: LobbyDTO
-  /** Função para alternar a visibilidade do modal/tela de opções. */
-  setShowOptions: React.Dispatch<React.SetStateAction<boolean>>
+  lobby          : LobbyDTO
+  setShowOptions : React.Dispatch<React.SetStateAction<boolean>>
 }
 
-/**
- * Lida com o clique no botão "Jogar!".
- * Interrompe a música do lobby e despacha a ação para juntar-se à partida ativa.
- */
 function handlePlayClick () {
   stopLobbySound()
   joinRoom()
 }
-
-/**
- * Componente principal da Sala de Espera (Lobby).
- * Exibe os jogadores conectados, o ID da sala para convites, opções de pareamento 
- * e o botão de iniciar o jogo.
- */
-export default function Lobby ({ lobby, setShowOptions }: LobbyProps) {
+export default function Lobby ({ lobby, setShowOptions } : LobbyProps) {
 
   const dispatch = useDispatch()
-  const options = useSelector<any, OptionsDTO>(state => state.options)
+  const options = useSelector<any,OptionsDTO>(state => state.options)
 
-  // Controle do ciclo de vida da música do lobby
   useEffect(() => {
-    // Ativa quando entrar na tela ou der reload na página
+    // Ativa qnd sair da partida ou reload da página
     playLobbySound()
 
     return () => {
-      // Desativa quando o componente for desmontado (ex: transição para a partida)
+      // qnd ta na partida
       stopLobbySound()
     }
   }, [])
 
   return (
     <Container>
-      <PlayContainer>
-        <PlayBorder onClick={handlePlayClick}>
-          <Play>Jogar!</Play>
-        </PlayBorder>
-        
-        {/* Toggle para definir se a sala deve ser preenchida com bots caso falte jogadores */}
-        <Toggle on={options.fillRoom} onClick={() => dispatch(setFillRoom())}>
-          Preencher Sala
-        </Toggle>
-        
-        <OnlinePlayers />
-      </PlayContainer>
-      
+      <PlayArea>
+        <PlayContainer>
+          <PlayBorder onClick={handlePlayClick}><Play>Jogar!</Play></PlayBorder>
+          <Toggle on={options.fillRoom} onClick={() => dispatch(setFillRoom())}>Preencher Sala</Toggle>
+          <OnlinePlayers/>
+        </PlayContainer>
+        <LobbyRanking players={lobby.players}/>
+      </PlayArea>
       <LobbyContainer>
         <OptionsContainer>
-          {/* Permite copiar o ID da sala com um simples clique */}
-          <LobbyId onClick={() => copyToClipboard(lobby.lobbyId)}>
-            {lobby.lobbyId}
-          </LobbyId>
+          <LobbyId onClick={() => copyToClipboard(lobby.lobbyId)}>{lobby.lobbyId}</LobbyId>
           <Options onClick={() => setShowOptions(true)}>Opções</Options>
         </OptionsContainer>
-        
         <PlayersContainer>
-          {/* Mapeia e exibe a lista atual de jogadores no lobby */}
-          {lobby.players.map((p, i) => (
+          {lobby.players.map((p,i) => (
             <Player key={`${i}${p.nick}`}>{p.nick}</Player>
           ))}
         </PlayersContainer>
       </LobbyContainer>
     </Container>
   )
+
 }
 ```
 
@@ -7764,10 +8071,6 @@ Interatividade (*PlayBorder*, *Play*): Uso de seletores aninhados ($*{PlayBorder
 ```ts
 import styled from 'styled-components'
 
-/**
- * Contêiner principal absoluto que envolve toda a tela do Lobby.
- * Utiliza flexbox para alinhar os elementos à direita e ajustar a posição inicial.
- */
 export const Container = styled.div`
   align-items: center;
   display: flex;
@@ -7779,10 +8082,6 @@ export const Container = styled.div`
   width: 100%;
 `
 
-/**
- * Caixa flutuante na parte inferior da tela que guarda o ID da sala e os jogadores.
- * Utiliza `clip-path` para criar pontas chanfradas e é responsiva.
- */
 export const LobbyContainer = styled.div`
   align-items: center;
   background-color: rgba(132, 255, 0, 0.8);
@@ -7801,9 +8100,6 @@ export const LobbyContainer = styled.div`
   }
 `
 
-/**
- * Botão invisível (sem fundo) que exibe o ID do lobby e permite a cópia ao clicar.
- */
 export const LobbyId = styled.button`
   background-color: rgba(0,0,0,0);
   padding: 1rem 5%;
@@ -7815,16 +8111,10 @@ export const LobbyId = styled.button`
   }
 `
 
-/**
- * Botão transparente para abrir o menu de opções.
- */
 export const Options = styled.button`
   background-color: rgba(0,0,0,0);
 `
 
-/**
- * Contêiner horizontal para alinhar o ID do lobby e o botão de opções em extremidades opostas.
- */
 export const OptionsContainer = styled.div`
   align-items: center;
   display: flex;
@@ -7832,18 +8122,39 @@ export const OptionsContainer = styled.div`
   width: 100%;
 `
 
-/**
- * Borda decorativa azul clicável que envolve o botão "Jogar".
- */
+// Controles à esquerda e placar à direita, aproveitando a área vaga do lobby.
+// O Container antigo mantém left:-16% por causa da faixa verde inferior.
+// right:-12% compensa esse deslocamento sem mover a faixa de jogadores.
+export const PlayArea = styled.div`
+  position: absolute;
+  top: 50%;
+  right: -12%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: clamp(16px, 2.4vw, 40px);
+  transform: translateY(-50%);
+  max-width: calc(100vw - 16px);
+
+  @media (max-width: 1100px) {
+    top: 44%;
+    right: -12%;
+    flex-direction: column;
+    gap: 12px;
+    width: min(310px, 92vw);
+  }
+
+  @media (max-width: 1100px) and (max-height: 650px) {
+    top: 40%;
+  }
+`
+
 export const PlayBorder = styled.button`
   background-color: rgba(0, 225, 255, 1);
   padding: 0.3rem;
 `
 
-/**
- * O interior do botão "Jogar".
- * Possui formato chanfrado e muda de cor quando a borda pai (`PlayBorder`) sofre hover.
- */
 export const Play = styled.div`
   background-color: rgba(0, 255, 166, 1);
   clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%);
@@ -7857,25 +8168,21 @@ export const Play = styled.div`
   }
 `
 
-/**
- * Contêiner vertical para o bloco de interações de início de jogo (Botão Jogar, Toggle).
- */
 export const PlayContainer = styled.div`
   align-items: center;
   display: flex;
   flex-direction: column;
   justify-content: center;
   max-width: 192px;
+  min-width: 150px;
   width: 100%;
+  flex-shrink: 0;
   z-index: 1;
   & > *:not(:last-child) {
     margin-bottom: 1rem;
   }
 `
 
-/**
- * Grade flexível que envolve todos os nomes dos jogadores conectados no lobby.
- */
 export const PlayersContainer = styled.div`
   align-items: center;
   display: flex;
@@ -7885,9 +8192,6 @@ export const PlayersContainer = styled.div`
   width: 100%;
 `
 
-/**
- * Elemento base que exibe o nome (nick) de um jogador individual.
- */
 export const Player = styled.div``
 ```
 
@@ -8345,83 +8649,60 @@ Gerenciamento de Sala (*handleLobby*): Lê a URL atual ao carregar a página. Se
 
 Orquestração de Áudio (WebRTC): Monta os listeners para as chamadas de voz (*all_offer, call_answer, ice_candidate*) dependendo da configuração do usuário *(options.call)*.
 
-```ts
+```tsx
 import '~/index.css'
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useSearchParams } from 'react-router-dom'
-import { LobbyDTO, UserDTO } from '#/dto'
+import { LobbyDTO, LobbyWinsUpdateDTO, UserDTO } from '#/dto'
 import useBoot from '~/hooks/useBoot'
 import { CallFactory } from '~/services/call'
 import { errorHandler } from '~/services/errorHandler'
 import { EVENTS } from '~/services/events'
 import randomuser from '~/services/randomuser'
 import { emitChangeLobby, emitCreateLobby, emitSetUser, socket } from '~/services/socket'
-import { updateLobby } from '~/store/lobby/actions'
+import { updateLobby, updateLobbyWins } from '~/store/lobby/actions'
 import { OptionsDTO } from '~/store/options/reducer'
 import { saveOptions } from '~/store/options/thunk'
 import { setUserNick } from '~/store/user/actions'
 import { saveUser } from '~/store/user/thunk'
 
 interface SiteAppProps {
-  /** Componentes filhos que serão renderizados dentro deste wrapper (ex: rotas, páginas) */
-  children: JSX.Element
+  children : JSX.Element
 }
 
-/**
- * Componente Wrapper Global da aplicação web.
- * 
- * Este componente não possui interface própria. Ele envolve a árvore de componentes
- * do React para gerenciar ciclos de vida globais: carregamento de dados (boot),
- * roteamento de salas via URL, negociação de WebRTC para chat de voz e sincronização
- * de estado Redux com o servidor Socket.
- */
-export default function SiteApp({ children }: SiteAppProps) {
+export default function SiteApp ({ children } : SiteAppProps) {
 
   const dispatch = useDispatch()
   const booting = useBoot(dispatch)
   const [searchParams] = useSearchParams()
-  
-  const lobby = useSelector<any, LobbyDTO | null>(state => state.lobby)
-  const options = useSelector<any, OptionsDTO>(state => state.options)
-  const user = useSelector<any, UserDTO>(state => state.user)
-  
-  // Instância gerenciadora de chamadas de voz P2P
+  const lobby = useSelector<any,LobbyDTO|null>(state => state.lobby)
+  const options = useSelector<any,OptionsDTO>(state => state.options)
+  const user = useSelector<any,UserDTO>(state => state.user)
   const [call] = useState(CallFactory())
 
-  /**
-   * Inicializa a infraestrutura de chamada de voz local.
-   * Se já houverem outros jogadores no lobby, cria imediatamente uma oferta de conexão.
-   */
-  async function initCall() {
+  async function initCall () {
     if (call.initiated()) return
     await call.init()
     if (lobby!.players.length > 1) await call.createOffer()
   }
 
-  /**
-   * Tenta iniciar o handshake WebRTC manualmente através do disparo de eventos.
-   */
-  async function offerCall() {
+  async function offerCall () {
     if (!call.initiated() || !lobby || lobby.players.length < 2) return
     await call.createOffer()
   }
 
-  /**
-   * Analisa a URL da aplicação. Se houver um convite (?lobby=ID), tenta entrar
-   * na sala especificada. Se não houver, solicita a criação de uma sala vazia.
-   */
-  function handleLobby() {
+  function handleLobby () {
     if (lobby) return
     const lobbyParam = searchParams.get('lobby')
     if (lobbyParam) {
       emitChangeLobby(lobbyParam)
-    } else {
+    }
+    else {
       emitCreateLobby()
     }
   }
 
-  // EFEITO 1: Gera um nickname aleatório para usuários novos assim que o app carrega
   useEffect(() => {
     if (booting || user.nick) return
     randomuser().then(randomnick => {
@@ -8429,24 +8710,21 @@ export default function SiteApp({ children }: SiteAppProps) {
     })
   }, [booting, user])
 
-  // EFEITO 2: Quando os dados do usuário mudam, avisa o servidor e salva localmente
   useEffect(() => {
     if (booting || !user) return
     for (const key in user) {
       // @ts-ignore
-      if (!user[key]) return // Evita salvar se algum dado for inválido
+      if (!user[key]) return
     }
     emitSetUser(user)
     saveUser()
   }, [user])
 
-  // EFEITO 3: Salva as opções (como tela cheia, volume) localmente quando alteradas
   useEffect(() => {
     if (booting || !options) return
     saveOptions()
   }, [options])
 
-  // EFEITO 4: Registra o tratador de lobby assim que a página terminar de carregar
   useEffect(() => {
     window.addEventListener('load', handleLobby)
     return () => {
@@ -8454,7 +8732,6 @@ export default function SiteApp({ children }: SiteAppProps) {
     }
   }, [lobby])
 
-  // EFEITO 5: Gerencia os listeners de WebRTC (Áudio) com base na configuração do jogador
   useEffect(() => {
     if (booting) return
     window.addEventListener(EVENTS.OFFER_CALL, offerCall)
@@ -8462,14 +8739,8 @@ export default function SiteApp({ children }: SiteAppProps) {
     socket.on('call_offer', call.onCallOffer)
     socket.on('call_answer', call.onCallAnswer)
     socket.on('ice_candidate', call.onIceCandidate)
-    
-    // Inicia ou desativa a chamada de voz dependendo do Toggle nas opções
-    if (options.call && lobby) {
-      initCall()
-    } else {
-      call.closeAll()
-    }
-    
+    if (options.call && lobby) initCall()
+    else                       call.closeAll()
     return () => {
       window.removeEventListener(EVENTS.OFFER_CALL, offerCall)
       socket.off('disconnected', call.close)
@@ -8479,18 +8750,29 @@ export default function SiteApp({ children }: SiteAppProps) {
     }
   }, [booting, lobby, options])
 
-  // EFEITO 6: Listeners globais essenciais (Atualizações do Lobby e Erros)
   useEffect(() => {
+    // Handlers com referência estável para que o cleanup realmente remova listeners.
+    function onUpdateLobby (dto: LobbyDTO) {
+      dispatch(updateLobby(dto))
+    }
+
+    function onLobbyWinsUpdate (dto: LobbyWinsUpdateDTO) {
+      dispatch(updateLobbyWins(dto))
+    }
+
     socket.on('error', errorHandler)
-    socket.on('update_lobby', lobby => dispatch(updateLobby(lobby)))
-    
+    socket.on('update_lobby', onUpdateLobby)
+    socket.on('lobby_wins_update', onLobbyWinsUpdate)
+
     return () => {
       socket.off('error', errorHandler)
-      socket.off('update_lobby', lobby => dispatch(updateLobby(lobby)))
+      socket.off('update_lobby', onUpdateLobby)
+      socket.off('lobby_wins_update', onLobbyWinsUpdate)
     }
-  }, [])
+  }, [dispatch])
 
   return children
+
 }
 ```
 
@@ -9197,6 +9479,7 @@ Esta seção existe para evitar que o código e o estudo técnico voltem a ficar
 | Alterar temporização exclusiva de personagem | `client/src/game/entities/bomb.ts`, `canvas/index.tsx`, `player.ts` | Multiplicador local e remoto, sincronização, transporte de bombas |
 | Publicar frontend | `client/deploy.sh`, `client/package.json`, branch `client` | Seção `PUBLICAÇÃO DO CLIENTE — GITHUB PAGES` |
 | Corrigir bundler TypeScript | `client/craco.config.js`, `client/tsconfig.json`, `shared/` | Capítulo `Client craco.config.js` e testes `yarn dev` / `yarn build` |
+| Alterar placar do lobby | `shared/dto.ts`, `server/src/factory.ts`, `server/src/ranking.ts`, `client/src/site/components/lobby/*`, `client/src/store/lobby/*`, `client/src/site/components/siteApp.tsx` | Capítulo `REVISÃO 12/11/2026 — RANKING NA TELA DE LOBBY` e fluxo `lobby_wins_update` |
 
 ### Regra prática
 
@@ -9260,6 +9543,11 @@ Este quadro integra a documentação de manutenção ao processo de testes. Os r
 | T22 | Deploy do backend | Enviar commit validado à `main` e observar execução do Render | Backend é compilado e iniciado conforme configuração atual; serviço externo precisa ser verificado na plataforma | `server/build.sh`, `server/src/index.ts` |
 
 | T23 | Saída voluntária | Voltar ao lobby durante rodada com 3–4 jogadores | O socket deixa o `roomId` anterior, jogador restante recebe `kl` e a rodada não pontua | `server/src/manager.ts`, `server/src/ranking.ts` |
+
+| T24 | Ranking no lobby em tempo real | Duas abas no mesmo lobby; um jogador vence uma partida | O vencedor aparece com nova vitória no lobby de ambos sem recarregar a tela | `ranking.ts`, `siteApp.tsx`, `store/lobby/reducer.ts` |
+| T25 | Apelidos repetidos | Duas conexões entram com o mesmo apelido e somente uma vence | Só o `socketId` vencedor tem pontuação alterada | `factory.ts`, `lobby/ranking.tsx`, `reducer.ts` |
+| T26 | Troca de sala | Jogar, trocar para outro lobby e retornar | Pontos zeram ao mudar de lobby; eventos atrasados não poluem novo lobby | `manager.ts`, `reducer.ts` |
+| T27 | Layout de lobby | Inspecionar a tela larga e em largura inferior a 1100 px | Placar ao lado do botão Jogar em tela larga; empilhado em telas estreitas; faixa inferior legível | `lobby/style.ts`, `lobby/rankingStyle.ts` |
 
 ### Distinção entre build, teste local e teste publicado
 

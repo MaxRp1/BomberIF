@@ -1,5 +1,5 @@
 import { Server } from 'socket.io'
-import { BLASTS, BOMBS, BONUS, BONUSES, SPRITES, STAGES } from '#/constants'
+import { BLASTS, BOMBS, BONUS, BONUSES, INITIAL_POSITION, SPRITES, STAGES } from '#/constants'
 import {
   BlockDTO,
   GameStateDTO,
@@ -35,15 +35,23 @@ export function startGameFactory (
     // Registra o jogador no sistema de ranking
     playerIds.push(socketId)
 
+    const sprite = Math.floor(Math.random() * SPRITES)
     const size = players.push({
       nick: p.data.nick,
-      sprite: Math.floor(Math.random() * SPRITES),
+      sprite,
       wins: p.data.wins ?? 0
     })
 
     const index = size - 1
 
+    // Os parâmetros de combate do Mamedes vivem apenas durante a rodada.
     p.data.index = index
+    p.data.spriteId = sprite
+    p.data.playerX = INITIAL_POSITION[index][0]
+    p.data.playerY = INITIAL_POSITION[index][1]
+    p.data.alive = true
+    p.data.skillReadyAt = 0
+    p.data.stunnedUntil = 0
     p.emit('myself', index)
   }
 

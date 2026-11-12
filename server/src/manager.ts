@@ -110,11 +110,12 @@ async function enterLobby (
   socket.data.lobbyId = lobbyId
   socket.data.isPairing = false
 
-  const dto = updateLobbyFactory(io, lobbyId)
-
+  // Zera antes de criar o DTO, para os demais verem o placar correto.
   if (previousLobbyId !== lobbyId) {
     socket.data.wins = 0
   }
+
+  const dto = updateLobbyFactory(io, lobbyId)
 
   dto && sendToLobby(
     io,

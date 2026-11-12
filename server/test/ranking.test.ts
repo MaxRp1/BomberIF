@@ -15,7 +15,7 @@ const GRACE_WAIT_MS = 460
 interface Emitted {
   room: string
   event: string
-  payload: { p: number; wins?: number }
+  payload: { p?: number; wins?: number; lobbyId?: string; socketId?: string }
 }
 
 function scenario(room: string, numberOfPlayers: number) {
@@ -23,7 +23,7 @@ function scenario(room: string, numberOfPlayers: number) {
   const players = Array.from({ length: numberOfPlayers }, (_, index) => ({
     id: `${room}-player-${index}`,
     connected: true,
-    rooms: new Set([room]),
+    rooms: new Set([room, 'lobby']),
     data: { roomId: room, lobbyId: 'lobby', index, wins: 0 }
   })) as unknown as Socket[]
 
@@ -44,6 +44,7 @@ function scenario(room: string, numberOfPlayers: number) {
   return {
     io, players, emitted,
     wins: () => emitted.filter(item => item.event === 'wins_update'),
+    lobbyWins: () => emitted.filter(item => item.event === 'lobby_wins_update'),
     kills: () => emitted.filter(item => item.event === 'kl'),
     cleanup: () => cancelRankingRound(room)
   }
@@ -58,6 +59,11 @@ test('uma vitória é somada apenas ao último sobrevivente', async () => {
     assert.equal(s.players[0].data.wins, 0)
     assert.equal(s.players[1].data.wins, 1)
     assert.deepEqual(s.wins().map(item => item.payload), [{ p: 1, wins: 1 }])
+    assert.deepEqual(s.lobbyWins(), [{
+      room: 'lobby',
+      event: 'lobby_wins_update',
+      payload: { lobbyId: 'lobby', socketId: s.players[1].id, wins: 1 }
+    }])
   } finally {
     s.cleanup()
   }
@@ -85,6 +91,7 @@ test('mortes simultâneas cancelam a pontuação (empate)', async () => {
     await delay(GRACE_WAIT_MS)
 
     assert.equal(s.wins().length, 0)
+    assert.equal(s.lobbyWins().length, 0)
     assert.equal(s.players[0].data.wins, 0)
     assert.equal(s.players[1].data.wins, 0)
   } finally {
@@ -119,6 +126,7 @@ test('saída de jogador vivo não pontua e permite outras eliminações', async 
     await delay(GRACE_WAIT_MS)
 
     assert.equal(s.wins().length, 0)
+    assert.equal(s.lobbyWins().length, 0)
     assert.equal(s.players[2].data.wins, 0)
   } finally {
     s.cleanup()
@@ -144,6 +152,21 @@ test('partida individual não concede vitória', () => {
   try {
     assert.equal(registerDefeat(s.io, s.players[0]), false)
     assert.equal(s.wins().length, 0)
+  } finally {
+    s.cleanup()
+  }
+})
+
+test('não envia placar ao lobby quando vencedor não está mais nele', async () => {
+  const s = scenario('test-left-lobby', 2)
+  try {
+    // Uma mudança de lobby pode ocorrer antes do fim da janela de 400 ms.
+    s.players[1].rooms.delete('lobby')
+    assert.equal(registerDefeat(s.io, s.players[0]), true)
+    await delay(GRACE_WAIT_MS)
+
+    assert.equal(s.wins().length, 1)
+    assert.equal(s.lobbyWins().length, 0)
   } finally {
     s.cleanup()
   }

@@ -9674,3 +9674,38 @@ Ao modificar uma habilidade ou infraestrutura, registrar no mesmo commit de docu
 ---
 
 **Critério de manutenção:** sempre revisar `doc/doc_bomberIF_novo_atualizado.md` quando alterar regras, DTOs, mecanismos de rede, elementos visuais, ranking ou deploy. Não editar o documento original recuperado para explicar mudanças posteriores.
+
+
+## CORREÇÃO 12/11/2026 — MORTE EM PARTIDA SOLO E TÉRMINO SEM SOBREVIVENTES
+
+### Sintoma anterior
+Quando apenas uma pessoa entrava na partida e morria, a animação de morte acontecia localmente, mas a tela não voltava ao lobby. A mesma ausência de retorno podia ocorrer se todos os participantes fossem eliminados: `Canvas.checkWin()` exigia exatamente um jogador ativo.
+
+### Causa e alterações
+- `server/src/ranking.ts:beginRankingRound` descartava rodadas de um participante, de forma que `registerDefeat` retornava `false` e `server/src/game.ts:onKill` não retransmitia o evento `kl`. Agora toda rodada com ao menos um socket é rastreada; `scoreEnabled` permanece `false` quando há somente uma pessoa, evitando vitória/placar sem adversário.
+- `client/src/game/components/canvas/index.tsx:checkWin` agora encerra tanto com um sobrevivente quanto com zero. Se não houver sobreviventes, para a progressão da arena, cancela eventual encerramento pendente, não reproduz a comemoração e retorna ao lobby após 750 ms, permitindo visualizar a animação de morte.
+- Um resultado com um sobrevivente mantém o comportamento legado (toast e som local para quem venceu, saída da tela ao final do som; os demais voltam após 750 ms). `checkWin` cancela o timer anterior se uma segunda eliminação transformar um vencedor provisório em empate antes da comemoração.
+- `GameApp` continua desmontando normalmente ao sair da partida e envia `exit_pairing`; a sessão do lobby permanece preservada.
+
+### Eventos e regras do servidor
+`Player.kill(true)` → `emitKill` (`kl`) → `onKill` → `registerDefeat` → `io.to(roomId).emit('kl', {p: socket.data.index})` → `Canvas.onKill` → `Canvas.checkWin` → `setShowGame(false)` → lobby.
+
+Regra do placar: uma partida individual **não** concede vitória. O evento `kl` serve para confirmar uma eliminação, não para pontuar. A proteção contra duplicação da morte permanece no `Set` dos jogadores vivos.
+
+### Testes de regressão
+| Caso | Passos | Resultado esperado |
+|---|---|---|
+| SOLO-01 | Entrar sozinho, armar uma bomba e morrer | `kl` confirmado; a morte é exibida; retorno automático ao lobby em ~750 ms após a confirmação |
+| SOLO-02 | Entrar sozinho e sobreviver | Nenhuma vitória concedida automaticamente; a partida prossegue normalmente |
+| SOLO-03 | Morrer sozinho e iniciar outra partida | Novo pareamento funciona, sem necessidade de recarregar a página |
+| SOLO-04 | Repetir `kl` para o mesmo socket | Apenas uma eliminação confirmada |
+| MULTI-01 | Morrer um jogador e sobreviver outro | Placar do vencedor continua aumentando; retorno ao lobby normal |
+| MULTI-02 | Morte simultânea de todos os jogadores | Nenhuma vitória pontuada e todas as interfaces saem da rodada |
+| MULTI-03 | Abandono/desconexão | Não gera vitória indevida; fluxo anterior de eliminação visual preservado |
+
+Automação no servidor: `cd server && yarn test:ranking` (a suíte inclui os testes de morte individual confirmada e todos os jogadores eliminados). Também executar `yarn build` em `server/` e `client/`, além de testar manualmente com navegador e 2–4 pessoas. Não considerar testes de rede concluídos até executá-los.
+
+### Próxima evolução proposta: tela de vitória
+A tela de vitória/derrota **não é implementada nesta correção**. O comportamento atual ainda reproduz o som via `client/src/game/sound/win.ts:playWinSound` e mostra um toast em `Canvas.checkWin`. Para uma tela completa, recomenda-se definir um evento de resultado de rodada confirmado pelo servidor (incluindo empate e desconexão), pausar o loop e mostrar um overlay responsivo com vencedor, placar e botões de lobby/próxima rodada. Deve-se preservar a tolerância de 400 ms de `server/src/ranking.ts` para impedir comemorações incorretas após mortes simultâneas, e garantir fallback caso o navegador bloqueie a reprodução de áudio.
+
+Arquivos envolvidos para futura tela: `server/src/ranking.ts`, `shared/dto.ts`, `client/src/game/components/canvas/index.tsx`, novos componentes/estilos de resultado e `client/src/game/sound/win.ts`. Reavaliar lógica de `Canvas.checkWin` na transição para um resultado único do servidor.

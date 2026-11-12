@@ -206,31 +206,39 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
   }
 
   function checkWin () {
-    let active = 0
-    const players = state!.players.players
-    players.forEach(p => {
-      if (p.active) active++
-    })
-    if (active !== 1) return
-    const timer = state!.entities.get('timer')
-    timer && state!.entities.remove(timer)
-    const blockFiller = state!.entities.get('blockFiller')
-    blockFiller && state!.entities.remove(blockFiller)
+    if (!state) return
+
+    const players = state.players.players
+    const alive = players.filter(p => p.active)
+    if (alive.length > 1) return
+
+    // Uma segunda morte pode transformar um vencedor provisório em empate.
+    clearTimeout(timeRef.current.endGame)
+
+    const timer = state.entities.get('timer')
+    if (timer) state.entities.remove(timer)
+    const blockFiller = state.entities.get('blockFiller')
+    if (blockFiller) state.entities.remove(blockFiller)
     Assets.stop()
+
+    // Morte em partida solo ou eliminação simultânea de todos os jogadores.
+    // O servidor já confirmou 'kl'; não existe vencedor para anunciar.
     const timeout = 750
-    for (const i in players) {
-      if (players[i].active) {
-        if (players[i].myself) {
-          timeRef.current.endGame = setTimeout(() => {
-            toast.success('Não foi jubilado!', {icon:'👑',theme:'colored',autoClose:6000})
-            playWinSound(() => setShowGame(false))
-          }, timeout)
-        }
-        else {
-          timeRef.current.endGame = setTimeout(() => setShowGame(false), timeout)
-        }
-        break
-      }
+    if (alive.length === 0) {
+      stopWinSound()
+      timeRef.current.endGame = setTimeout(() => setShowGame(false), timeout)
+      return
+    }
+
+    const winner = alive[0]
+    if (winner.myself) {
+      timeRef.current.endGame = setTimeout(() => {
+        toast.success('Não foi jubilado!', {icon:'👑',theme:'colored',autoClose:6000})
+        playWinSound(() => setShowGame(false))
+      }, timeout)
+    }
+    else {
+      timeRef.current.endGame = setTimeout(() => setShowGame(false), timeout)
     }
   }
 

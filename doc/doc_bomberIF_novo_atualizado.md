@@ -10144,3 +10144,17 @@ yarn build
 - **Não afirmar valores de melhora** sem comparar medidas antes/depois em condições equivalentes.
 
 **GDD:** atualizar a seção de mecânicas multiplayer com o novo princípio de prioridade de rede e documentar a implementação como em validação.
+
+
+### Validação automatizada no Kali — 13/11/2026
+Os resultados fornecidos pelo projeto após `git switch --track origin/perf/network-bomb-realtime-2026-11-13` confirmam:
+- `yarn test:network`: **6/6 aprovados**;
+- `yarn test:lobby`: **13/13 aprovados**;
+- `yarn test:ranking`: **12/12 aprovados**;
+- `yarn test:stun`: **8/8 aprovados**;
+- `yarn test:frank`: **7/7 aprovados**;
+- **46 testes aprovados, 0 falhas**, com `yarn build` do servidor e `yarn build` do frontend concluídos.
+- Frontend compilado **com avisos não impeditivos** sobre ESLint (hooks, comparações e acessibilidade em outros componentes) e compatibilidade TypeScript 5.9.3 / `@typescript-eslint/typescript-estree`.
+- O build de produção do cliente foi gerado em `build/static/js/main.ff4b937b.js` (147,69 kB gzip). Isso não é evidência de deploy nem de medição de latência.
+
+**Próximo portão de qualidade:** executar cliente e servidor da mesma branch localmente, abrir duas sessões simultâneas e confirmar continuidade de movimento, bomba aparecendo nos dois clientes, paradas confiáveis, RTT não vazio com servidor atualizado, uso de WebSocket e ausência de regressões com lag simulado. O usuário ainda não informou resultados desses testes; portanto a melhora perceptível não está comprovada. PR #11 permanece em rascunho e sem merge/deploy.

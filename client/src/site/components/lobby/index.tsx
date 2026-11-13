@@ -1,20 +1,16 @@
 import { useEffect, useState } from 'react'
-import { useDispatch, useSelector } from 'react-redux'
 import { LobbyDTO } from '#/dto'
 import { copyToClipboard } from '~/services/clipboard'
 import { emitLobbyReady, socket } from '~/services/socket'
 import OnlinePlayers from '~/site/components/onlinePlayers'
-import Toggle from '~/site/components/toggle'
-import { setFillRoom } from '~/store/options/actions'
-import { OptionsDTO } from '~/store/options/reducer'
 import { playLobbySound, stopLobbySound } from '~/game/sound/lobby'
 import { joinRoom } from './method'
 import LobbyRanking from './ranking'
-import CharacterSelect, { characterName } from './characterSelect'
+import CharacterSelect, { characterName, SpritePortrait } from './characterSelect'
 import {
-  Container, LobbyContainer, LobbyId, Options, OptionsContainer,
-  Play, PlayArea, PlayContainer, PlayBorder, Player, PlayersContainer,
-  ChoiceButton, ReadyButton, LobbyStatus, PlayerStatus
+  Container, SidePanel, RoomHeader, LobbyId, Options, OnlineStatus,
+  FooterBar, PlayerSummary, AvatarSlot, PlayerIdentity, PlayerStatus,
+  ChoiceButton, ReadyButton, PlayButton, FooterHint
 } from './style'
 
 interface LobbyProps {
@@ -23,13 +19,15 @@ interface LobbyProps {
 }
 
 export default function Lobby({ lobby, setShowOptions }: LobbyProps) {
-  const dispatch = useDispatch()
-  const options = useSelector<any, OptionsDTO>(state => state.options)
   const [selectionOpen, setSelectionOpen] = useState(false)
 
   const myself = lobby.players.find(player => player.socketId === socket.id)
+  const mySprite = myself?.selectedSprite ?? null
   const readyCount = lobby.players.filter(player => player.ready).length
-  const everyoneReady = lobby.players.length > 0 && readyCount === lobby.players.length
+  const totalPlayers = lobby.players.length
+  const everyoneReady = totalPlayers > 0 && readyCount === totalPlayers
+  const canPlay = everyoneReady && myself?.ready === true
+  const missingReady = totalPlayers - readyCount
 
   useEffect(() => {
     playLobbySound()
@@ -37,7 +35,8 @@ export default function Lobby({ lobby, setShowOptions }: LobbyProps) {
   }, [])
 
   function handlePlay() {
-    if (!everyoneReady || !myself?.ready) return
+    if (!canPlay) return
+    // A confirmação final de todos os jogadores ocorre novamente no servidor.
     stopLobbySound()
     joinRoom()
   }
@@ -49,58 +48,89 @@ export default function Lobby({ lobby, setShowOptions }: LobbyProps) {
 
   return (
     <Container>
-      <PlayArea>
-        <PlayContainer>
-          <ChoiceButton type="button" onClick={() => setSelectionOpen(true)}>
-            <strong>🎭 ESCOLHER PERSONAGEM</strong>
-            <span>{characterName(myself?.selectedSprite ?? null)}</span>
-          </ChoiceButton>
-          <ReadyButton
+      <SidePanel aria-label="Informações da sala">
+        <RoomHeader>
+          <LobbyId
             type="button"
-            $ready={myself?.ready === true}
-            disabled={!myself}
-            onClick={toggleReady}
-            aria-pressed={myself?.ready === true}
+            title="Copiar código da sala"
+            aria-label={`Copiar código da sala ${lobby.lobbyId}`}
+            onClick={() => copyToClipboard(lobby.lobbyId)}
           >
-            {myself?.ready ? '✓ PRONTO — CANCELAR' : '○ MARCAR PRONTO'}
-          </ReadyButton>
-          <PlayBorder
-            type="button"
-            disabled={!everyoneReady || !myself?.ready}
-            onClick={handlePlay}
-            title={everyoneReady ? 'Iniciar partida' : 'Aguardando todos os participantes marcarem Pronto'}
-          >
-            <Play>Jogar!</Play>
-          </PlayBorder>
-          <LobbyStatus role="status">
-            {readyCount}/{lobby.players.length} prontos
-            <small>{everyoneReady ? 'Todos prontos! A partida pode começar.' : 'Aguardando os outros jogadores.'}</small>
-          </LobbyStatus>
-          <Toggle on={options.fillRoom} onClick={() => dispatch(setFillRoom())}>Preencher Sala</Toggle>
-          <OnlinePlayers/>
-        </PlayContainer>
+            <span>SALA</span>
+            <strong>{lobby.lobbyId}</strong>
+            <small>COPIAR</small>
+          </LobbyId>
+          <Options type="button" onClick={() => setShowOptions(true)}>⚙ Opções</Options>
+        </RoomHeader>
         <LobbyRanking players={lobby.players}/>
-      </PlayArea>
-      <LobbyContainer>
-        <OptionsContainer>
-          <LobbyId onClick={() => copyToClipboard(lobby.lobbyId)}>{lobby.lobbyId}</LobbyId>
-          <Options onClick={() => setShowOptions(true)}>Opções</Options>
-        </OptionsContainer>
-        <PlayersContainer>
-          {lobby.players.map(player => (
-            <Player key={player.socketId}>
-              <strong>{player.nick ?? 'Jogador'}</strong>
-              <span title={characterName(player.selectedSprite)}>{characterName(player.selectedSprite)}</span>
-              <PlayerStatus $ready={player.ready}>{player.ready ? '✓ Pronto' : '○ Pendente'}</PlayerStatus>
-            </Player>
-          ))}
-        </PlayersContainer>
-      </LobbyContainer>
-      {selectionOpen && <CharacterSelect
-        selected={myself?.selectedSprite ?? null}
-        ready={myself?.ready === true}
-        onClose={() => setSelectionOpen(false)}
-      />}
+        <OnlineStatus><OnlinePlayers/></OnlineStatus>
+      </SidePanel>
+
+      <FooterBar aria-label="Preparação da partida">
+        <PlayerSummary>
+          <AvatarSlot aria-hidden="true">
+            {mySprite === null
+              ? <span className="random-avatar">🎲</span>
+              : <SpritePortrait sprite={mySprite} />}
+          </AvatarSlot>
+          <PlayerIdentity>
+            <span className="player-label">SEU JOGADOR · {totalPlayers}/4 NA SALA</span>
+            <strong title={myself?.nick ?? 'Jogador'}>{myself?.nick ?? 'Jogador'}</strong>
+            <span className="character-label">{characterName(mySprite)}</span>
+            <PlayerStatus $ready={myself?.ready === true}>
+              {myself?.ready ? '● PRONTO' : '○ PENDENTE'}
+            </PlayerStatus>
+          </PlayerIdentity>
+        </PlayerSummary>
+
+        <ChoiceButton
+          type="button"
+          disabled={!myself}
+          onClick={() => setSelectionOpen(true)}
+          title="Abrir seleção dos personagens"
+        >
+          <span className="action-icon" aria-hidden="true">✦</span>
+          <span className="action-text">
+            <strong>ESCOLHER PERSONAGEM</strong>
+            <small>{characterName(mySprite)}</small>
+          </span>
+        </ChoiceButton>
+
+        <ReadyButton
+          type="button"
+          $ready={myself?.ready === true}
+          disabled={!myself}
+          onClick={toggleReady}
+          aria-pressed={myself?.ready === true}
+        >
+          <strong>{myself?.ready ? '✓ PRONTO' : '○ MARCAR PRONTO'}</strong>
+          <small>{myself?.ready ? 'Clique para cancelar' : 'Confirme sua escolha'}</small>
+        </ReadyButton>
+
+        <PlayButton
+          type="button"
+          disabled={!canPlay}
+          onClick={handlePlay}
+          title={canPlay ? 'Iniciar partida' : 'Todos precisam marcar Pronto para jogar'}
+        >
+          <strong>JOGAR!</strong>
+          <small>{everyoneReady ? 'TODOS PRONTOS' : `${readyCount}/${totalPlayers} PRONTOS`}</small>
+        </PlayButton>
+
+        <FooterHint role="status" aria-live="polite">
+          {everyoneReady
+            ? 'Todos preparados! Qualquer participante pode iniciar a rodada.'
+            : `Aguardando ${missingReady} ${missingReady === 1 ? 'jogador' : 'jogadores'} marcar ${missingReady === 1 ? 'Pronto' : 'Pronto'}.`}
+        </FooterHint>
+      </FooterBar>
+
+      {selectionOpen && (
+        <CharacterSelect
+          selected={mySprite}
+          ready={myself?.ready === true}
+          onClose={() => setSelectionOpen(false)}
+        />
+      )}
     </Container>
   )
 }

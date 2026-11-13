@@ -4,6 +4,8 @@ export const SelectionBackdrop = styled.div`
   position: fixed;
   inset: 0;
   z-index: 150;
+  // O lobby permite cliques só nos painéis: o modal precisa reativá-los.
+  pointer-events: auto;
   display: grid;
   place-items: center;
   padding: 12px;

@@ -12,6 +12,7 @@ export interface PlayerDTO {
   playerX: number
   playerY: number
   alive: boolean
+  frankLifeUsed: boolean
   skillReadyAt: number
   stunnedUntil: number
 }

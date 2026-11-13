@@ -14,7 +14,7 @@ export const Container = styled.div`
   z-index: 2;
   font-family: Arial, sans-serif;
 
-  // O CSS global transforma botões em losangos; aqui eles são retangulares.
+  /* O CSS global transforma botões em losangos; aqui eles são retangulares. */
   button {
     clip-path: none;
     border-radius: 0;

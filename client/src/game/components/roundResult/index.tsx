@@ -59,7 +59,7 @@ export default function RoundResult({ result, myself }: RoundResultProps) {
   const subtitle = victory
     ? result.winner!.index === myself
       ? 'VOCÊ NÃO FOI JUBILADO!'
-      : 'UM CAMPEÃO FOI COROADO'
+      : 'UM DIPLOMA FOI ENTREGUE'
     : result.outcome === 'draw'
       ? 'NINGUÉM SOBREVIVEU À ARENA'
       : result.outcome === 'abandoned'
@@ -73,7 +73,7 @@ export default function RoundResult({ result, myself }: RoundResultProps) {
     <Backdrop role="dialog" aria-modal="true" aria-label="Resultado da partida">
       <Glow />
       <Card>
-        <Eyebrow>BOMBERIF · RESULTADO DA RODADA</Eyebrow>
+        <Eyebrow>RESULTADO DA RODADA</Eyebrow>
         <Title>{title}</Title>
         <Subtitle>{subtitle}</Subtitle>
 

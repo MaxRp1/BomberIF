@@ -2,7 +2,9 @@ import io from 'socket.io-client'
 import { CallAnswerDTO, CallOfferDTO, CharacterSelectionDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, JoinRoomDTO, KillDTO, LobbyReadyDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
 import { SERVER_URL } from '~/constants'
 
-export const socket = io(SERVER_URL)
+// A primeira conexão preserva o fallback HTTP Polling -> WebSocket.
+// Após um upgrade bem-sucedido, reconexões HTTPS tentam WebSocket primeiro.
+export const socket = io(SERVER_URL, { rememberUpgrade: true })
 
 export function emitCallAnswer (dto:CallAnswerDTO) {
   socket.emit('call_answer', dto)

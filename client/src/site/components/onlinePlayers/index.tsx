@@ -24,7 +24,7 @@ export default function OnlinePlayers () {
   }, [])
 
   return (
-    <Container loading={loading} onClick={getPlayersCount}>
+    <Container type="button" $loading={loading} onClick={getPlayersCount} aria-label="Atualizar número de jogadores online">
       {count}
     </Container>
   )

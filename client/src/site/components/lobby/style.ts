@@ -14,6 +14,13 @@ export const Container = styled.div`
   z-index: 2;
   font-family: Arial, sans-serif;
 
+  // O CSS global transforma botões em losangos; aqui eles são retangulares.
+  button {
+    clip-path: none;
+    border-radius: 0;
+    transform: none;
+  }
+
   @media (max-width: 1100px) {
     position: relative;
     inset: auto;
@@ -89,14 +96,14 @@ export const LobbyId = styled.button`
   min-width: 0;
   box-sizing: border-box;
   padding: 8px;
-  background: rgba(14, 24, 38, .95);
-  border: 2px solid #527089;
-  box-shadow: 3px 3px 0 rgba(5, 8, 16, .85);
-  color: #f1f6ff;
+  background: #24262b;
+  border: 2px solid #716453;
+  box-shadow: 3px 3px 0 #101115;
+  color: #ede5d4;
   cursor: pointer;
 
   span {
-    color: #a6bad0;
+    color: #b2a793;
     font-size: 9px;
     font-weight: 700;
     letter-spacing: .5px;
@@ -105,31 +112,16 @@ export const LobbyId = styled.button`
     overflow: hidden;
     text-overflow: ellipsis;
     font-family: 'Courier New', monospace;
-    color: #dafa6c;
+    color: #d9b466;
     font-size: 16px;
   }
   small {
     font-size: 8px;
-    color: #c6d0de;
+    color: #bfb2a1;
   }
 
-  &:hover { border-color: #a7d685; }
-  &:focus-visible { outline: 3px solid #fff2a6; outline-offset: 2px; }
-`
-
-export const Options = styled.button`
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  background: rgba(30, 44, 65, .95);
-  border: 2px solid #61748e;
-  color: #f1f6ff;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
-
-  &:hover { border-color: #a5c1e7; background: #394e6e; }
-  &:focus-visible { outline: 3px solid #fff2a6; outline-offset: 2px; }
+  &&:hover { background: #303037; border-color: #d0ad6a; color: #f4e8d5; }
+  &:focus-visible { outline: 3px solid #f0d796; outline-offset: 2px; }
 `
 
 export const OnlineStatus = styled.div`
@@ -143,32 +135,23 @@ export const FooterBar = styled.section`
   display: grid;
   grid-template-columns: minmax(205px, 1.4fr) minmax(170px, 1fr) minmax(150px, .85fr) minmax(155px, 1fr);
   align-items: stretch;
-  gap: 11px;
+  gap: 10px;
   box-sizing: border-box;
   width: 100%;
   margin-top: auto;
-  padding: 16px 18px 10px;
-  background: linear-gradient(115deg, rgba(13, 27, 37, .96), rgba(17, 24, 44, .96));
-  border: 2px solid rgba(98, 133, 136, .9);
-  border-top: 4px solid #8ce343;
-  box-shadow: 6px 7px 0 rgba(5, 9, 17, .78), inset 0 0 0 1px rgba(171, 222, 167, .09);
+  padding: 14px;
+  background: rgba(23, 25, 29, .97);
+  border: 2px solid #61594c;
+  border-top: 3px solid #c3a56d;
+  border-radius: 0;
+  clip-path: none;
+  box-shadow: 4px 4px 0 rgba(9, 10, 12, .86);
   pointer-events: auto;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: -4px;
-    left: 0;
-    width: 19%;
-    height: 4px;
-    background: #e2d46a;
-  }
 
   @media (max-width: 1100px) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: 12px;
     gap: 9px;
-    margin-top: auto;
   }
 
   @media (max-width: 560px) {
@@ -184,9 +167,11 @@ export const PlayerSummary = styled.div`
   min-width: 0;
   padding: 9px 12px;
   box-sizing: border-box;
-  background: linear-gradient(110deg, rgba(46, 71, 53, .88), rgba(24, 46, 47, .62));
-  border: 1px solid #4c8d60;
-  border-left: 5px solid #9de452;
+  background: #252e28;
+  border: 1px solid #50624c;
+  border-left: 4px solid #8ca75e;
+  border-radius: 0;
+  clip-path: none;
 
   @media (max-width: 1100px) and (min-width: 561px) {
     grid-column: 1;
@@ -204,8 +189,8 @@ export const AvatarSlot = styled.div`
   justify-content: center;
   width: 54px;
   height: 58px;
-  background: #1b3034;
-  border: 1px solid #7bba79;
+  background: #1a211c;
+  border: 1px solid #738b65;
 
   canvas {
     display: block;
@@ -226,13 +211,13 @@ export const PlayerIdentity = styled.div`
   align-items: flex-start;
   gap: 3px;
   min-width: 0;
-  color: #f5ffe6;
+  color: #e8e5d9;
 
   .player-label {
     font-size: 9px;
     letter-spacing: .6px;
     font-weight: 700;
-    color: #bbdda5;
+    color: #acb998;
   }
 
   strong {
@@ -249,7 +234,7 @@ export const PlayerIdentity = styled.div`
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 11px;
-    color: #dfecdd;
+    color: #c6cabb;
   }
 `
 
@@ -257,7 +242,7 @@ export const PlayerStatus = styled.span<{ $ready: boolean }>`
   font-size: 9px;
   font-weight: 800;
   letter-spacing: .4px;
-  color: ${p => p.$ready ? '#a8f49f' : '#f4c47c'};
+  color: ${p => p.$ready ? '#a7cf90' : '#d6ac74'};
 `
 
 const actionBase = `
@@ -271,17 +256,20 @@ const actionBase = `
   cursor: pointer;
   font-family: Arial, sans-serif;
   transition: background .15s ease, border-color .15s ease, transform .15s ease;
+  clip-path: none;
+  border-radius: 0;
+  transform: none;
   &:disabled { cursor: not-allowed; }
-  &:focus-visible { outline: 3px solid #fff2a6; outline-offset: 2px; }
+  &:focus-visible { outline: 3px solid #f0d796; outline-offset: 2px; }
 `
 
 export const ChoiceButton = styled.button`
   ${actionBase}
   justify-content: flex-start;
   gap: 9px;
-  color: #fff1cd;
-  background: #2a3546;
-  border: 2px solid #b89658;
+  color: #eadcc5;
+  background: #36322d;
+  border: 2px solid #937b57;
 
   .action-icon {
     flex: 0 0 auto;
@@ -289,8 +277,8 @@ export const ChoiceButton = styled.button`
     place-items: center;
     width: 29px;
     height: 32px;
-    background: #46515c;
-    color: #ffe4a9;
+    background: #4a4033;
+    color: #dcb675;
     font-size: 21px;
   }
 
@@ -308,12 +296,13 @@ export const ChoiceButton = styled.button`
     white-space: nowrap;
     text-overflow: ellipsis;
     font-size: 11px;
-    color: #ccd8e7;
+    color: #c5b8a6;
   }
 
-  &:hover:not(:disabled) { background: #37455b; border-color: #f1d187; }
-  &:active:not(:disabled) { transform: translateY(1px); }
-  &:disabled { opacity: .5; }
+  &&:hover:not(:disabled) { background: #494036; color: #f7e5c8; border-color: #c8a873; }
+  &&:active:not(:disabled) { transform: translateY(1px); }
+  &:disabled { opacity: .6; }
+  &&:disabled:hover { filter: none; }
 
   @media (max-width: 560px) {
     grid-column: 1 / -1;
@@ -327,15 +316,16 @@ export const ReadyButton = styled.button<{ $ready: boolean }>`
   ${actionBase}
   flex-direction: column;
   gap: 6px;
-  background: ${p => p.$ready ? '#277351' : '#33465b'};
-  color: #f5fff6;
-  border: 2px solid ${p => p.$ready ? '#a4e8ad' : '#809ab0'};
+  background: ${p => p.$ready ? '#365944' : '#373b3b'};
+  color: #eae7dc;
+  border: 2px solid ${p => p.$ready ? '#81ad83' : '#73766e'};
   strong { font-size: clamp(11px, 1.05vw, 14px); white-space: nowrap; }
-  small { font-size: 10px; font-weight: 400; color: #d6e8df; }
+  small { font-size: 10px; font-weight: 400; color: #c0c6b9; }
 
-  &:hover:not(:disabled) { background: ${p => p.$ready ? '#326e50' : '#455b70'}; }
-  &:active:not(:disabled) { transform: translateY(1px); }
-  &:disabled { opacity: .5; }
+  &&:hover:not(:disabled) { background: ${p => p.$ready ? '#426c51' : '#494e4e'}; color: #f3eee2; }
+  &&:active:not(:disabled) { transform: translateY(1px); }
+  &:disabled { opacity: .6; }
+  &&:disabled:hover { filter: none; }
   @media (max-width: 560px) { min-height: 67px; padding: 7px 5px; }
 `
 
@@ -343,10 +333,10 @@ export const PlayButton = styled.button`
   ${actionBase}
   flex-direction: column;
   gap: 5px;
-  color: #051927;
-  background: #31c4e9;
-  border: 3px solid #98eaff;
-  box-shadow: inset 0 -5px 0 rgba(5, 56, 77, .18);
+  color: #1d1b18;
+  background: #caa060;
+  border: 3px solid #e2bf83;
+  box-shadow: inset 0 -3px 0 rgba(68, 48, 25, .18);
   strong {
     font-family: 'Courier New', monospace;
     font-size: clamp(21px, 1.9vw, 28px);
@@ -354,13 +344,14 @@ export const PlayButton = styled.button`
   }
   small { font-size: 10px; font-weight: bold; letter-spacing: .5px; }
 
-  &:hover:not(:disabled) { background: #8beeff; }
-  &:active:not(:disabled) { transform: translateY(2px); }
+  &&:hover:not(:disabled) { background: #e0b573; color: #171511; }
+  &&:active:not(:disabled) { transform: translateY(2px); }
+  &&:disabled:hover { background: #333639; color: #aeb2ad; }
   &:disabled {
-    background: #2d4655;
-    border-color: #476576;
+    background: #333639;
+    border-color: #555b5b;
     box-shadow: none;
-    color: #a3b6c3;
+    color: #aeb2ad;
   }
   @media (max-width: 560px) { min-height: 67px; padding: 7px 5px; }
 `
@@ -369,7 +360,7 @@ export const FooterHint = styled.p`
   grid-column: 1 / -1;
   margin: 0;
   padding-top: 1px;
-  color: #a7beca;
+  color: #b9b4a7;
   text-align: center;
   font-size: 10px;
   line-height: 1.3;

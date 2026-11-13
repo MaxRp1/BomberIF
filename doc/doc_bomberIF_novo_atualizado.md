@@ -10090,3 +10090,57 @@ Após a integração do PR #10, foi relatado que Frank ainda pisca apenas no pr�
 5. Se persistir com backend atualizado, inspecionar o evento `frank_life_used` em Network > WS dos navegadores e os logs do Render; verificar se o cliente emite, o servidor recebe/retransmite e o outro navegador aplica `consumeExtraLife()`.
 
 **Status:** correção ainda não validada de ponta a ponta na hospedagem. Não declarar resolvido antes de confirmar a versão do Render e o comportamento em dois clientes.
+
+
+---
+
+## OTIMIZAÇÃO 13/11/2026 — MOVIMENTAÇÃO E PRIORIDADE DE BOMBAS NA REDE
+
+**Status:** implementação experimental na branch `perf/network-bomb-realtime-2026-11-13`. Não mesclar nem publicar antes de medir RTT, executar build/testes e verificar com duas pessoas. Motivação: jogadores recebiam bombas depois do proprietário e, em certas condições, conseguiam atravessar o local antes da mensagem de criação chegar.
+
+### Diagnóstico no código
+- `client/src/game/entities/player.ts:moveTick()` executava `emitMove()` a cada tick local enquanto o personagem andava, aproximadamente 60 vezes por segundo.
+- `client/src/services/socket.ts:emitMove()` e `server/src/game.ts:onMove()` enviavam **todas** essas posições como eventos confiáveis. A fila de pacotes poderia carregar movimentos já obsoletos, atrasando as mensagens cruciais `pb` (bomba), `kl`, `round_result` e habilidades.
+- A colocação de bomba é imediata para quem a criou: `Player.placeBomb()` adiciona localmente o objeto e envia `pb` ao servidor, que o repassa aos demais. Esse caminho depende de latência de rede, processamento e transporte; não há como torná-lo instantâneo em redes distantes.
+- O Socket.IO usa, por padrão, HTTP long-polling inicial com tentativa de upgrade para WebSocket. Quando não há WebSocket, envios frequentes podem se acumular enquanto uma requisição de polling está ocupada.
+
+### Alterações de transmissão
+1. **Simulação mantida em aproximadamente 60 FPS**: o movimento, colisões e renderização continuam por frame no navegador. A frequência da rede foi separada da física.
+2. **Amostras a cada 50 ms (~20 Hz)**: `MOVEMENT_SYNC_INTERVAL_MS=50` em `shared/constants.ts`. `shared/network.ts:shouldSyncMovement()` é testável e utilizado em `Player.moveTick()`. `Player.startMove()` reinicia o controle de envio em mudanças reais de direção ou retomadas, mas não em keydown repetido.
+3. **Posições intermediárias como `volatile`**, tanto no cliente (`socket.volatile.emit('mv', dto)`) quanto na retransmissão do servidor (`io.to(room).volatile.emit('mv', dto)`). Pacotes antigos de movimentação podem ser descartados se o transporte não estiver disponível, em vez de gerar uma fila ilimitada de posições defasadas.
+4. **Paradas continuam confiáveis**: `MoveDTO.m === 0` sempre utiliza `socket.emit` e `io.to(room).emit`. Bombas (`pb`), morte, ranking, habilidades e eventos de partida **não foram convertidos em volatile**.
+5. `client/src/services/socket.ts` ativa `rememberUpgrade:true`: após uma conexão WebSocket bem-sucedida, uma reconexão via HTTPS pode tentar WebSocket diretamente; a primeira conexão conserva o fluxo normal com fallback de polling.
+6. **Medição leve de RTT**: `server/src/ioListener.ts` responde ao evento `net_probe` por callback imediatamente, sem necessidade de sincronizar relógios. `client/src/game/components/canvas/networkLatency.tsx` verifica a cada cinco segundos com timeout de dois segundos e apresenta **PING N ms · WebSocket/Polling** no ranking durante o jogo. O resultado é o RTT de aplicação cliente↔servidor, **não** o atraso exato entre dois usuários.
+7. `client/src/game/components/canvas/index.tsx` e `rankingStyle.ts`: exibem o indicador de rede em espaço discreto junto ao subtítulo do ranking; o componente independente evita reiniciar o Canvas a cada atualização de RTT.
+
+### Testes automatizados
+- `server/test/network.test.ts` (novo) e `server/package.json:test:network`: seis testes cobrindo intervalo de 50 ms, retransmissão volatile, parada confiável, colocação de bomba confiável, rejeição de movimento inválido e bloqueio de movimento sob stun.
+- Suítes de regressão existentes permanecem necessárias: `test:lobby`, `test:ranking`, `test:stun`, `test:frank`.
+
+### Verificação do Kali
+```bash
+cd ~/BomberIF
+git status
+git fetch origin
+git switch --track origin/perf/network-bomb-realtime-2026-11-13
+
+cd server
+yarn test:network
+yarn test:lobby
+yarn test:ranking
+yarn test:stun
+yarn test:frank
+yarn build
+cd ../client
+yarn build
+```
+
+**Teste real:** é obrigatório executar cliente **e servidor** da branch no teste local, já que o backend ainda não reconhece `net_probe` até o deploy. Abrir duas sessões e comparar: ping RTT de cada um, transporte WebSocket/Polling, tempo perceptível entre pressionar bomba e a aparição na tela do adversário, jogabilidade ao andar/soltar teclas, habilidades e explosões. Testar também com rede mais lenta/instável, sem assumir que a variação de internet não altera os resultados.
+
+### Limites e futuras evoluções
+- O código reduz a **fila de tráfego e atraso percebido**, mas não diminui o tempo físico da conexão entre o Brasil e a região do servidor Render. Região do serviço e roteamento de rede devem ser investigados com base nos RTTs observados.
+- Ainda não existe servidor autoritativo para colisões de bombas nem rollback/compensação de latência. Portanto um adversário com ping alto ainda pode atravessar a célula **antes** do aviso da bomba chegar; a otimização diminui a janela de risco, mas não elimina inteiramente esse cenário.
+- A versão atual utiliza detonação local calculada por cliente. A sincronização de instantes de detonação, validação de posição e detecção de colisão no servidor seria uma mudança arquitetural mais profunda, a avaliar separadamente para competitividade.
+- **Não afirmar valores de melhora** sem comparar medidas antes/depois em condições equivalentes.
+
+**GDD:** atualizar a seção de mecânicas multiplayer com o novo princípio de prioridade de rede e documentar a implementação como em validação.

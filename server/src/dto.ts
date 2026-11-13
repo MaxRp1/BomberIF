@@ -7,6 +7,8 @@ export interface PlayerDTO {
   p: number
   wins: number
   spriteId: number
+  selectedSprite: number|null
+  isReady: boolean
   playerX: number
   playerY: number
   alive: boolean

@@ -54,6 +54,7 @@ export function startGameFactory (
     p.data.playerX = INITIAL_POSITION[index][0]
     p.data.playerY = INITIAL_POSITION[index][1]
     p.data.alive = true
+    p.data.frankLifeUsed = false
     p.data.skillReadyAt = 0
     p.data.stunnedUntil = 0
     p.emit('myself', index)

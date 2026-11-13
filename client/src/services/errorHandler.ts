@@ -43,6 +43,12 @@ const handler:{[key:string]:Function|undefined} = {
   },
   [ERRORS.SET_USER_FAILED]: () => {
     toast.error('Erro ao atualizar usuário', toastOptions)
+  },
+  [ERRORS.LOBBY_NOT_READY]: () => {
+    toast.warn('Todos os jogadores precisam marcar Pronto para começar', darkOptions)
+  },
+  [ERRORS.INVALID_CHARACTER_SELECTION]: () => {
+    toast.error('Personagem inválido; selecione um personagem disponível', toastOptions)
   }
 }
 

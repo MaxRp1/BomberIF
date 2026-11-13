@@ -88,9 +88,20 @@ export interface KillDTO {
 }
 
 // Dados de cada integrante do lobby; o socketId evita confundir apelidos iguais.
+// A escolha padrão é null: o servidor sorteia um sprite por rodada.
+export interface CharacterSelectionDTO {
+  sprite: number|null
+}
+
+export interface LobbyReadyDTO {
+  ready: boolean
+}
+
 export interface LobbyPlayerDTO extends UserDTO {
-  socketId : string
-  wins     : number
+  socketId       : string
+  wins           : number
+  selectedSprite : number|null
+  ready          : boolean
 }
 
 export interface LobbyDTO {

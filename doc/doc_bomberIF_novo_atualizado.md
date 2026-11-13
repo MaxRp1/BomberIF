@@ -9791,7 +9791,8 @@ A mensagem visual pode indicar `VOCÊ NÃO FOI JUBILADO!` somente para o vencedo
 - `client/src/site/components/lobby/characterSelect.tsx` e `characterSelectStyle.ts` (novos): seleção com treze opções (Aleatório + 12 sprites), frame frontal recortado, descrições de habilidades, confirmação e modal responsivo.
 - `client/src/store/lobby/actions.ts`: evita reiniciar música e adicionar entradas repetidas ao histórico do navegador a cada atualização do snapshot.
 - `client/src/services/errorHandler.ts`: mensagens para falta de Pronto e sprite inválido.
-- `server/test/lobby.test.ts` (novo): onze testes de validação, fluxo de sala e concorrência.
+- `client/src/site/pages/home/index.tsx`: preserva a instância de Lobby entre snapshots `update_lobby`, evitando fechar o painel de seleção e reiniciar a música quando um amigo muda o Pronto.
+- `server/test/lobby.test.ts` (novo): doze testes de validação, fluxo de sala e concorrência.
 - `server/package.json`: novo script `test:lobby` para executar a suíte de seleção e Pronto.
 
 ### Sequência de rede

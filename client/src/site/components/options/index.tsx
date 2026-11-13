@@ -7,7 +7,7 @@ import Toggle from '~/site/components/toggle'
 import { setCall, setFullScreen, setTouchControls } from '~/store/options/actions'
 import { OptionsDTO } from '~/store/options/reducer'
 import { setUserNick } from '~/store/user/actions'
-import { CloseOptions, Container, FormContainer } from './style'
+import { CloseOptions, Container, FormContainer, SubmitOptions } from './style'
 
 interface OptionsProps {
   setShowOptions : React.Dispatch<React.SetStateAction<boolean>>
@@ -40,15 +40,26 @@ export default function Options ({ setShowOptions } : OptionsProps) {
          {/*Botões, caixas e afins do menu de opções*/}
   return (
     <Container>
-      <CloseOptions onClick={() => setShowOptions(false)}>Voltar</CloseOptions>
-      <FormContainer>
+      <FormContainer aria-label="Configurações do BomberIF">
+        <header className="settings-header">
+          <h2>OPÇÕES<small>Configure sua sala e seus controles</small></h2>
+          <CloseOptions type="button" onClick={() => setShowOptions(false)}>VOLTAR</CloseOptions>
+        </header>
         <form onSubmit={handleChangeLobby}>
-          <input ref={lobbyIdRef} type='text' placeholder='Sala/lobby id' maxLength={ID_LENGTH} minLength={ID_LENGTH} />
-          <input type='submit' value='Entrar!' />
+          <label htmlFor="bomberif-lobby-id">ENTRAR EM OUTRA SALA</label>
+          <div className="form-row">
+            <input id="bomberif-lobby-id" ref={lobbyIdRef} type="text"
+              placeholder="Código da sala" maxLength={ID_LENGTH} minLength={ID_LENGTH} />
+            <SubmitOptions value="ENTRAR" />
+          </div>
         </form>
         <form onSubmit={handleChangeNick}>
-          <input ref={nickRef} type='text' placeholder='Novo nick' maxLength={NICK.MAX} minLength={NICK.MIN} />
-          <input type='submit' value='Mudar' />
+          <label htmlFor="bomberif-nick">ALTERAR APELIDO</label>
+          <div className="form-row">
+            <input id="bomberif-nick" ref={nickRef} type="text"
+              placeholder="Novo nick" maxLength={NICK.MAX} minLength={NICK.MIN} />
+            <SubmitOptions value="MUDAR" />
+          </div>
         </form>
         <Toggle on={options.call} onClick={() => dispatch(setCall())}>
           Habilitar voz

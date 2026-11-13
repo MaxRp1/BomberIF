@@ -1,5 +1,6 @@
 import { LobbyDTO } from '#/dto'
 import { socket } from '~/services/socket'
+import { characterName } from './characterSelect'
 import {
   Board,
   BoardCount,
@@ -55,6 +56,14 @@ export default function LobbyRanking ({ players }: LobbyRankingProps) {
                   {player.nick ?? 'Jogador'}
                 </span>
                 {isMe && <small>VOCÊ</small>}
+                <span className="room-state">
+                  <span className={player.ready ? 'ready' : 'pending'}>
+                    {player.ready ? '● Pronto' : '○ Pendente'}
+                  </span>
+                  <span className="chosen" title={characterName(player.selectedSprite)}>
+                    {characterName(player.selectedSprite)}
+                  </span>
+                </span>
               </span>
               <span className="points">
                 <strong>{player.wins}</strong>

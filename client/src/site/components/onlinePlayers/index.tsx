@@ -12,7 +12,7 @@ export default function OnlinePlayers () {
       if (loading) return
       setLoading(true)
       const {data} = await axios<number>('/players/count')
-      setCount(data > 1 ? `${data} Players Online` : `${data} Player Online`)
+      setCount(data === 1 ? '1 JOGADOR ONLINE' : `${data} JOGADORES ONLINE`)
     }
     finally {
       setTimeout(() => setLoading(false), 1000)
@@ -24,7 +24,7 @@ export default function OnlinePlayers () {
   }, [])
 
   return (
-    <Container loading={loading} onClick={getPlayersCount}>
+    <Container type="button" $loading={loading} onClick={getPlayersCount} aria-label="Atualizar número de jogadores online">
       {count}
     </Container>
   )

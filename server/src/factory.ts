@@ -35,7 +35,11 @@ export function startGameFactory (
     // Registra o jogador no sistema de ranking
     playerIds.push(socketId)
 
-    const sprite = Math.floor(Math.random() * SPRITES)
+    // O servidor sempre decide o sprite efetivo; null mantém o modo aleatório.
+    const selected = p.data.selectedSprite
+    const sprite = typeof selected === 'number' && Number.isInteger(selected) && selected >= 0 && selected < SPRITES
+      ? selected
+      : Math.floor(Math.random() * SPRITES)
     const size = players.push({
       nick: p.data.nick,
       sprite,
@@ -77,7 +81,9 @@ export function updateLobbyFactory (io : Server, lobbyId : string) : LobbyDTO|nu
     players.push({
       nick: p.data.nick,
       socketId: p.id,
-      wins: p.data.wins ?? 0
+      wins: p.data.wins ?? 0,
+      selectedSprite: p.data.selectedSprite ?? null,
+      ready: p.data.isReady === true
     })
   }
   if (players.length) {

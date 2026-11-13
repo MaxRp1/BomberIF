@@ -1,23 +1,22 @@
 import styled from 'styled-components'
+import { pixelFont, retroInset, retroPanel } from '~/site/theme/retro'
 
-// Paleta coerente com o ranking exibido durante a partida.
+// Placar em formato de HUD de fliperama: números e posições nunca dependem do nick.
 export const Board = styled.aside`
-  box-sizing: border-box;
+  ${retroPanel}
   flex: 0 0 auto;
-  width: clamp(220px, 18vw, 280px);
-  max-height: min(55svh, 370px);
+  box-sizing: border-box;
+  width: clamp(238px, 19vw, 292px);
+  max-height: min(57svh, 390px);
+  padding: 12px 11px;
   overflow-y: auto;
-  padding: 13px;
-  color: #f4f7ff;
-  background: linear-gradient(180deg, #1b2839 0%, #101821 100%);
-  border: 2px solid #4a607a;
-  box-shadow: 4px 4px 0 #070c13, inset 0 0 0 2px #26384d;
-  font-family: Arial, sans-serif;
-  font-size: 12px;
+  font-family: 'Trebuchet MS', sans-serif;
+  scrollbar-width: thin;
+  scrollbar-color: #a26342 #1b2028;
 
   @media (max-width: 1100px) {
-    width: min(300px, 88vw);
-    max-height: min(34svh, 250px);
+    width: 100%;
+    max-height: min(34svh, 260px);
     padding: 10px;
   }
 `
@@ -26,78 +25,86 @@ export const BoardHeader = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  border-bottom: 1px solid #405269;
-  padding-bottom: 10px;
-  margin-bottom: 10px;
+  gap: 9px;
+  margin-bottom: 12px;
+  padding: 3px 2px 12px;
+  border-bottom: 3px solid #5d3c3b;
 
   strong {
     display: block;
-    color: #f5cc70;
-    font-size: 13px;
-    letter-spacing: 0.5px;
+    color: #ffbd70;
+    font-family: ${pixelFont};
+    font-size: 9px;
+    line-height: 1.8;
+    letter-spacing: 0;
   }
 
   small {
     display: block;
-    margin-top: 4px;
-    color: #aabbd0;
-    font-size: 9px;
-    letter-spacing: 0.4px;
+    margin-top: 6px;
+    color: #c8b9a8;
+    font-family: 'Trebuchet MS', sans-serif;
+    font-size: 10px;
+    line-height: 1.4;
   }
 `
 
 export const BoardCount = styled.span`
-  flex-shrink: 0;
-  padding: 5px 7px;
-  color: #e2eaf4;
-  background: #293a4e;
-  font-weight: 700;
+  ${retroInset}
+  flex: 0 0 auto;
+  padding: 8px 6px;
+  font-family: ${pixelFont};
+  color: #ffde9a;
+  font-size: 10px;
+  line-height: 1.3;
 `
 
 export const BoardList = styled.ol`
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
   margin: 0;
-  padding: 0;
+  padding: 0 1px;
   list-style: none;
 `
 
 export const BoardRow = styled.li`
-  box-sizing: border-box;
+  ${retroInset}
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 42px;
-  padding: 6px;
-  background: #243244;
-  border: 1px solid #41546d;
+  min-height: 59px;
+  padding: 8px 7px;
+  background: #292937;
+  box-sizing: border-box;
 
   &.leader {
-    background: #393322;
-    border-color: #ad8740;
+    background: #3e302b;
+    border-color: #b36a3e;
+    box-shadow: inset 3px 3px 0 #241a20, inset -3px -3px 0 #8e5940;
   }
 
   &.me {
-    outline: 2px solid #67a5ff;
+    outline: 2px solid #f4bb70;
     outline-offset: -2px;
   }
 
   .rank {
-    flex: 0 0 29px;
-    text-align: center;
-    color: #c4d0dd;
-    font-weight: 700;
-    font-size: 13px;
+    display: flex;
+    justify-content: center;
+    flex: 0 0 28px;
+    color: #ffb66b;
+    font-family: ${pixelFont};
+    font-size: 9px;
+    line-height: 1.3;
   }
 
   .identity {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
-    gap: 3px;
+    gap: 5px;
     min-width: 0;
   }
 
@@ -105,33 +112,72 @@ export const BoardRow = styled.li`
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13px;
-    font-weight: 700;
+    color: #fff2d1;
+    font-family: ${pixelFont};
+    font-size: 9px;
+    line-height: 1.6;
   }
 
   .identity small {
-    font-size: 9px;
-    font-weight: 700;
-    color: #89baff;
+    color: #f0a769;
+    font-family: ${pixelFont};
+    font-size: 7px;
+    line-height: 1.3;
+  }
+
+  .room-state {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 3px 6px;
+    min-width: 0;
+    font-family: 'Trebuchet MS', sans-serif;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .room-state .ready { color: #c2e69e; }
+  .room-state .pending { color: #eabb8d; }
+  .room-state .chosen {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #d4c5b3;
   }
 
   .points {
-    flex: 0 0 33px;
     display: flex;
+    flex: 0 0 35px;
     align-items: center;
     flex-direction: column;
-    padding: 4px;
-    background: #101923;
-    color: #f4c86a;
+    justify-content: center;
+    gap: 4px;
+    padding: 7px 4px;
+    background: #151821;
+    border: 2px solid #100d17;
+    box-shadow: inset 0 0 0 1px #6f473b;
+    color: #ffbd70;
   }
 
-  .points strong { font-size: 16px; }
-  .points small { font-size: 8px; color: #a8b6c7; }
+  .points strong {
+    font-family: ${pixelFont};
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .points small {
+    font-family: 'Trebuchet MS', sans-serif;
+    font-size: 9px;
+    line-height: 1.2;
+    color: #d9c7b5;
+  }
 `
 
 export const BoardFooter = styled.p`
-  margin: 10px 0 0;
+  margin: 11px 0 0;
   text-align: center;
-  color: #9faec2;
-  font-size: 9px;
+  color: #c6b3a4;
+  font-family: 'Trebuchet MS', sans-serif;
+  font-size: 10px;
+  line-height: 1.4;
 `

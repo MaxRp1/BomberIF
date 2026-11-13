@@ -9752,3 +9752,213 @@ A mensagem visual pode indicar `VOCÊ NÃO FOI JUBILADO!` somente para o vencedo
 - A tela não cria cadastro, classificação permanente, opção de revanche imediata ou estatísticas adicionais.
 - A documentação anterior que descreve `Canvas.checkWin` com retorno imediato dos perdedores permanece **histórica** e é substituída por este fluxo depois da aprovação da funcionalidade.
 - Ao ajustar duração visual, editar `RESULT_DISPLAY_MS` no Canvas e `ProgressFill` no CSS para manter a barra sincronizada.
+
+
+---
+
+## FUNCIONALIDADE 13/11/2026 — SELEÇÃO DE PERSONAGENS E PRONTO POR LOBBY
+
+**Status:** implementação criada na branch `feat/character-selection-ready-2026-11-13`, aguardando build e testes multiplayer antes do merge/deploy. Não confundir com a versão publicada.
+
+### Regras do design
+- Ao entrar ou mudar de lobby, `selectedSprite = null` (modo **Aleatório**) e `isReady = false`. Não há escolha obrigatória; o modo Aleatório já pode ser marcado Pronto.
+- O painel de seleção permite optar por qualquer ID inteiro em `[0, SPRITES - 1]`. Atualmente `SPRITES = 12`, permitindo personagens repetidos na mesma sala. Personagens sem habilidade exclusiva continuam utilizáveis. Os sprites visuais são recortados das folhas em `client/public/sprites/chars/{id}.png`, respeitando a escala pixelada. Nomes/descrições confirmados: Proença (2), Mamedes (8), Frank (10), Ino (11); os demais usam identificação numérica para evitar atribuir nomes a IDs não verificados.
+- Cada participante pode alternar entre Pronto e Pendente. Trocar de sprite desmarca Pronto se a escolha realmente mudou. Ao confirmar o início de qualquer pareamento, **todos os participantes do lobby voltam a Pendente** para a rodada seguinte; a escolha do sprite é preservada durante permanência no mesmo lobby.
+- O botão Jogar é desabilitado no frontend até `players.every(p => p.ready)`; **a verificação obrigatória ocorre no backend**, para impedir a emissão de `join_room` malicioso sem confirmação de todos.
+- A regra se aplica tanto ao início imediato (`fillRoom=false`) quanto a `Preencher Sala` (`fillRoom=true`), que entra em fila apenas depois de todos do lobby confirmarem.
+- Novos integrantes do lobby entram Pendentes; saída/desconexão atualiza o snapshot da sala para os demais. Alterações de personagem e Pronto são rejeitadas durante o pareamento.
+- A seleção do sprite determina as habilidades existentes via `PlayerFactory` e os controles do servidor, sem criar um sistema concorrente de habilidades. O sprite efetivo passa por `StartGameDTO.players[]` e é utilizado inclusive pela tela de resultado `RoundResultDTO.winner.sprite`.
+
+### Contratos e eventos Socket.IO
+| Direção | Evento | DTO | Observação |
+|---|---|---|---|
+| cliente → servidor | `select_character` | `CharacterSelectionDTO {sprite:number|null}` | Somente o próprio socket; valida ID e bloqueia durante pareamento |
+| cliente → servidor | `lobby_ready` | `LobbyReadyDTO {ready:boolean}` | Só altera o status do emissor, sem permitir alterar terceiros |
+| cliente → servidor | `join_room` | `JoinRoomDTO {fillRoom:boolean}` | Exige todos Prontos, valida lobby e pareamento antes do primeiro `await` |
+| servidor → lobby | `update_lobby` | `LobbyDTO.players[].{socketId,nick,wins,selectedSprite,ready}` | Snapshot autoritativo enviado após escolha, Pronto e mudanças de lobby |
+| servidor → solicitante | `error` | `ERRORS.LOBBY_NOT_READY`, `ERRORS.INVALID_CHARACTER_SELECTION` | Feedback quando tentativa é rejeitada |
+| servidor → partida | `start_game` | `StartGameDTO` | `sprite` escolhido, ou sorteado no servidor se `selectedSprite===null` |
+
+### Arquivos modificados
+- `shared/dto.ts`: `CharacterSelectionDTO`, `LobbyReadyDTO` e campos `selectedSprite/ready` em `LobbyPlayerDTO`.
+- `shared/errors.ts`: erros de Pronto ausente e seleção inválida.
+- `server/src/dto.ts`: estado por socket `selectedSprite` e `isReady`.
+- `server/src/manager.ts`: validações e broadcasts, estado inicial, reset ao trocar lobby/começar rodada, bloqueio durante pareamento, início exclusivo se TODOS prontos, proteção contra double-click e atualizações do lobby anterior.
+- `server/src/factory.ts`: substituição do sorteio incondicional por uso da escolha validada com fallback aleatório, e envio dos estados de escolha/Pronto em `updateLobbyFactory`.
+- `server/src/ioListener.ts`: listeners `select_character` e `lobby_ready`.
+- `client/src/services/socket.ts`: emissores tipados das duas ações.
+- `client/src/site/components/lobby/index.tsx`, `style.ts`: botão de seleção, botão Pronto/Cancelar, contagem Prontos, bloqueio do botão Jogar, cartões de status de cada jogador; o ranking existente é preservado.
+- `client/src/site/components/lobby/characterSelect.tsx` e `characterSelectStyle.ts` (novos): seleção com treze opções (Aleatório + 12 sprites), frame frontal recortado, descrições de habilidades, confirmação e modal responsivo.
+- `client/src/store/lobby/actions.ts`: evita reiniciar música e adicionar entradas repetidas ao histórico do navegador a cada atualização do snapshot.
+- `client/src/services/errorHandler.ts`: mensagens para falta de Pronto e sprite inválido.
+- `client/src/site/pages/home/index.tsx`: preserva a instância de Lobby entre snapshots `update_lobby`, evitando fechar o painel de seleção e reiniciar a música quando um amigo muda o Pronto.
+- `server/test/lobby.test.ts` (novo): treze testes de validação, sincronização de snapshots, fluxo de sala e concorrência.
+- `server/package.json`: novo script `test:lobby` para executar a suíte de seleção e Pronto.
+
+### Sequência de rede
+```text
+entrarLobby -> selectedSprite = null; isReady = false
+        -> update_lobby (para todos)
+select_character {sprite} -> valida e salva no socket (desmarca Pronto)
+        -> update_lobby (para todos)
+lobby_ready {ready:true} -> servidor salva no socket
+        -> update_lobby (para todos)
+join_room {fillRoom} -> valida todos do lobby prontos e livres
+        -> marca pairing + zera Pronto atomicamente antes de awaits
+        -> open_game -> start_game { players: [{sprite escolhido ou sorteado}, ...] }
+        -> retorno ao lobby: cada jogador marca Pronto novamente
+```
+
+### Testes de aceitação
+1. Em sala de duas pessoas, Jogar permanece bloqueado quando uma está Pendente; emissão manual de `join_room` pelo console recebe erro do servidor.
+2. Dois jogadores escolhem o mesmo sprite: ambos aparecem corretamente e têm as habilidades próprias sem conflitar.
+3. Aleatório sem escolha manual: ao marcar Pronto e iniciar, servidor sorteia um ID válido de 0 a 11.
+4. Trocar de escolha após marcar Pronto exige nova confirmação; escolher o mesmo sprite não causa reset desnecessário.
+5. A tentativa de enviar sprite inexistente, decimal, string ou estrutura malformada é rejeitada.
+6. Clique rápido simultâneo em Jogar não abre duas partidas nem cria dois processos de pareamento.
+7. Após o resultado e volta ao lobby, a seleção anterior permanece, mas Pronto volta a Pendente.
+8. Com 3–4 jogadores, todos devem confirmar; a entrada de um novo jogador no lobby exige sua confirmação e impede início prematuro.
+9. Com Preencher Sala, a fila só começa após os membros do lobby estarem Prontos; todos os sprites e habilidades continuam funcionando entre salas combinadas.
+10. Testar por navegador desktop, celular, nome repetido e troca de lobby.
+11. A regressão da vitória, habilidade de Mamedes, placar e morte solo deve continuar intacta.
+
+### Comandos de verificação (Kali)
+```bash
+cd ~/BomberIF/server
+yarn test:lobby
+yarn test:ranking
+yarn test:stun
+yarn build
+cd ../client
+yarn build
+```
+A implementação só deve ser considerada aprovada quando build + testes automatizados + testes reais em dois dispositivos forem executados.
+
+### Limitações
+- O estado de escolha/Pronto é mantido na memória do servidor, associado ao socket; não existe perfil ou salvamento entre reconexões.
+- A solução não introduz seleção exclusiva/reserva de personagem, host obrigatório, expulsão, tela de revanche, gerenciamento de identidade ou autenticação de conta.
+- A regra de Pronto vale para o **lobby de origem**. No modo Preencher Sala, grupos já confirmados podem ser combinados pelo pareamento sem uma segunda confirmação de uma sala global.
+
+### Correção de compilação do seletor — 13/11/2026
+
+O build do frontend no Kali identificou `TS7006` em `client/src/site/components/lobby/characterSelect.tsx`: o parâmetro `event` do callback `onMouseDown` em `SelectionBackdrop` estava implicitamente tipado como `any`. Foi adicionada a importação de tipo `MouseEvent` de React e a anotação `(event: MouseEvent<HTMLDivElement>)`, sem modificar o fechamento do modal ao clicar fora do painel. Evidência do usuário antes da correção: `yarn test:lobby` 13/13, `yarn test:ranking` 12/12, `yarn test:stun` 8/8 e build do servidor concluído. O build do frontend **ainda precisa ser repetido** após puxar o commit de correção; não marcar a validação completa até obter sucesso. Os avisos sobre `No license field`, TypeScript versus `@typescript-eslint/typescript-estree` e tamanho do bundle do servidor não são as causas da falha TS7006.
+
+
+---
+
+## AJUSTE 13/11/2026 — REORGANIZAÇÃO VISUAL DO LOBBY E DESATIVAÇÃO DE PREENCHER SALA
+
+**Status:** implementação na branch `feat/character-selection-ready-2026-11-13`, vinculada ao PR #9. A validação visual do novo layout e o `yarn build` do frontend precisam ser repetidos antes do merge/deploy.
+
+### Problema de usabilidade
+A primeira versão do lobby com seleção de personagem e botão Pronto empilhava essas ações junto de Jogar, Preencher Sala, contagem online e ranking. Em telas largas, esses controles concorriam visualmente com a arte do jogo; em telas menores a coluna de botões ocupava a área central. O protótipo fornecido pelo projeto propôs concentrar as ações na parte inferior e preservar o placar na lateral.
+
+### Nova organização e comportamento
+- O lobby agora utiliza uma **barra inferior unificada** (`FooterBar`) com: identificação do usuário e avatar do sprite selecionado (🎲 no modo Aleatório); botão de **Escolher Personagem**; botão de **Marcar Pronto/Cancelar**; botão **Jogar**, desabilitado enquanto a contagem de jogadores Prontos for menor que o total. A barra contém uma mensagem concisa de status da sala.
+- O painel lateral (`SidePanel`) concentra **código copiável do lobby**, **Opções**, **placar da sala** e **jogadores online**. O antigo cartão verde diagonal de jogadores foi removido da composição; as informações de seleção e Pronto de cada participante agora aparecem diretamente nas linhas do placar.
+- A identidade mantém a arte de fundo do BomberIF, com uma base escura semitransparente, destaque verde para o jogador, dourado para seleção e azul-ciano para Jogar. Os efeitos de hover/disabled/foco visível preservam distinções funcionais.
+- Layout responsivo com adaptação da barra para duas colunas em larguras de até 1100px, composição simplificada abaixo de 560px, e painel lateral que entra no fluxo do documento em telas até 980px. Em telas pequenas a interface deve rolar sem recobrir permanentemente os controles.
+- `SpritePortrait` foi exportado de `characterSelect.tsx` para reutilizar o recorte do sprite original dentro da identificação do jogador no rodapé.
+- O componente online mudou para um botão escuro e acessível com propriedade transient `$loading`, evitando repassar atributos internos de estilo ao DOM.
+
+### Remoção temporária de Preencher Sala
+A opção **Preencher Sala** foi retirada da UI a pedido do projeto porque a funcionalidade de completar grupos ainda não está pronta para uso. **Não é apenas ocultação visual**: `client/src/site/components/lobby/method.ts:joinRoom()` agora transmite explicitamente `{fillRoom:false}`, ignorando configurações antigas `options.fillRoom=true` possivelmente salvas no navegador. Assim, Jogar inicia somente com os participantes do lobby atual.
+
+O servidor mantém sua implementação de fila para eventual correção futura, mas essa opção não é anunciada nem acionada pelo lobby na versão em validação. O requisito de **todos Prontos** permanece igual e continua validado pelo servidor; nenhuma regra de ranking, personagem, habilidade ou resultado da rodada foi alterada.
+
+### Arquivos alterados nesta revisão
+- `client/src/site/components/lobby/index.tsx`: nova hierarquia semântica da interface, contador e status dos Prontos, botão Jogar no rodapé e transferência do código/Opções para o painel lateral.
+- `client/src/site/components/lobby/style.ts`: substituição do layout anterior por barra inferior, painel lateral, cartões responsivos e estados visuais de botões.
+- `client/src/site/components/lobby/ranking.tsx` e `rankingStyle.ts`: escolha de personagem e status Pronto/Pendente em cada linha, sem alterar critério de ordenação por vitórias.
+- `client/src/site/components/lobby/characterSelect.tsx`: exporta `SpritePortrait`, reaproveitando as folhas existentes.
+- `client/src/site/components/lobby/method.ts`: `joinRoom` força `fillRoom:false` para desativar a fila não funcional.
+- `client/src/site/components/onlinePlayers/index.tsx` e `style.ts`: indicador online discreto e operável por teclado.
+- `doc/doc_bomberIF_novo_atualizado.md`: registro das alterações e dos cuidados para futura reativação de Preencher Sala.
+- **GDD** `GDD_BomberIF_Final` no Google Docs: seção 3.7 atualizada com a barra inferior e a indisponibilidade temporária de Preencher Sala.
+
+### Verificações de regressão antes de publicar
+1. `cd client && yarn build`; confirmar ausência de erros TypeScript após a mudança de componentes e estilos. Executar também `cd ../server && yarn test:lobby && yarn test:ranking && yarn test:stun && yarn build` se houver outras alterações locais.
+2. Desktop 1920×1080, 1366×768 e uma resolução com altura reduzida: confirmar rodapé legível, código da sala clicável, painel de ranking sem sobreposição da arte principal e botões do menu superior acessíveis.
+3. Celular vertical e horizontal: confirmar rolagem, botão Jogar desabilitado até todos Prontos, seletor de 12 personagens acessível, e nenhum elemento além da largura da tela.
+4. Com dois jogadores, alterar Aleatório ↔ personagem fixo, confirmar status remoto dentro do placar, cancelar Pronto, iniciar após todos confirmarem e receber a tela de resultado corretamente.
+5. Antes de confirmar Pronto e após voltar de uma rodada, validar que o servidor continua rejeitando tentativas prematuras de `join_room`.
+6. Confirmar que **Preencher Sala não aparece** nem é solicitado no início, inclusive com `fillRoom:true` salvo nas opções de sessões anteriores.
+7. Verificar atualização de jogadores online e manutenção da navegação **Opções** e cópia do ID do lobby.
+
+### Notas para manutenção
+- Caso Preencher Sala volte a funcionar futuramente, reintroduzir a escolha explicitamente na interface e voltar a parametrizar `emitJoinRoom({fillRoom})`. Reavaliar o fluxo entre lobbies e testes de pareamento antes de permitir preenchimento automático.
+- Para modificar somente as cores ou dimensões do lobby, editar principalmente `client/src/site/components/lobby/style.ts` e `rankingStyle.ts`, não o servidor.
+- O novo layout **não pressupõe que o PR #9 já foi publicado**. O resultado visual definitivo ainda depende do teste no navegador do projeto.
+
+### Nota de integração — tratamento da camada de sobreposição
+O componente `Container` utiliza `pointer-events:none` para não bloquear cliques nos menus superiores e na arte do fundo, reativando eventos apenas em `SidePanel` e `FooterBar`. Por isso `SelectionBackdrop` em `client/src/site/components/lobby/characterSelectStyle.ts` recebeu `pointer-events:auto`; sem essa exceção, o modal poderia abrir visualmente, mas seus botões não responderiam ao mouse/toque. O breakpoint de layout em fluxo foi alinhado para até **1100px**, com proteção adicional para janelas desktop de altura inferior a **540px**. A verificação deve incluir abrir o seletor e confirmar a escolha em mouse e toque.
+
+
+
+### Ajuste visual 13/11/2026 — Opções no topo, controles retangulares e paleta retrô
+
+**Status:** commitado na branch de teste do PR #9, ainda não integrado à `main` nem publicado. Modificações restritas à interface do cliente; sem mudança nos contratos Socket.IO, regra de Pronto, atribuição de sprites ou ranking.
+
+**Motivação:** na avaliação da captura do Kali, o menu inferior aparecia com os botões inclinados e cores artificiais. A causa foi localizada no seletor **global** `button, input[type="submit"]` de `client/src/index.css`, que aplica `clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%)` a todos os botões. Corrigir o arquivo global afetaria menu, páginas e diálogos não relacionados; por isso o estilo foi sobrescrito somente no escopo do lobby.
+
+**Arquivos e ações:**
+- `client/src/site/components/menu/index.tsx`: adicionada prop obrigatória `onOptionsClick` e botão **Opções** imediatamente à esquerda de **Menu** no canto superior direito, mantendo Sobre e Ajuda.
+- `client/src/site/pages/home/index.tsx`: vincula `onOptionsClick` a `setShowOptions(true)` e renderiza `Lobby` sem a antiga prop `setShowOptions`.
+- `client/src/site/components/lobby/index.tsx`: retira o botão Opções do painel lateral e elimina prop/importação não utilizados; preserva código copiável da sala, placar, status dos jogadores, seleção, Pronto e Jogar.
+- `client/src/site/components/lobby/style.ts`: `Container button {clip-path:none; border-radius:0; transform:none;}` neutraliza localmente a regra losangular global; os controles do rodapé são retangulares, com fundo **grafite fosco** (`#17191d` aproximadamente), avatar **verde-musgo**, botão Escolher em **marrom/dourado queimado**, Pronto em **verde escuro** e Jogar habilitado em **âmbar**, ficando cinza quando bloqueado. Removidos gradientes decorativos, linha neon e estilos obsoletos de Opções. Estados `:hover`, `:disabled` e `:focus-visible` foram protegidos para que o CSS global não converta botões em amarelo elétrico.
+- `client/src/site/components/lobby/rankingStyle.ts`: harmoniza bordas e cartões do ranking com grafite, bronze e verde discreto, sem alterar ordenação ou pontuação.
+- `client/src/site/components/onlinePlayers/style.ts`: ajusta a cor do contador online à nova paleta e reforça o estado hover.
+- `client/src/index.css` **não alterado** para evitar regressões nas outras páginas.
+
+**Verificações:** executar `cd ~/BomberIF && git pull --ff-only origin feat/character-selection-ready-2026-11-13 && cd client && yarn build`. No navegador, confirmar: (1) Opções aparece ao lado de Menu e abre/fecha a tela de opções; (2) nenhum controle do rodapé permanece inclinado, inclusive ao passar o mouse; (3) cores permanecem legíveis nos estados Pronto/Pendente/Jogar desabilitado; (4) modal de personagens continua clicável; (5) rodapé e ranking continuam responsivos. O build e a inspeção visual desta revisão **ainda não foram executados pelo assistente**.
+
+
+---
+
+## AJUSTE 13/11/2026 — SISTEMA VISUAL ARCADE PIXEL ART (PR #9)
+
+**Status:** alteração de interface na branch `feat/character-selection-ready-2026-11-13`, ainda não incorporada à `main` e não publicada. O desenvolvimento foi motivado pela referência visual enviada pelo projeto, com botões retro laranja/vermelho e sombreamento em degraus. Reutiliza a lógica atual de seleção, Pronto, multiplayer, ranking e vitória.
+
+### Linguagem visual e componentes reutilizáveis
+- **Novo `client/src/site/theme/retro.ts`**: centraliza a fonte `pixelFont` (Press Start 2P com fallback monoespaçado), os fragmentos `retroPanel` (moldura escura), `retroInset` (área rebaixada) e `retroButton` (botão arcade com bordas de 3px, face laranja, brilho superior, sombra lateral em pixels, sombra externa rígida, clique com rebaixamento e estados `:hover`, `:disabled`, `:focus-visible`).
+- As variantes de botões usam propriedades CSS `--px-top`, `--px-face`, `--px-side`, `--px-base`, `--px-ink` e `--px-hover`. Isso permite botão **Pronto** verde quando marcado, **Jogar** laranja quando habilitado e cinza quando indisponível, sem repetir a implementação dos relevos.
+- As molduras permanecem **retangulares**, sem os losangos do `clip-path` global. As sombras não usam blur para manter um acabamento próximo de sprites. A fonte Press Start 2P **já era carregada** pelo `client/public/index.html`; não foi incluída dependência npm nem arquivo de fonte. Caso o serviço de fontes esteja indisponível, usa alternativa monoespaçada.
+- As animações usam passos discretos e são reduzidas ou removidas quando `prefers-reduced-motion` está ativo. Textos longos (descrições e ajuda) mantêm fontes legíveis em vez de serem todos convertidos em pixel font pequeno.
+
+### Componentes e arquivos atualizados
+1. `client/src/site/components/menu/style.ts`: transforma os quatro botões do canto superior direito (Opções, Menu, Sobre, Ajuda) em botões pixelados, mantendo o comportamento de navegação/Opções.
+2. `client/src/site/components/lobby/style.ts`: aplica o sistema de molduras ao rodapé, ID da sala, cartão de jogador (avatar permanece **ao lado do nick**), Seleção, Pronto e Jogar. Preserva organização responsiva para notebooks e dispositivos móveis.
+3. `client/src/site/components/lobby/rankingStyle.ts`: transforma o placar de sala num HUD de arcade escuro com números, classificação, status Pronto/Pendente e pontuação destacados.
+4. `client/src/site/components/lobby/characterSelectStyle.ts`: modal do elenco com bordas de pixels, cartões de retrato destacáveis, descrição legível e botões Confirmar/Cancelar no padrão arcade.
+5. `client/src/site/components/lobby/characterSelect.tsx`: usa os novos `CloseSelectButton` e `SelectionActionButton`, e introduz `PixelDice` (SVG geométrico de pixels) para o modo Aleatório. Mantém `SpritePortrait` com `imageSmoothingEnabled=false` e os mesmos IDs/sprites/habilidades.
+6. `client/src/site/components/lobby/index.tsx`: mostra `PixelDice` somente quando Aleatório; ao escolher um sprite específico, continua apresentando o **recorte original do personagem** à esquerda do nome. A lógica Pronto/Jogar e o ranking não mudaram.
+7. `client/src/site/components/options/style.ts` e `index.tsx`: adicionam janela de configurações com moldura arcade, campos de texto de código do lobby/nick com rótulos e botões de envio retrô; preservam as ações de entrar em sala, trocar nick, habilitar voz, tela cheia e modo mobile.
+8. `client/src/site/components/toggle/style.ts` e `index.tsx`: controles ON/OFF adotam painéis pixelados e passam a usar `button type="button" aria-pressed`, para permitir teclado e leitores de tela. As propriedades `on` e `onClick` mantêm o contrato existente.
+9. `client/src/site/components/onlinePlayers/style.ts` e `index.tsx`: indicador online com pixel luminoso, borda rebaixada e texto em português (`JOGADOR(ES) ONLINE`); continua consultando `/players/count`.
+10. `client/src/game/components/canvas/rankingStyle.ts`: ranking durante a partida adota os mesmos painéis, tipografia e botão para abrir/fechar; preserva os estados `ranking-hidden`/`ranking-popup`.
+11. `client/src/game/components/roundResult/style.ts` e `index.tsx`: tela FORMANDO DA PARTIDA recebe moldura em pixels, fonte arcade, animação em passos, barra visual de cinco segundos e `svg` de coroa pixelada no lugar do emoji. A duração `RESULT_DISPLAY_MS`, o nome e sprite do vencedor e o evento `round_result` **não foram alterados**.
+12. GDD no Google Docs: atualizados os textos de resultado e lobby na seção 3.7, criada a seção **3.8 Diretrizes visuais da interface — arcade pixel art**.
+
+### Verificações de compatibilidade
+- `client/src/index.css` não foi modificado: o reset geral ainda usa um `clip-path` para botões, mas o `retroButton` e os componentes específicos têm precedência para neutralizá-lo nas novas telas. Evitar reintroduzir clip-path losangular via seletor global.
+- O CSS pixel art não altera hitboxes, chamadas de Socket.IO, servidor, seleção aleatória, contagem de Prontos, ranking ou resultados de rodada.
+- A interface usa variáveis CSS e `styled-components` já instalados; não foi introduzida nova biblioteca.
+
+### Teste no Kali (obrigatório antes do merge)
+```bash
+cd ~/BomberIF
+git status
+git pull --ff-only origin feat/character-selection-ready-2026-11-13
+cd client
+yarn build
+```
+Em seguida, testar visualmente em 1920×1080, 1366×768, celular vertical e horizontal:
+1. Opções, Menu, Sobre e Ajuda exibem botões pixelados e continuam acionáveis; Opções abre um painel legível e Voltar fecha corretamente.
+2. Formulários de sala/nick funcionam; opções de voz, tela cheia e modo mobile alternam via clique, Enter e Espaço; botões não adquirem o losango global.
+3. Personagens e modo Aleatório aparecem no catálogo; selecionar Mamedes, Proença, Frank ou Ino exibe o sprite original junto ao apelido no rodapé. Aleatório exibe o dado em pixels. Confirmar a escolha desmarca Pronto quando necessário.
+4. Botões Pronto/Jogar respeitam os estados e o bloqueio autoritativo já testado no servidor; o estilo desabilitado não simula botão clicável.
+5. Placar do lobby e HUD durante a partida preservam as vitórias e os estados; o botão de ranking compacto continua funcional em telas estreitas.
+6. Com dois jogadores, o resultado mostra nome e sprite correto do vencedor e coroa pixelada; ambos continuam retornando ao lobby após aproximadamente cinco segundos.
+7. Conferir pixel font carregada ou fallback aceitável, contraste, foco por teclado, scroll em telas pequenas e nenhuma interferência na arte de fundo.
+
+Os testes de servidor informados previamente no Kali continuam como referência (13 do lobby, 12 do ranking e 8 do Mamedes, total **33 aprovados**); eles não verificam o visual. **O novo build do frontend e a inspeção visual desta revisão ainda não foram executados.**

@@ -1,5 +1,5 @@
 import io from 'socket.io-client'
-import { CallAnswerDTO, CallOfferDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, JoinRoomDTO, KillDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
+import { CallAnswerDTO, CallOfferDTO, CharacterSelectionDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, JoinRoomDTO, KillDTO, LobbyReadyDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
 import { SERVER_URL } from '~/constants'
 
 export const socket = io(SERVER_URL)
@@ -44,6 +44,14 @@ export function emitIceCandidate (dto:IceCandidateDTO) {
 
 export function emitJoinRoom (dto:JoinRoomDTO) {
   socket.emit('join_room', dto)
+}
+
+export function emitSelectCharacter(dto: CharacterSelectionDTO) {
+  socket.emit('select_character', dto)
+}
+
+export function emitLobbyReady(dto: LobbyReadyDTO) {
+  socket.emit('lobby_ready', dto)
 }
 
 export function emitKill (dto:KillDTO) {

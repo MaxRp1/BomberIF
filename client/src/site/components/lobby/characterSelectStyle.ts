@@ -1,32 +1,36 @@
 import styled from 'styled-components'
+import { pixelFont, retroButton, retroInset, retroPanel } from '~/site/theme/retro'
 
 export const SelectionBackdrop = styled.div`
   position: fixed;
   inset: 0;
   z-index: 150;
-  // O lobby permite cliques só nos painéis: o modal precisa reativá-los.
   pointer-events: auto;
   display: grid;
   place-items: center;
-  padding: 12px;
-  overflow-y: auto;
   box-sizing: border-box;
-  background: rgba(3, 8, 17, .92);
-  color: #f5f7ff;
-  font-family: 'Courier New', Courier, monospace;
+  padding: 14px;
+  overflow-y: auto;
+  background: rgba(12, 10, 20, .94);
+  color: #ffeac2;
+
+  @media (max-width: 560px) { padding: 7px; }
 `
 
 export const SelectionPanel = styled.section`
+  ${retroPanel}
   box-sizing: border-box;
-  width: min(100%, 695px);
-  max-height: calc(100svh - 24px);
+  width: min(100%, 744px);
+  max-height: calc(100svh - 28px);
   overflow-y: auto;
-  padding: clamp(14px, 3vw, 24px);
-  border: 3px solid #e4b45e;
-  outline: 3px solid #101729;
-  background: linear-gradient(145deg, #24354a, #101826);
-  box-shadow: 7px 7px 0 #05080e, inset 0 0 0 2px #42546c;
-  @media (max-width: 620px) { padding: 12px; }
+  padding: clamp(15px, 3vw, 24px);
+  scrollbar-width: thin;
+  scrollbar-color: #e46c40 #1a1b28;
+
+  @media (max-width: 560px) {
+    max-height: calc(100svh - 14px);
+    padding: 13px;
+  }
 `
 
 export const SelectionHeading = styled.header`
@@ -34,35 +38,51 @@ export const SelectionHeading = styled.header`
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 20px;
+  padding-bottom: 13px;
+  border-bottom: 3px solid #73433e;
+
   small {
     display: block;
-    color: #a4b6ce;
-    font-size: 10px;
-    letter-spacing: 2px;
+    color: #e29e69;
+    font-family: ${pixelFont};
+    font-size: 8px;
+    line-height: 1.8;
   }
+
   h2 {
-    margin: 5px 0 0;
-    color: #ffe2a3;
-    font-size: clamp(16px, 3.4vw, 24px);
-    letter-spacing: 1px;
+    margin: 10px 0 0;
+    color: #ffcc8b;
+    font-family: ${pixelFont};
+    font-size: clamp(12px, 2.3vw, 18px);
+    line-height: 1.8;
+    text-shadow: 3px 3px 0 #743127;
   }
-  button {
-    border: 1px solid #8495b2;
-    padding: 5px 9px;
-    color: #fff;
-    background: #293a50;
-    cursor: pointer;
-  }
+
+  @media (max-width: 560px) { margin-bottom: 12px; padding-bottom: 8px; }
+`
+
+export const CloseSelectButton = styled.button`
+  ${retroButton}
+  flex: 0 0 40px;
+  min-width: 40px;
+  min-height: 39px;
+  padding: 3px;
+  font-size: 13px;
 `
 
 export const CharacterGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
+
   @media (max-width: 620px) {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 5px;
+    gap: 8px;
+  }
+
+  @media (max-width: 330px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 `
 
@@ -71,24 +91,34 @@ export const CharacterCard = styled.button<{ $selected: boolean }>`
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 9px;
   min-width: 0;
-  min-height: 111px;
-  padding: 8px 3px;
-  border: 2px solid ${p => p.$selected ? '#ffd47d' : '#415a73'};
-  background: ${p => p.$selected ? '#514b37' : '#172535'};
-  color: #f5f7ff;
+  min-height: 124px;
+  padding: 9px 4px;
+  box-sizing: border-box;
+  border: 3px solid ${p => p.$selected ? '#ffbc70' : '#211522'};
+  border-radius: 0;
+  clip-path: none;
+  background: ${p => p.$selected ? '#643527' : '#2a2a39'};
+  color: ${p => p.$selected ? '#fff1c9' : '#d8c8bc'};
+  box-shadow:
+    inset 0 0 0 2px ${p => p.$selected ? '#b45b32' : '#493d43'},
+    inset 0 3px 0 ${p => p.$selected ? '#df9654' : '#40404d'},
+    0 4px 0 #110d18;
   cursor: pointer;
-  font-family: inherit;
-  font-size: 10px;
-  box-shadow: ${p => p.$selected ? 'inset 0 0 0 2px #9a783d' : 'none'};
   touch-action: manipulation;
+  transition: background-color 100ms steps(2, end);
+
   span:last-child {
     max-width: 100%;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    font-family: ${pixelFont};
+    font-size: 7px;
+    line-height: 1.7;
   }
+
   .random {
     display: grid;
     place-items: center;
@@ -96,12 +126,19 @@ export const CharacterCard = styled.button<{ $selected: boolean }>`
     height: 72px;
     font-size: 34px;
   }
-  &:hover { border-color: #fff0bc; }
-  &:focus-visible { outline: 3px solid #79b7ff; outline-offset: 2px; }
+
+  &&:hover {
+    background: ${p => p.$selected ? '#7a422d' : '#40313c'};
+    border-color: #f7a967;
+    color: #fff2d6;
+  }
+  &&:active { transform: translateY(2px); box-shadow: inset 0 0 0 2px #854b3b, 0 2px 0 #110d18; }
+  &:focus-visible { outline: 3px dashed #ffe1a1; outline-offset: 3px; }
+
   @media (max-width: 620px) {
-    min-height: 90px;
-    padding: 4px 1px;
-    font-size: 9px;
+    min-height: 104px;
+    padding: 6px 2px;
+    gap: 5px;
     .random { height: 61px; font-size: 27px; }
   }
 `
@@ -111,6 +148,7 @@ export const CharacterPortrait = styled.canvas`
   width: 46px;
   height: 73px;
   image-rendering: pixelated;
+
   @media (max-width: 620px) {
     width: 37px;
     height: 59px;
@@ -118,32 +156,60 @@ export const CharacterPortrait = styled.canvas`
 `
 
 export const SelectionDetails = styled.div`
-  margin: 13px 0 0;
-  padding: 12px;
-  border: 1px solid #4f647e;
-  background: #152033;
-  strong { display: block; color: #ffd47d; font-size: 17px; }
-  p { margin: 7px 0 0; font: 12px/1.6 Arial, sans-serif; }
-  small { display: block; margin-top: 8px; color: #f5cb82; font: 11px/1.4 Arial, sans-serif; }
+  ${retroInset}
+  margin: 17px 0 0;
+  padding: 13px 15px;
+
+  strong {
+    display: block;
+    color: #ffd18c;
+    font-family: ${pixelFont};
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  p {
+    margin: 9px 0 0;
+    color: #e8daca;
+    font-family: 'Trebuchet MS', sans-serif;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  small {
+    display: block;
+    margin-top: 9px;
+    color: #ffb978;
+    font-family: 'Trebuchet MS', sans-serif;
+    font-size: 12px;
+    line-height: 1.5;
+  }
 `
 
 export const SelectionActions = styled.div`
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
-  button {
-    padding: 10px 13px;
-    border: 2px solid #51637a;
-    color: #f5f7ff;
-    background: #2c3d53;
-    cursor: pointer;
-    font: bold 12px Arial, sans-serif;
+  gap: 14px;
+  margin-top: 17px;
+
+  @media (max-width: 560px) { gap: 10px; }
+`
+
+export const SelectionActionButton = styled.button<{ $primary?: boolean }>`
+  ${retroButton}
+  --px-top: ${p => p.$primary ? '#ffe0a0' : '#f0b382'};
+  --px-face: ${p => p.$primary ? '#ef823b' : '#b95a3d'};
+  --px-side: ${p => p.$primary ? '#a83729' : '#7e302e'};
+  --px-base: ${p => p.$primary ? '#6f1e27' : '#4a2029'};
+  --px-hover: ${p => p.$primary ? '#ffa04a' : '#d07046'};
+
+  min-height: 43px;
+  padding: 11px 14px;
+  font-size: 9px;
+  line-height: 1.7;
+
+  @media (max-width: 560px) {
+    flex: 1 1 auto;
+    padding: 9px 8px;
+    font-size: 8px;
   }
-  .confirm {
-    background: #377558;
-    border-color: #8ae1af;
-  }
-  button:focus-visible { outline: 3px solid #ffe2a3; }
 `

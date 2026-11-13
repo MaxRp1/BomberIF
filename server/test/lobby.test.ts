@@ -275,7 +275,8 @@ test('alterações de seleção e Pronto aparecem no snapshot recebido por todo 
     selectCharacter(s.io, s.players[0], { sprite: 8 })
     setLobbyReady(s.io, s.players[0], { ready: true })
 
-    const snapshot = s.event('update_lobby').at(-1)
+    const firstSnapshots = s.event('update_lobby')
+    const snapshot = firstSnapshots[firstSnapshots.length - 1]
     assert.equal(snapshot?.to, 'ABCD')
     assert.deepEqual(snapshot.payload.players.map(
       (p: { selectedSprite: number|null; ready: boolean }) => ({
@@ -288,6 +289,7 @@ test('alterações de seleção e Pronto aparecem no snapshot recebido por todo 
     ])
 
     setLobbyReady(s.io, s.players[0], { ready: false })
-    assert.equal(s.event('update_lobby').at(-1)?.payload.players[0].ready, false)
+    const updatedSnapshots = s.event('update_lobby')
+    assert.equal(updatedSnapshots[updatedSnapshots.length - 1].payload.players[0].ready, false)
   } finally { s.cleanup() }
 })

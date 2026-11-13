@@ -8,17 +8,16 @@ import { joinRoom } from './method'
 import LobbyRanking from './ranking'
 import CharacterSelect, { characterName, SpritePortrait } from './characterSelect'
 import {
-  Container, SidePanel, RoomHeader, LobbyId, Options, OnlineStatus,
+  Container, SidePanel, RoomHeader, LobbyId, OnlineStatus,
   FooterBar, PlayerSummary, AvatarSlot, PlayerIdentity, PlayerStatus,
   ChoiceButton, ReadyButton, PlayButton, FooterHint
 } from './style'
 
 interface LobbyProps {
   lobby          : LobbyDTO
-  setShowOptions : React.Dispatch<React.SetStateAction<boolean>>
 }
 
-export default function Lobby({ lobby, setShowOptions }: LobbyProps) {
+export default function Lobby({ lobby }: LobbyProps) {
   const [selectionOpen, setSelectionOpen] = useState(false)
 
   const myself = lobby.players.find(player => player.socketId === socket.id)
@@ -60,7 +59,6 @@ export default function Lobby({ lobby, setShowOptions }: LobbyProps) {
             <strong>{lobby.lobbyId}</strong>
             <small>COPIAR</small>
           </LobbyId>
-          <Options type="button" onClick={() => setShowOptions(true)}>⚙ Opções</Options>
         </RoomHeader>
         <LobbyRanking players={lobby.players}/>
         <OnlineStatus><OnlinePlayers/></OnlineStatus>

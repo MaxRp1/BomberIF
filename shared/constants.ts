@@ -45,6 +45,10 @@ export const STUN_COOLDOWN_MS = 20000
 export const STUN_PROJECTILE_SPEED = 0.24 // pixels por milissegundo
 export const STUN_PROJECTILE_LIFETIME_MS = 1400
 
+// Movimento é transmitido em ~20 Hz; o render continua a 60 FPS.
+// Posições intermediárias não precisam ocupar a fila de eventos de combate.
+export const MOVEMENT_SYNC_INTERVAL_MS = 50
+
 export const PRESS_INTERVAL = 150
 
 export const SPEED = 1

@@ -63,8 +63,11 @@ export function emitKill (dto:KillDTO) {
   socket.emit('kl', dto)
 }
 
+// Somente posições de movimento contínuo são descartáveis.
+// Eventos críticos (parada/colisão/bomba) continuam confiáveis.
 export function emitMove (dto:MoveDTO) {
-  socket.emit('mv', dto)
+  if (dto.m === 0) socket.emit('mv', dto)
+  else socket.volatile.emit('mv', dto)
 }
 
 export function emitMoveBomb (dto:MoveBombDTO) {

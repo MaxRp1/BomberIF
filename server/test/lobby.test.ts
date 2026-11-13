@@ -245,3 +245,26 @@ test('com Preencher Sala, exige Pronto antes de entrar na fila', async () => {
     exitPairing(s.io, s.players[0])
   } finally { s.cleanup() }
 })
+
+test('com quatro jogadores, apenas 4/4 Prontos libera o início', async () => {
+  const s = scenario(4)
+  try {
+    selectCharacter(s.io, s.players[0], { sprite: 2 })
+    selectCharacter(s.io, s.players[1], { sprite: 8 })
+    selectCharacter(s.io, s.players[2], { sprite: 10 })
+    selectCharacter(s.io, s.players[3], { sprite: 11 })
+    for (const p of s.players.slice(0, 3)) {
+      setLobbyReady(s.io, p, { ready: true })
+    }
+    await joinRoom(s.io, s.players[0], { fillRoom: false })
+    assert.equal(s.event('open_game').length, 0)
+    assert.ok(s.error().includes(ERRORS.LOBBY_NOT_READY))
+
+    setLobbyReady(s.io, s.players[3], { ready: true })
+    await joinRoom(s.io, s.players[0], { fillRoom: false })
+    const started = s.event('start_game')[0].payload
+    assert.deepEqual(started.players.map((player: { sprite: number }) => player.sprite), [2, 8, 10, 11])
+    assert.equal(s.event('open_game').length, 1)
+    assert.ok(s.players.every(p => p.data.isReady === false))
+  } finally { s.cleanup() }
+})

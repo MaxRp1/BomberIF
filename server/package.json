@@ -11,7 +11,8 @@
     "start": "node build/index.js",
     "test:ranking": "ts-node --transpile-only -r tsconfig-paths/register test/ranking.test.ts",
     "test:stun": "ts-node --transpile-only -r tsconfig-paths/register test/stun.test.ts",
-    "test:lobby": "ts-node --transpile-only -r tsconfig-paths/register test/lobby.test.ts"
+    "test:lobby": "ts-node --transpile-only -r tsconfig-paths/register test/lobby.test.ts",
+    "test:frank": "ts-node --transpile-only -r tsconfig-paths/register test/frank.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

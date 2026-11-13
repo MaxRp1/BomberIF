@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { OVERCLOCK_DETONATION_MULTIPLIER, STUN_COOLDOWN_MS } from '#/constants'
-import { FlingBombDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
+import { FRANK_SPRITE_ID, OVERCLOCK_DETONATION_MULTIPLIER, STUN_COOLDOWN_MS } from '#/constants'
+import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
 import { BlocksFactory } from '~/game/entities/block'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { EntitiesFactory } from '~/game/entities/factory'
@@ -209,6 +209,17 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     if (dto.p === myself) setStunRemaining(2)
   }
 
+  // O servidor anuncia quando Frank perde a vida extra. Todas as réplicas
+  // utilizam o mesmo efeito de piscar que o próprio Frank vê localmente.
+  function onFrankLifeUsed(dto: FrankLifeUsedDTO) {
+    if (!state || finishedRef.current || dto.roomId !== roomIdRef.current) return
+    if (dto.p === myself) return // Já aplicou o efeito antes de enviar o evento.
+
+    const frank = state.players.players[dto.p]
+    if (frank?.spriteId !== FRANK_SPRITE_ID) return
+    frank.consumeExtraLife()
+  }
+
   function onKill (dto:KillDTO) {
     if (dto.p !== myself) {
       state?.players.players[dto.p]?.kill(false)
@@ -260,6 +271,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     socket.on('fb', onFlingBomb)
     socket.on('nb', onNullifyBlock)
     socket.on('kl', onKill)
+    socket.on('frank_life_used', onFrankLifeUsed)
     socket.on('round_result', onRoundResult)
     socket.on('wins_update', onWinsUpdate)
     socket.on('stun_shot', onStunShot)
@@ -274,6 +286,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       socket.off('fb', onFlingBomb)
       socket.off('nb', onNullifyBlock)
       socket.off('kl', onKill)
+      socket.off('frank_life_used', onFrankLifeUsed)
       socket.off('round_result', onRoundResult)
       socket.off('wins_update', onWinsUpdate)
       socket.off('stun_shot', onStunShot)

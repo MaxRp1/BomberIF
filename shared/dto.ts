@@ -87,6 +87,12 @@ export interface KillDTO {
   p : number // player index
 }
 
+// Emitido pelo servidor para que todos vejam Frank perder sua vida extra.
+export interface FrankLifeUsedDTO {
+  roomId : string
+  p      : number // índice real do Frank, derivado do socket
+}
+
 // Dados de cada integrante do lobby; o socketId evita confundir apelidos iguais.
 // A escolha padrão é null: o servidor sorteia um sprite por rodada.
 export interface CharacterSelectionDTO {

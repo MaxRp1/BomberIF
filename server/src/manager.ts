@@ -37,7 +37,12 @@ function broadcastLobby(io: Server, socket: Socket) {
 export function selectCharacter(io: Server, socket: Socket, dto: CharacterSelectionDTO) {
   if (!mayConfigureLobby(io, socket)) return
   const selected = dto?.sprite
-  if (selected !== null && !(Number.isInteger(selected) && selected >= 0 && selected < SPRITES)) {
+  if (!(selected === null || (
+    typeof selected === 'number' &&
+    Number.isInteger(selected) &&
+    selected >= 0 &&
+    selected < SPRITES
+  ))) {
     return socket.emit('error', ERRORS.INVALID_CHARACTER_SELECTION)
   }
 

@@ -6,12 +6,11 @@ interface ToggleProps {
   onClick  : () => void
 }
 
-//Botão de toggle usado no menu de opções
-
+// Controle de duas posições, acessível por clique, Enter ou Espaço.
 export default function Toggle ({children, on, onClick}:ToggleProps) {
   return (
-    <Container onClick={onClick}>
-      <label>{children}</label>
+    <Container type="button" onClick={onClick} aria-pressed={on}>
+      <span className="toggle-label">{children}</span>
       {on ? <On>ON</On> : <Off>OFF</Off>}
     </Container>
   )

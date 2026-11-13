@@ -9792,6 +9792,7 @@ A mensagem visual pode indicar `VOCÊ NÃO FOI JUBILADO!` somente para o vencedo
 - `client/src/store/lobby/actions.ts`: evita reiniciar música e adicionar entradas repetidas ao histórico do navegador a cada atualização do snapshot.
 - `client/src/services/errorHandler.ts`: mensagens para falta de Pronto e sprite inválido.
 - `server/test/lobby.test.ts` (novo): onze testes de validação, fluxo de sala e concorrência.
+- `server/package.json`: novo script `test:lobby` para executar a suíte de seleção e Pronto.
 
 ### Sequência de rede
 ```text
@@ -9823,7 +9824,7 @@ join_room {fillRoom} -> valida todos do lobby prontos e livres
 ### Comandos de verificação (Kali)
 ```bash
 cd ~/BomberIF/server
-yarn ts-node --transpile-only -r tsconfig-paths/register test/lobby.test.ts
+yarn test:lobby
 yarn test:ranking
 yarn test:stun
 yarn build

@@ -50,7 +50,7 @@ const handleMyself = useCallback((index: number) => {
   function getPage () {
     if (outlet) return <Outlet />
     if (showOptions) return <Options setShowOptions={setShowOptions} />
-    if (lobby) return <Lobby lobby={lobby} setShowOptions={setShowOptions} />
+    if (lobby) return <Lobby lobby={lobby} />
     return null
   }
 
@@ -81,7 +81,7 @@ const handleMyself = useCallback((index: number) => {
       ) : (
         // Fora de partida: exibe menus, lobby e fundo animado
         <Container $slow={slow}>
-          {!showOptions && <Menu />}
+          {!showOptions && <Menu onOptionsClick={() => setShowOptions(true)} />}
           {getPage()}
         </Container>
       )}

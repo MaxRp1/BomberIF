@@ -1,4 +1,4 @@
-import { MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
+import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
@@ -7,7 +7,7 @@ import { GamepadFactory } from '~/game/entities/gamepad'
 import { GameState } from '~/game/entities/state'
 import { playBombSound } from '~/game/sound/bomb'
 import { playKillSound } from '~/game/sound/kill'
-import { emitFlingBomb, emitHoldBomb, emitKill, emitMove, emitPlaceBomb, emitStunFire } from '~/services/socket'
+import { emitFlingBomb, emitFrankLifeUsed, emitHoldBomb, emitKill, emitMove, emitPlaceBomb, emitStunFire } from '~/services/socket'
 
 interface LastPress {
   bomb : number
@@ -76,6 +76,7 @@ export interface Player {
   placeBomb            : (state:GameState) => void
   holdBomb             : (state:GameState) => void
   flingBomb            : (state:GameState) => void
+  consumeExtraLife     : () => boolean
   kill                 : (emit:boolean, cause?: 'bomb'|'other') => void
   tick                 : (state:GameState) => void
   render               : (context:CanvasRenderingContext2D) => void
@@ -101,7 +102,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
     bombReach: 2,
     bombs: 1,
     collidable: true,
-    extraLife: props.sprite === 10,
+    extraLife: props.sprite === FRANK_SPRITE_ID,
     ignoresSlowFloor: props.sprite === 11,
     hasOverclock: props.sprite === 2,
     hasBlastVision: props.sprite === 2,
@@ -154,6 +155,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
   player.placeBomb = placeBomb.bind(player)
   player.holdBomb = holdBomb.bind(player)
   player.flingBomb = flingBomb.bind(player)
+  player.consumeExtraLife = consumeExtraLife.bind(player)
   player.kill = kill.bind(player)
   player.tick = tick.bind(player)
   player.render = render.bind(player)
@@ -447,6 +449,16 @@ function flingBomb (this:Player, state:GameState) {
   bomb.startFling(this.side)
 }
 
+// A proteção é aplicada localmente e também nas cópias remotas após a
+// confirmação do servidor. Consumir duas vezes não prolonga o piscar.
+function consumeExtraLife (this:Player): boolean {
+  if (this.spriteId !== FRANK_SPRITE_ID || !this.extraLife || this.removeTime) return false
+
+  this.extraLife = false
+  this.invulnerableUntil = Date.now() + FRANK_PROTECTION_MS
+  return true
+}
+
 function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   if (this.removeTime) return
 
@@ -457,15 +469,10 @@ function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
     Date.now() < this.invulnerableUntil
   ) return
 
-  // Habilidade do Frank (sprite 10):
-  // sobrevive à primeira morte causada por bomba
-  if (
-    emit &&
-    cause === 'bomb' &&
-    this.extraLife
-  ) {
-    this.extraLife = false
-    this.invulnerableUntil = Date.now() + 1500
+  // Frank absorve a primeira explosão fatal, e todos na arena
+  // devem ver os 1,5 segundos de piscar que indicam a vida extra gasta.
+  if (emit && cause === 'bomb' && this.extraLife) {
+    if (this.consumeExtraLife()) emitFrankLifeUsed()
     return
   }
 

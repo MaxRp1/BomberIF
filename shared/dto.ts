@@ -143,7 +143,20 @@ export interface WinsUpdateDTO {
   wins: number
 }
 
+// Um resultado autoritativo por rodada, enviado para todos os participantes.
+// O nome e o sprite do vencedor são os sorteados no início desta partida.
+export interface RoundResultDTO {
+  roomId  : string
+  outcome : 'victory' | 'draw' | 'abandoned' | 'solo'
+  winner ?: {
+    index  : number
+    nick   : string|null
+    sprite : number
+  }
+}
+
 export interface StartGameDTO {
+  roomId  : string
   players : PlayerDTO[]
   state   : GameStateDTO
 }

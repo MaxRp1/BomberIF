@@ -120,7 +120,7 @@ export default function Lobby({ lobby, setShowOptions }: LobbyProps) {
         <FooterHint role="status" aria-live="polite">
           {everyoneReady
             ? 'Todos preparados! Qualquer participante pode iniciar a rodada.'
-            : `Aguardando ${missingReady} ${missingReady === 1 ? 'jogador' : 'jogadores'} marcar ${missingReady === 1 ? 'Pronto' : 'Pronto'}.`}
+            : `Aguardando ${missingReady} ${missingReady === 1 ? 'jogador marcar' : 'jogadores marcarem'} Pronto.`}
         </FooterHint>
       </FooterBar>
 

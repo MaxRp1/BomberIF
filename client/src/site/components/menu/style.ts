@@ -1,11 +1,37 @@
 import styled from 'styled-components'
+import { retroButton } from '~/site/theme/retro'
 
-export const Container = styled.div`
-  align-items: center;
-  display: flex;
-  justify-content: flex-end;
-  padding: 1rem 0.5rem;
+export const Container = styled.nav`
   position: relative;
+  z-index: 12;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
   width: 100%;
-  z-index: 1;
+  padding: 14px clamp(14px, 3vw, 48px);
+  pointer-events: none;
+
+  & > button {
+    ${retroButton}
+    pointer-events: auto;
+    min-width: 69px;
+    min-height: 46px;
+    padding: 10px 11px 11px;
+    font-size: 9px;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 600px) {
+    gap: 6px;
+    padding: 9px 10px;
+    & > button {
+      min-width: 0;
+      min-height: 40px;
+      padding: 9px 7px;
+      font-size: 7px;
+    }
+  }
 `

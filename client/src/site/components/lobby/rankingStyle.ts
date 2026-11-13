@@ -70,7 +70,7 @@ export const BoardRow = styled.li`
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 42px;
+  min-height: 53px;
   padding: 6px;
   background: #243244;
   border: 1px solid #41546d;
@@ -113,6 +113,25 @@ export const BoardRow = styled.li`
     font-size: 9px;
     font-weight: 700;
     color: #89baff;
+  }
+
+  .room-state {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px 7px;
+    min-width: 0;
+    font-size: 9px;
+    line-height: 1.3;
+  }
+  .room-state .ready { color: #a1e5aa; }
+  .room-state .pending { color: #f0c67e; }
+  .room-state .chosen {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #aebed2;
   }
 
   .points {

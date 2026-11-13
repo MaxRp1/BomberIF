@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { MouseEvent } from 'react'
 import { SPRITES } from '#/constants'
 import { PLAYER_D } from '~/game/animations/player'
 import { emitSelectCharacter } from '~/services/socket'
@@ -75,7 +76,7 @@ export default function CharacterSelect({ selected, ready, onClose }: CharacterS
   }
 
   return (
-    <SelectionBackdrop role="presentation" onMouseDown={event => {
+    <SelectionBackdrop role="presentation" onMouseDown={(event: MouseEvent<HTMLDivElement>) => {
       if (event.target === event.currentTarget) onClose()
     }}>
       <SelectionPanel role="dialog" aria-modal="true" aria-labelledby="choose-character-title">

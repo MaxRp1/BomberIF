@@ -268,3 +268,26 @@ test('com quatro jogadores, apenas 4/4 Prontos libera o início', async () => {
     assert.ok(s.players.every(p => p.data.isReady === false))
   } finally { s.cleanup() }
 })
+
+test('alterações de seleção e Pronto aparecem no snapshot recebido por todo o lobby', () => {
+  const s = scenario(2)
+  try {
+    selectCharacter(s.io, s.players[0], { sprite: 8 })
+    setLobbyReady(s.io, s.players[0], { ready: true })
+
+    const snapshot = s.event('update_lobby').at(-1)
+    assert.equal(snapshot?.to, 'ABCD')
+    assert.deepEqual(snapshot.payload.players.map(
+      (p: { selectedSprite: number|null; ready: boolean }) => ({
+        sprite: p.selectedSprite,
+        ready: p.ready
+      })
+    ), [
+      { sprite: 8, ready: true },
+      { sprite: null, ready: false }
+    ])
+
+    setLobbyReady(s.io, s.players[0], { ready: false })
+    assert.equal(s.event('update_lobby').at(-1)?.payload.players[0].ready, false)
+  } finally { s.cleanup() }
+})

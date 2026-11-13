@@ -85,7 +85,7 @@ export default function RoundResult({ result, myself }: RoundResultProps) {
               <span className="plate" aria-hidden="true" />
             </Portrait>
             <WinnerName>{winnerName}</WinnerName>
-            <p className="champion">CAMPEÃO DA ARENA</p>
+            <p className="champion"> FORMANDO DA PARTIDA</p>
           </>
         )}
 

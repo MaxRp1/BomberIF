@@ -302,7 +302,7 @@ export const ChoiceButton = styled.button`
   &&:hover:not(:disabled) { background: #494036; color: #f7e5c8; border-color: #c8a873; }
   &&:active:not(:disabled) { transform: translateY(1px); }
   &:disabled { opacity: .6; }
-  &&:disabled:hover { filter: none; }
+  &&:disabled:hover { background: #36322d; color: #eadcc5; border-color: #937b57; }
 
   @media (max-width: 560px) {
     grid-column: 1 / -1;
@@ -325,7 +325,7 @@ export const ReadyButton = styled.button<{ $ready: boolean }>`
   &&:hover:not(:disabled) { background: ${p => p.$ready ? '#426c51' : '#494e4e'}; color: #f3eee2; }
   &&:active:not(:disabled) { transform: translateY(1px); }
   &:disabled { opacity: .6; }
-  &&:disabled:hover { filter: none; }
+  &&:disabled:hover { background: #373b3b; color: #eae7dc; border-color: #73766e; }
   @media (max-width: 560px) { min-height: 67px; padding: 7px 5px; }
 `
 

@@ -5,7 +5,8 @@ import { PLAYER_D } from '~/game/animations/player'
 import { emitSelectCharacter } from '~/services/socket'
 import {
   SelectionBackdrop, SelectionPanel, SelectionHeading, CharacterGrid,
-  CharacterCard, CharacterPortrait, SelectionDetails, SelectionActions
+  CharacterCard, CharacterPortrait, SelectionDetails, SelectionActions,
+  CloseSelectButton, SelectionActionButton
 } from './characterSelectStyle'
 
 const LABELS: Record<number, { name: string; ability: string }> = {
@@ -23,6 +24,22 @@ export function characterName(sprite: number|null): string {
 function characterAbility(sprite: number|null): string {
   if (sprite === null) return 'Um dos personagens disponíveis será sorteado pelo servidor quando a partida começar.'
   return LABELS[sprite]?.ability ?? 'Personagem padrão, com movimentação, bombas e power-ups.'
+}
+
+// Dado desenhado em pixels para o modo Aleatório (sem emoji suavizado).
+export function PixelDice({ size = 36 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24"
+      shapeRendering="crispEdges" aria-hidden="true" focusable="false">
+      <rect x="2" y="2" width="20" height="20" fill="#fff0cb" />
+      <rect x="2" y="2" width="20" height="3" fill="#fff9dc" />
+      <rect x="2" y="19" width="20" height="3" fill="#a46648" />
+      <rect x="2" y="2" width="3" height="20" fill="#e9c393" />
+      <rect x="19" y="2" width="3" height="20" fill="#a66a50" />
+      <rect x="7" y="7" width="4" height="4" fill="#9c2932" />
+      <rect x="13" y="13" width="4" height="4" fill="#9c2932" />
+    </svg>
+  )
 }
 
 // Mostra o frame frontal autêntico do sprite, sem desenhar outro personagem.
@@ -85,7 +102,7 @@ export default function CharacterSelect({ selected, ready, onClose }: CharacterS
             <small>BOMBERIF · ELENCO</small>
             <h2 id="choose-character-title">ESCOLHER PERSONAGEM</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Fechar seleção">✕</button>
+          <CloseSelectButton type="button" onClick={onClose} aria-label="Fechar seleção">×</CloseSelectButton>
         </SelectionHeading>
 
         <CharacterGrid>
@@ -95,7 +112,7 @@ export default function CharacterSelect({ selected, ready, onClose }: CharacterS
             onClick={() => setDraft(null)}
             aria-pressed={draft === null}
           >
-            <span className="random" aria-hidden="true">🎲</span>
+            <span className="random" aria-hidden="true"><PixelDice size={36} /></span>
             <span>Aleatório</span>
           </CharacterCard>
 
@@ -120,8 +137,8 @@ export default function CharacterSelect({ selected, ready, onClose }: CharacterS
         </SelectionDetails>
 
         <SelectionActions>
-          <button type="button" className="cancel" onClick={onClose}>Cancelar</button>
-          <button type="button" className="confirm" onClick={confirm}>Confirmar escolha</button>
+          <SelectionActionButton type="button" onClick={onClose}>Cancelar</SelectionActionButton>
+          <SelectionActionButton type="button" $primary onClick={confirm}>Confirmar escolha</SelectionActionButton>
         </SelectionActions>
       </SelectionPanel>
     </SelectionBackdrop>

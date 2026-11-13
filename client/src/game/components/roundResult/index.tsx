@@ -80,7 +80,14 @@ export default function RoundResult({ result, myself }: RoundResultProps) {
         {victory && result.winner && (
           <>
             <Portrait>
-              <span className="crown" aria-hidden="true">👑</span>
+              <svg className="pixel-crown" width="46" height="35" viewBox="0 0 32 24"
+                shapeRendering="crispEdges" aria-hidden="true" focusable="false">
+                <path d="M2 5h7v7h4V2h6v10h4V5h7v15H2Z" fill="#f5b957" />
+                <path d="M2 5h4v12H2Zm24 0h4v12h-4Z" fill="#b94d2e" />
+                <rect x="4" y="17" width="24" height="5" fill="#b75430" />
+                <rect x="4" y="17" width="24" height="2" fill="#ffe28b" />
+                <rect x="14" y="9" width="4" height="4" fill="#ad3032" />
+              </svg>
               <WinnerPortrait sprite={result.winner.sprite} />
               <span className="plate" aria-hidden="true" />
             </Portrait>

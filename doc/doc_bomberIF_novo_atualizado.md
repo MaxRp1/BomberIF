@@ -9911,3 +9911,54 @@ O componente `Container` utiliza `pointer-events:none` para não bloquear clique
 - `client/src/index.css` **não alterado** para evitar regressões nas outras páginas.
 
 **Verificações:** executar `cd ~/BomberIF && git pull --ff-only origin feat/character-selection-ready-2026-11-13 && cd client && yarn build`. No navegador, confirmar: (1) Opções aparece ao lado de Menu e abre/fecha a tela de opções; (2) nenhum controle do rodapé permanece inclinado, inclusive ao passar o mouse; (3) cores permanecem legíveis nos estados Pronto/Pendente/Jogar desabilitado; (4) modal de personagens continua clicável; (5) rodapé e ranking continuam responsivos. O build e a inspeção visual desta revisão **ainda não foram executados pelo assistente**.
+
+
+---
+
+## AJUSTE 13/11/2026 — SISTEMA VISUAL ARCADE PIXEL ART (PR #9)
+
+**Status:** alteração de interface na branch `feat/character-selection-ready-2026-11-13`, ainda não incorporada à `main` e não publicada. O desenvolvimento foi motivado pela referência visual enviada pelo projeto, com botões retro laranja/vermelho e sombreamento em degraus. Reutiliza a lógica atual de seleção, Pronto, multiplayer, ranking e vitória.
+
+### Linguagem visual e componentes reutilizáveis
+- **Novo `client/src/site/theme/retro.ts`**: centraliza a fonte `pixelFont` (Press Start 2P com fallback monoespaçado), os fragmentos `retroPanel` (moldura escura), `retroInset` (área rebaixada) e `retroButton` (botão arcade com bordas de 3px, face laranja, brilho superior, sombra lateral em pixels, sombra externa rígida, clique com rebaixamento e estados `:hover`, `:disabled`, `:focus-visible`).
+- As variantes de botões usam propriedades CSS `--px-top`, `--px-face`, `--px-side`, `--px-base`, `--px-ink` e `--px-hover`. Isso permite botão **Pronto** verde quando marcado, **Jogar** laranja quando habilitado e cinza quando indisponível, sem repetir a implementação dos relevos.
+- As molduras permanecem **retangulares**, sem os losangos do `clip-path` global. As sombras não usam blur para manter um acabamento próximo de sprites. A fonte Press Start 2P **já era carregada** pelo `client/public/index.html`; não foi incluída dependência npm nem arquivo de fonte. Caso o serviço de fontes esteja indisponível, usa alternativa monoespaçada.
+- As animações usam passos discretos e são reduzidas ou removidas quando `prefers-reduced-motion` está ativo. Textos longos (descrições e ajuda) mantêm fontes legíveis em vez de serem todos convertidos em pixel font pequeno.
+
+### Componentes e arquivos atualizados
+1. `client/src/site/components/menu/style.ts`: transforma os quatro botões do canto superior direito (Opções, Menu, Sobre, Ajuda) em botões pixelados, mantendo o comportamento de navegação/Opções.
+2. `client/src/site/components/lobby/style.ts`: aplica o sistema de molduras ao rodapé, ID da sala, cartão de jogador (avatar permanece **ao lado do nick**), Seleção, Pronto e Jogar. Preserva organização responsiva para notebooks e dispositivos móveis.
+3. `client/src/site/components/lobby/rankingStyle.ts`: transforma o placar de sala num HUD de arcade escuro com números, classificação, status Pronto/Pendente e pontuação destacados.
+4. `client/src/site/components/lobby/characterSelectStyle.ts`: modal do elenco com bordas de pixels, cartões de retrato destacáveis, descrição legível e botões Confirmar/Cancelar no padrão arcade.
+5. `client/src/site/components/lobby/characterSelect.tsx`: usa os novos `CloseSelectButton` e `SelectionActionButton`, e introduz `PixelDice` (SVG geométrico de pixels) para o modo Aleatório. Mantém `SpritePortrait` com `imageSmoothingEnabled=false` e os mesmos IDs/sprites/habilidades.
+6. `client/src/site/components/lobby/index.tsx`: mostra `PixelDice` somente quando Aleatório; ao escolher um sprite específico, continua apresentando o **recorte original do personagem** à esquerda do nome. A lógica Pronto/Jogar e o ranking não mudaram.
+7. `client/src/site/components/options/style.ts` e `index.tsx`: adicionam janela de configurações com moldura arcade, campos de texto de código do lobby/nick com rótulos e botões de envio retrô; preservam as ações de entrar em sala, trocar nick, habilitar voz, tela cheia e modo mobile.
+8. `client/src/site/components/toggle/style.ts` e `index.tsx`: controles ON/OFF adotam painéis pixelados e passam a usar `button type="button" aria-pressed`, para permitir teclado e leitores de tela. As propriedades `on` e `onClick` mantêm o contrato existente.
+9. `client/src/site/components/onlinePlayers/style.ts` e `index.tsx`: indicador online com pixel luminoso, borda rebaixada e texto em português (`JOGADOR(ES) ONLINE`); continua consultando `/players/count`.
+10. `client/src/game/components/canvas/rankingStyle.ts`: ranking durante a partida adota os mesmos painéis, tipografia e botão para abrir/fechar; preserva os estados `ranking-hidden`/`ranking-popup`.
+11. `client/src/game/components/roundResult/style.ts` e `index.tsx`: tela FORMANDO DA PARTIDA recebe moldura em pixels, fonte arcade, animação em passos, barra visual de cinco segundos e `svg` de coroa pixelada no lugar do emoji. A duração `RESULT_DISPLAY_MS`, o nome e sprite do vencedor e o evento `round_result` **não foram alterados**.
+12. GDD no Google Docs: atualizados os textos de resultado e lobby na seção 3.7, criada a seção **3.8 Diretrizes visuais da interface — arcade pixel art**.
+
+### Verificações de compatibilidade
+- `client/src/index.css` não foi modificado: o reset geral ainda usa um `clip-path` para botões, mas o `retroButton` e os componentes específicos têm precedência para neutralizá-lo nas novas telas. Evitar reintroduzir clip-path losangular via seletor global.
+- O CSS pixel art não altera hitboxes, chamadas de Socket.IO, servidor, seleção aleatória, contagem de Prontos, ranking ou resultados de rodada.
+- A interface usa variáveis CSS e `styled-components` já instalados; não foi introduzida nova biblioteca.
+
+### Teste no Kali (obrigatório antes do merge)
+```bash
+cd ~/BomberIF
+git status
+git pull --ff-only origin feat/character-selection-ready-2026-11-13
+cd client
+yarn build
+```
+Em seguida, testar visualmente em 1920×1080, 1366×768, celular vertical e horizontal:
+1. Opções, Menu, Sobre e Ajuda exibem botões pixelados e continuam acionáveis; Opções abre um painel legível e Voltar fecha corretamente.
+2. Formulários de sala/nick funcionam; opções de voz, tela cheia e modo mobile alternam via clique, Enter e Espaço; botões não adquirem o losango global.
+3. Personagens e modo Aleatório aparecem no catálogo; selecionar Mamedes, Proença, Frank ou Ino exibe o sprite original junto ao apelido no rodapé. Aleatório exibe o dado em pixels. Confirmar a escolha desmarca Pronto quando necessário.
+4. Botões Pronto/Jogar respeitam os estados e o bloqueio autoritativo já testado no servidor; o estilo desabilitado não simula botão clicável.
+5. Placar do lobby e HUD durante a partida preservam as vitórias e os estados; o botão de ranking compacto continua funcional em telas estreitas.
+6. Com dois jogadores, o resultado mostra nome e sprite correto do vencedor e coroa pixelada; ambos continuam retornando ao lobby após aproximadamente cinco segundos.
+7. Conferir pixel font carregada ou fallback aceitável, contraste, foco por teclado, scroll em telas pequenas e nenhuma interferência na arte de fundo.
+
+Os testes de servidor informados previamente no Kali continuam como referência (13 do lobby, 12 do ranking e 8 do Mamedes, total **33 aprovados**); eles não verificam o visual. **O novo build do frontend e a inspeção visual desta revisão ainda não foram executados.**

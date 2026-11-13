@@ -8,10 +8,10 @@ export const Board = styled.aside`
   max-height: min(55svh, 370px);
   overflow-y: auto;
   padding: 13px;
-  color: #f4f7ff;
-  background: linear-gradient(180deg, #1b2839 0%, #101821 100%);
-  border: 2px solid #4a607a;
-  box-shadow: 4px 4px 0 #070c13, inset 0 0 0 2px #26384d;
+  color: #e9e4d8;
+  background: #1d2023;
+  border: 2px solid #625b4d;
+  box-shadow: 4px 4px 0 #0d0e10, inset 0 0 0 2px #302d28;
   font-family: Arial, sans-serif;
   font-size: 12px;
 
@@ -27,13 +27,13 @@ export const BoardHeader = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border-bottom: 1px solid #405269;
+  border-bottom: 1px solid #554f45;
   padding-bottom: 10px;
   margin-bottom: 10px;
 
   strong {
     display: block;
-    color: #f5cc70;
+    color: #dab475;
     font-size: 13px;
     letter-spacing: 0.5px;
   }
@@ -41,7 +41,7 @@ export const BoardHeader = styled.div`
   small {
     display: block;
     margin-top: 4px;
-    color: #aabbd0;
+    color: #b5aea2;
     font-size: 9px;
     letter-spacing: 0.4px;
   }
@@ -50,8 +50,8 @@ export const BoardHeader = styled.div`
 export const BoardCount = styled.span`
   flex-shrink: 0;
   padding: 5px 7px;
-  color: #e2eaf4;
-  background: #293a4e;
+  color: #e7decf;
+  background: #353637;
   font-weight: 700;
 `
 
@@ -72,23 +72,23 @@ export const BoardRow = styled.li`
   min-width: 0;
   min-height: 53px;
   padding: 6px;
-  background: #243244;
-  border: 1px solid #41546d;
+  background: #2b2d2d;
+  border: 1px solid #53544b;
 
   &.leader {
-    background: #393322;
-    border-color: #ad8740;
+    background: #393327;
+    border-color: #a58b5b;
   }
 
   &.me {
-    outline: 2px solid #67a5ff;
+    outline: 2px solid #bca375;
     outline-offset: -2px;
   }
 
   .rank {
     flex: 0 0 29px;
     text-align: center;
-    color: #c4d0dd;
+    color: #c7bfb0;
     font-weight: 700;
     font-size: 13px;
   }
@@ -112,7 +112,7 @@ export const BoardRow = styled.li`
   .identity small {
     font-size: 9px;
     font-weight: 700;
-    color: #89baff;
+    color: #d6b57a;
   }
 
   .room-state {
@@ -124,14 +124,14 @@ export const BoardRow = styled.li`
     font-size: 9px;
     line-height: 1.3;
   }
-  .room-state .ready { color: #a1e5aa; }
-  .room-state .pending { color: #f0c67e; }
+  .room-state .ready { color: #a8c7a0; }
+  .room-state .pending { color: #d0aa7a; }
   .room-state .chosen {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: #aebed2;
+    color: #b9b4a8;
   }
 
   .points {
@@ -140,17 +140,17 @@ export const BoardRow = styled.li`
     align-items: center;
     flex-direction: column;
     padding: 4px;
-    background: #101923;
-    color: #f4c86a;
+    background: #202020;
+    color: #d7af6a;
   }
 
   .points strong { font-size: 16px; }
-  .points small { font-size: 8px; color: #a8b6c7; }
+  .points small { font-size: 8px; color: #b1a99d; }
 `
 
 export const BoardFooter = styled.p`
   margin: 10px 0 0;
   text-align: center;
-  color: #9faec2;
+  color: #aaa399;
   font-size: 9px;
 `

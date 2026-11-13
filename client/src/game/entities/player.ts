@@ -1,5 +1,6 @@
-import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, MOVEMENT_SYNC_INTERVAL_MS, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
+import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
+import { shouldSyncMovement } from '#/network'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
@@ -274,7 +275,7 @@ this.speedMultiplier =
   // A física local continua em 60 FPS, mas somente snapshots recentes
   // cruzam a rede. O último movimento (keyup/colisão) é confiável.
   const now = Date.now()
-  if (now - this.lastMovementSentAt >= MOVEMENT_SYNC_INTERVAL_MS) {
+  if (shouldSyncMovement(now, this.lastMovementSentAt)) {
     emitMove({
       h:this.holding,
       m:this.moving,

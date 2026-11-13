@@ -37,7 +37,7 @@ export function startGameFactory (
 
     // O servidor sempre decide o sprite efetivo; null mantém o modo aleatório.
     const selected = p.data.selectedSprite
-    const sprite = Number.isInteger(selected) && selected >= 0 && selected < SPRITES
+    const sprite = typeof selected === 'number' && Number.isInteger(selected) && selected >= 0 && selected < SPRITES
       ? selected
       : Math.floor(Math.random() * SPRITES)
     const size = players.push({

@@ -14,7 +14,7 @@ export const Container = styled.div`
   z-index: 2;
   font-family: Arial, sans-serif;
 
-  @media (max-width: 980px) {
+  @media (max-width: 1100px) {
     position: relative;
     inset: auto;
     width: 100%;
@@ -25,6 +25,15 @@ export const Container = styled.div`
 
   @media (max-width: 560px) {
     padding: 74px 10px 12px;
+    gap: 12px;
+  }
+
+  @media (min-width: 1101px) and (max-height: 540px) {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    min-height: 100%;
+    padding-top: 72px;
     gap: 12px;
   }
 `
@@ -40,7 +49,7 @@ export const SidePanel = styled.aside`
   gap: 10px;
   pointer-events: auto;
 
-  @media (max-width: 980px) {
+  @media (max-width: 1100px) {
     position: relative;
     inset: auto;
     align-self: flex-end;
@@ -52,9 +61,15 @@ export const SidePanel = styled.aside`
     gap: 7px;
   }
 
-  @media (min-width: 981px) and (max-height: 700px) {
+  @media (min-width: 1101px) and (max-height: 700px) {
     top: 76px;
     gap: 6px;
+  }
+
+  @media (min-width: 1101px) and (max-height: 540px) {
+    position: relative;
+    inset: auto;
+    align-self: flex-end;
   }
 `
 

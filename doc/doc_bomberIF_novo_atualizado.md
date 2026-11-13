@@ -9962,3 +9962,35 @@ Em seguida, testar visualmente em 1920×1080, 1366×768, celular vertical e hori
 7. Conferir pixel font carregada ou fallback aceitável, contraste, foco por teclado, scroll em telas pequenas e nenhuma interferência na arte de fundo.
 
 Os testes de servidor informados previamente no Kali continuam como referência (13 do lobby, 12 do ranking e 8 do Mamedes, total **33 aprovados**); eles não verificam o visual. **O novo build do frontend e a inspeção visual desta revisão ainda não foram executados.**
+
+
+---
+
+## PUBLICAÇÃO NO REPOSITÓRIO — PR #9 INTEGRADO À MAIN EM 13/11/2026
+
+**Situação confirmada:** PR #9 `feat: seleção de personagens e confirmação de Pronto no lobby` marcado como pronto para revisão e **integrado com sucesso na `main`**. Commit de merge: `048c4bedef3cb5af28daf8f552fec89528d99129`. Aprovação visual recebida a partir de captura do jogo rodando localmente no navegador do Kali em 13/11/2026.
+
+### Funcionalidades incluídas no merge
+- Seleção de personagem no lobby, com os doze sprites, escolha manual ou Aleatório por padrão; múltiplos participantes podem escolher o mesmo sprite.
+- Pronto/Pendente por socket, sincronização via `update_lobby`, bloqueio autoritativo do início da partida enquanto algum participante da sala não confirmar; alteração do personagem desmarca Pronto e a próxima rodada requer nova confirmação.
+- Interface pixel art/arcade (menu superior, barra inferior, catálogo de personagens, opções, ON/OFF, ranking antes e durante o jogo e tela de resultado), mantendo o sprite escolhido ao lado do nick.
+- Botões retangulares com relevos em pixels, paleta laranja/vermelho e painéis escuros; código do lobby e ranking no painel lateral. `Preencher Sala` permanece desativado na interface.
+
+### Evidências de teste e limites
+- Resultado informado do Kali: **13/13** testes de lobby, **12/12** de ranking e **8/8** de stun do Mamedes, total **33/33** testes de servidor aprovados. Build do servidor concluído na ocasião.
+- A captura de 13/11/2026 confirma que a UI retrô abriu e exibiu o personagem selecionado no navegador local; **não corresponde necessariamente ao build otimizado de produção**.
+- O frontend do site publicado usa a branch **`client`** via GitHub Pages, que ainda não foi atualizada por este merge; a `main` contém o código-fonte. O backend Render pode acompanhar a `main`, a depender da configuração do serviço; o deploy real do Render precisa ser verificado separadamente.
+
+### Publicação do cliente e verificação
+No Kali, estando sem alterações locais pendentes:
+```bash
+cd ~/BomberIF
+git switch main
+git pull --ff-only origin main
+cd client
+yarn build
+yarn deploy
+```
+Se `yarn deploy` rodar o script `client/deploy.sh`, a branch `client` receberá a build por push com force; isso é o fluxo existente do projeto. Conferir o GitHub Pages e o Render após essa operação, sobretudo porque o servidor atualizado **exige Pronto antes de aceitar `join_room`** e o frontend antigo não fornece essa confirmação.
+
+**Documentação sincronizada:** GDD do Google Docs atualizado nas seções 3.7 e 3.8 com a conclusão da integração à main e a ressalva de que o site publicado depende de deploy distinto. Os capítulos de desenvolvimento anteriores nesta documentação permanecem como histórico da branch e não devem ser interpretados como status atual.

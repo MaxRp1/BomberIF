@@ -1,29 +1,18 @@
-
 import styled from 'styled-components'
+import { pixelFont, retroButton, retroInset, retroPanel } from '~/site/theme/retro'
 
+// HUD de vitórias durante a rodada, alinhado ao placar pré-partida.
 export const RankingPanel = styled.aside`
+  ${retroPanel}
   position: fixed;
   top: 14px;
   left: 14px;
   z-index: 30;
-
   box-sizing: border-box;
   width: 280px;
-  padding: 13px;
-
-  color: #f4f7ff;
-  background: linear-gradient(
-    180deg,
-    #1b2839 0%,
-    #101821 100%
-  );
-
-  border: 2px solid #4a607a;
-  box-shadow:
-    4px 4px 0 #070c13,
-    inset 0 0 0 2px #26384d;
-
-  font-family: Arial, sans-serif;
+  padding: 12px;
+  max-height: min(75svh, 460px);
+  overflow-y: auto;
 
   .ranking-heading {
     display: flex;
@@ -31,54 +20,55 @@ export const RankingPanel = styled.aside`
     justify-content: space-between;
     gap: 8px;
     padding: 4px 0 12px;
-    border-bottom: 1px solid #405269;
+    border-bottom: 3px solid #744338;
     margin-bottom: 10px;
   }
 
   .ranking-title {
-    color: #f5cc70;
-    font-size: 14px;
-    font-weight: 900;
-    letter-spacing: 0.8px;
+    color: #ffc184;
+    font-family: ${pixelFont};
+    font-size: 10px;
+    line-height: 1.6;
   }
 
   .ranking-subtitle {
     display: block;
-    margin-top: 4px;
-    color: #9faec2;
+    margin-top: 7px;
+    color: #cabbab;
+    font-family: 'Trebuchet MS', sans-serif;
     font-size: 10px;
     font-weight: normal;
-    letter-spacing: 0;
+    line-height: 1.4;
   }
 
   .ranking-count {
-    padding: 5px 7px;
-    background: #293a4e;
-    color: #d6e1ef;
-    font-size: 11px;
-    font-weight: bold;
+    ${retroInset}
+    flex: 0 0 auto;
+    padding: 6px;
+    color: #ffdc97;
+    font-family: ${pixelFont};
+    font-size: 9px;
+    line-height: 1.4;
   }
 
   .ranking-row {
+    ${retroInset}
     display: flex;
     align-items: center;
     gap: 9px;
-    min-height: 44px;
+    min-height: 51px;
     box-sizing: border-box;
     padding: 7px;
-    margin-top: 7px;
-
-    background: #243244;
-    border: 1px solid #41546d;
+    margin-top: 8px;
   }
 
   .ranking-leader {
-    background: #393322;
-    border-color: #ad8740;
+    background: #3e302b;
+    border-color: #b36a3e;
   }
 
   .ranking-me {
-    outline: 2px solid #67a5ff;
+    outline: 2px solid #f4bb70;
     outline-offset: -2px;
   }
 
@@ -87,9 +77,9 @@ export const RankingPanel = styled.aside`
     width: 27px;
     flex-shrink: 0;
     justify-content: center;
-    color: #c4d0dd;
-    font-size: 14px;
-    font-weight: bold;
+    color: #ffc184;
+    font-family: ${pixelFont};
+    font-size: 9px;
   }
 
   .ranking-person {
@@ -97,21 +87,24 @@ export const RankingPanel = styled.aside`
     flex: 1;
     min-width: 0;
     flex-direction: column;
-    gap: 3px;
+    gap: 5px;
   }
 
   .ranking-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 14px;
-    font-weight: bold;
+    color: #fff1d2;
+    font-family: ${pixelFont};
+    font-size: 9px;
+    line-height: 1.6;
   }
 
   .ranking-you {
-    color: #89baff;
-    font-size: 9px;
-    font-weight: bold;
+    color: #f6ad71;
+    font-family: ${pixelFont};
+    font-size: 7px;
+    line-height: 1.3;
   }
 
   .ranking-wins {
@@ -119,18 +112,22 @@ export const RankingPanel = styled.aside`
     flex-shrink: 0;
     flex-direction: column;
     align-items: center;
-    min-width: 31px;
-    padding: 5px;
-    background: #101923;
-    color: #f4c86a;
-    font-size: 17px;
-    font-weight: bold;
+    min-width: 34px;
+    gap: 3px;
+    padding: 6px 4px;
+    background: #16161d;
+    border: 2px solid #100e17;
+    color: #ffc184;
+    font-family: ${pixelFont};
+    font-size: 11px;
+    line-height: 1.5;
   }
 
   .ranking-wins small {
-    color: #a8b6c7;
-    font-size: 8px;
-    font-weight: normal;
+    color: #d1bdad;
+    font-family: 'Trebuchet MS', sans-serif;
+    font-size: 9px;
+    line-height: 1.3;
   }
 
   @media (max-width: 900px) {
@@ -139,34 +136,14 @@ export const RankingPanel = styled.aside`
     width: 176px;
     padding: 7px;
 
-    .ranking-title {
-      font-size: 11px;
-    }
-
-    .ranking-row {
-      min-height: 33px;
-      padding: 4px;
-      gap: 5px;
-    }
-
-    .ranking-name {
-      font-size: 11px;
-    }
-
-    .ranking-pos {
-      width: 20px;
-      font-size: 11px;
-    }
-
-    .ranking-wins {
-      font-size: 12px;
-    }
+    .ranking-title { font-size: 8px; }
+    .ranking-row { min-height: 38px; padding: 4px; gap: 5px; }
+    .ranking-name { font-size: 7px; }
+    .ranking-pos { width: 20px; font-size: 8px; }
+    .ranking-wins { font-size: 9px; }
   }
 
-  /* Mantém o placar dentro do espaço livre; em telas estreitas, usa popup. */
-  &.ranking-hidden {
-    display: none;
-  }
+  &.ranking-hidden { display: none; }
 
   &.ranking-popup {
     top: 56px;
@@ -178,18 +155,13 @@ export const RankingPanel = styled.aside`
 `
 
 export const RankingToggle = styled.button`
+  ${retroButton}
   position: fixed;
   top: 12px;
   left: 12px;
   z-index: 31;
-  padding: 9px 12px;
-  color: #f5cc70;
-  background: #1b2839;
-  border: 2px solid #4a607a;
-  box-shadow: 3px 3px 0 #070c13;
-  font-family: Arial, sans-serif;
-  font-size: 12px;
-  font-weight: bold;
-  cursor: pointer;
+  min-height: 36px;
+  padding: 9px 10px;
+  font-size: 8px;
   touch-action: manipulation;
 `

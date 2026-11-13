@@ -44,7 +44,10 @@ const handleMyself = useCallback((index: number) => {
   /**
    * Função utilitária que resolve qual interface renderizar antes de a partida iniciar.
    */
-  function GetPage () {
+  // Chamar uma função de renderização, em vez de montar <GetPage />.
+  // Um componente definido dentro de HomePage muda de identidade em cada
+  // snapshot do lobby, o que desmontava o seletor aberto e reiniciava o áudio.
+  function getPage () {
     if (outlet) return <Outlet />
     if (showOptions) return <Options setShowOptions={setShowOptions} />
     if (lobby) return <Lobby lobby={lobby} setShowOptions={setShowOptions} />
@@ -79,7 +82,7 @@ const handleMyself = useCallback((index: number) => {
         // Fora de partida: exibe menus, lobby e fundo animado
         <Container $slow={slow}>
           {!showOptions && <Menu />}
-          <GetPage />
+          {getPage()}
         </Container>
       )}
     </SiteApp>

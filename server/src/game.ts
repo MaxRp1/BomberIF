@@ -16,7 +16,10 @@ export function onMove (io:Server, socket:Socket, dto:MoveDTO) {
   socket.data.playerX = dto.x
   socket.data.playerY = dto.y
   dto.p = socket.data.index
-  io.to(socket.data.roomId).emit('mv', dto)
+  // Movimentos contínuos são snapshots: não acumular posições antigas.
+  // Uma parada (m=0) é confiável, para não deixar adversários deslizando.
+  if (dto.m === 0) io.to(socket.data.roomId).emit('mv', dto)
+  else io.to(socket.data.roomId).volatile.emit('mv', dto)
 }
 
 export function onPlaceBomb (io:Server, socket:Socket, dto:PlaceBombDTO) {

@@ -223,6 +223,7 @@ test('sair de uma rodada exige novo Pronto, mas preserva a escolha', async () =>
     s.players.forEach(p => setLobbyReady(s.io, p, { ready: true }))
     await joinRoom(s.io, s.players[0], { fillRoom: false })
     exitPairing(s.io, s.players[0])
+    exitPairing(s.io, s.players[1])
     assert.equal(s.players[0].data.isPairing, false)
     assert.equal(s.players[0].data.isReady, false)
     assert.equal(s.players[0].data.selectedSprite, 2)

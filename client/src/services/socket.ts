@@ -54,6 +54,11 @@ export function emitLobbyReady(dto: LobbyReadyDTO) {
   socket.emit('lobby_ready', dto)
 }
 
+// O próprio Frank comunica que consumiu a vida extra; o servidor valida.
+export function emitFrankLifeUsed () {
+  socket.emit('frank_life_used')
+}
+
 export function emitKill (dto:KillDTO) {
   socket.emit('kl', dto)
 }

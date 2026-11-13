@@ -1,6 +1,6 @@
 import styled from 'styled-components'
 
-export const Container = styled.button<{loading:boolean}>`
+export const Container = styled.button<{ $loading:boolean }>`
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -12,7 +12,7 @@ export const Container = styled.button<{loading:boolean}>`
   color: #b5edd8;
   font: 700 11px Arial, sans-serif;
   box-shadow: 3px 3px 0 rgba(5, 8, 16, .55);
-  opacity: ${p => p.loading ? 0.55 : 1};
+  opacity: ${p => p.$loading ? 0.55 : 1};
   transition: background .2s ease, border-color .2s ease;
   cursor: pointer;
   &:hover { background: #28494f; border-color: #9ddbc2; }

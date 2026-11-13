@@ -9838,3 +9838,7 @@ A implementação só deve ser considerada aprovada quando build + testes automa
 - O estado de escolha/Pronto é mantido na memória do servidor, associado ao socket; não existe perfil ou salvamento entre reconexões.
 - A solução não introduz seleção exclusiva/reserva de personagem, host obrigatório, expulsão, tela de revanche, gerenciamento de identidade ou autenticação de conta.
 - A regra de Pronto vale para o **lobby de origem**. No modo Preencher Sala, grupos já confirmados podem ser combinados pelo pareamento sem uma segunda confirmação de uma sala global.
+
+### Correção de compilação do seletor — 13/11/2026
+
+O build do frontend no Kali identificou `TS7006` em `client/src/site/components/lobby/characterSelect.tsx`: o parâmetro `event` do callback `onMouseDown` em `SelectionBackdrop` estava implicitamente tipado como `any`. Foi adicionada a importação de tipo `MouseEvent` de React e a anotação `(event: MouseEvent<HTMLDivElement>)`, sem modificar o fechamento do modal ao clicar fora do painel. Evidência do usuário antes da correção: `yarn test:lobby` 13/13, `yarn test:ranking` 12/12, `yarn test:stun` 8/8 e build do servidor concluído. O build do frontend **ainda precisa ser repetido** após puxar o commit de correção; não marcar a validação completa até obter sucesso. Os avisos sobre `No license field`, TypeScript versus `@typescript-eslint/typescript-estree` e tamanho do bundle do servidor não são as causas da falha TS7006.

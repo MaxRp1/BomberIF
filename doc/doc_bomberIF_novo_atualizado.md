@@ -9842,3 +9842,50 @@ A implementação só deve ser considerada aprovada quando build + testes automa
 ### Correção de compilação do seletor — 13/11/2026
 
 O build do frontend no Kali identificou `TS7006` em `client/src/site/components/lobby/characterSelect.tsx`: o parâmetro `event` do callback `onMouseDown` em `SelectionBackdrop` estava implicitamente tipado como `any`. Foi adicionada a importação de tipo `MouseEvent` de React e a anotação `(event: MouseEvent<HTMLDivElement>)`, sem modificar o fechamento do modal ao clicar fora do painel. Evidência do usuário antes da correção: `yarn test:lobby` 13/13, `yarn test:ranking` 12/12, `yarn test:stun` 8/8 e build do servidor concluído. O build do frontend **ainda precisa ser repetido** após puxar o commit de correção; não marcar a validação completa até obter sucesso. Os avisos sobre `No license field`, TypeScript versus `@typescript-eslint/typescript-estree` e tamanho do bundle do servidor não são as causas da falha TS7006.
+
+
+---
+
+## AJUSTE 13/11/2026 — REORGANIZAÇÃO VISUAL DO LOBBY E DESATIVAÇÃO DE PREENCHER SALA
+
+**Status:** implementação na branch `feat/character-selection-ready-2026-11-13`, vinculada ao PR #9. A validação visual do novo layout e o `yarn build` do frontend precisam ser repetidos antes do merge/deploy.
+
+### Problema de usabilidade
+A primeira versão do lobby com seleção de personagem e botão Pronto empilhava essas ações junto de Jogar, Preencher Sala, contagem online e ranking. Em telas largas, esses controles concorriam visualmente com a arte do jogo; em telas menores a coluna de botões ocupava a área central. O protótipo fornecido pelo projeto propôs concentrar as ações na parte inferior e preservar o placar na lateral.
+
+### Nova organização e comportamento
+- O lobby agora utiliza uma **barra inferior unificada** (`FooterBar`) com: identificação do usuário e avatar do sprite selecionado (🎲 no modo Aleatório); botão de **Escolher Personagem**; botão de **Marcar Pronto/Cancelar**; botão **Jogar**, desabilitado enquanto a contagem de jogadores Prontos for menor que o total. A barra contém uma mensagem concisa de status da sala.
+- O painel lateral (`SidePanel`) concentra **código copiável do lobby**, **Opções**, **placar da sala** e **jogadores online**. O antigo cartão verde diagonal de jogadores foi removido da composição; as informações de seleção e Pronto de cada participante agora aparecem diretamente nas linhas do placar.
+- A identidade mantém a arte de fundo do BomberIF, com uma base escura semitransparente, destaque verde para o jogador, dourado para seleção e azul-ciano para Jogar. Os efeitos de hover/disabled/foco visível preservam distinções funcionais.
+- Layout responsivo com adaptação da barra para duas colunas em larguras de até 1100px, composição simplificada abaixo de 560px, e painel lateral que entra no fluxo do documento em telas até 980px. Em telas pequenas a interface deve rolar sem recobrir permanentemente os controles.
+- `SpritePortrait` foi exportado de `characterSelect.tsx` para reutilizar o recorte do sprite original dentro da identificação do jogador no rodapé.
+- O componente online mudou para um botão escuro e acessível com propriedade transient `$loading`, evitando repassar atributos internos de estilo ao DOM.
+
+### Remoção temporária de Preencher Sala
+A opção **Preencher Sala** foi retirada da UI a pedido do projeto porque a funcionalidade de completar grupos ainda não está pronta para uso. **Não é apenas ocultação visual**: `client/src/site/components/lobby/method.ts:joinRoom()` agora transmite explicitamente `{fillRoom:false}`, ignorando configurações antigas `options.fillRoom=true` possivelmente salvas no navegador. Assim, Jogar inicia somente com os participantes do lobby atual.
+
+O servidor mantém sua implementação de fila para eventual correção futura, mas essa opção não é anunciada nem acionada pelo lobby na versão em validação. O requisito de **todos Prontos** permanece igual e continua validado pelo servidor; nenhuma regra de ranking, personagem, habilidade ou resultado da rodada foi alterada.
+
+### Arquivos alterados nesta revisão
+- `client/src/site/components/lobby/index.tsx`: nova hierarquia semântica da interface, contador e status dos Prontos, botão Jogar no rodapé e transferência do código/Opções para o painel lateral.
+- `client/src/site/components/lobby/style.ts`: substituição do layout anterior por barra inferior, painel lateral, cartões responsivos e estados visuais de botões.
+- `client/src/site/components/lobby/ranking.tsx` e `rankingStyle.ts`: escolha de personagem e status Pronto/Pendente em cada linha, sem alterar critério de ordenação por vitórias.
+- `client/src/site/components/lobby/characterSelect.tsx`: exporta `SpritePortrait`, reaproveitando as folhas existentes.
+- `client/src/site/components/lobby/method.ts`: `joinRoom` força `fillRoom:false` para desativar a fila não funcional.
+- `client/src/site/components/onlinePlayers/index.tsx` e `style.ts`: indicador online discreto e operável por teclado.
+- `doc/doc_bomberIF_novo_atualizado.md`: registro das alterações e dos cuidados para futura reativação de Preencher Sala.
+- **GDD** `GDD_BomberIF_Final` no Google Docs: seção 3.7 atualizada com a barra inferior e a indisponibilidade temporária de Preencher Sala.
+
+### Verificações de regressão antes de publicar
+1. `cd client && yarn build`; confirmar ausência de erros TypeScript após a mudança de componentes e estilos. Executar também `cd ../server && yarn test:lobby && yarn test:ranking && yarn test:stun && yarn build` se houver outras alterações locais.
+2. Desktop 1920×1080, 1366×768 e uma resolução com altura reduzida: confirmar rodapé legível, código da sala clicável, painel de ranking sem sobreposição da arte principal e botões do menu superior acessíveis.
+3. Celular vertical e horizontal: confirmar rolagem, botão Jogar desabilitado até todos Prontos, seletor de 12 personagens acessível, e nenhum elemento além da largura da tela.
+4. Com dois jogadores, alterar Aleatório ↔ personagem fixo, confirmar status remoto dentro do placar, cancelar Pronto, iniciar após todos confirmarem e receber a tela de resultado corretamente.
+5. Antes de confirmar Pronto e após voltar de uma rodada, validar que o servidor continua rejeitando tentativas prematuras de `join_room`.
+6. Confirmar que **Preencher Sala não aparece** nem é solicitado no início, inclusive com `fillRoom:true` salvo nas opções de sessões anteriores.
+7. Verificar atualização de jogadores online e manutenção da navegação **Opções** e cópia do ID do lobby.
+
+### Notas para manutenção
+- Caso Preencher Sala volte a funcionar futuramente, reintroduzir a escolha explicitamente na interface e voltar a parametrizar `emitJoinRoom({fillRoom})`. Reavaliar o fluxo entre lobbies e testes de pareamento antes de permitir preenchimento automático.
+- Para modificar somente as cores ou dimensões do lobby, editar principalmente `client/src/site/components/lobby/style.ts` e `rankingStyle.ts`, não o servidor.
+- O novo layout **não pressupõe que o PR #9 já foi publicado**. O resultado visual definitivo ainda depende do teste no navegador do projeto.

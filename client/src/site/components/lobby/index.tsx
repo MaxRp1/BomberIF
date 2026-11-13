@@ -6,7 +6,7 @@ import OnlinePlayers from '~/site/components/onlinePlayers'
 import { playLobbySound, stopLobbySound } from '~/game/sound/lobby'
 import { joinRoom } from './method'
 import LobbyRanking from './ranking'
-import CharacterSelect, { characterName, SpritePortrait } from './characterSelect'
+import CharacterSelect, { characterName, PixelDice, SpritePortrait } from './characterSelect'
 import {
   Container, SidePanel, RoomHeader, LobbyId, OnlineStatus,
   FooterBar, PlayerSummary, AvatarSlot, PlayerIdentity, PlayerStatus,
@@ -68,7 +68,7 @@ export default function Lobby({ lobby }: LobbyProps) {
         <PlayerSummary>
           <AvatarSlot aria-hidden="true">
             {mySprite === null
-              ? <span className="random-avatar">🎲</span>
+              ? <span className="random-avatar"><PixelDice size={34} /></span>
               : <SpritePortrait sprite={mySprite} />}
           </AvatarSlot>
           <PlayerIdentity>

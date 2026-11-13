@@ -2,7 +2,9 @@ import io from 'socket.io-client'
 import { CallAnswerDTO, CallOfferDTO, CharacterSelectionDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, JoinRoomDTO, KillDTO, LobbyReadyDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
 import { SERVER_URL } from '~/constants'
 
-export const socket = io(SERVER_URL)
+// A primeira conexão preserva o fallback HTTP Polling -> WebSocket.
+// Após um upgrade bem-sucedido, reconexões HTTPS tentam WebSocket primeiro.
+export const socket = io(SERVER_URL, { rememberUpgrade: true })
 
 export function emitCallAnswer (dto:CallAnswerDTO) {
   socket.emit('call_answer', dto)
@@ -63,8 +65,11 @@ export function emitKill (dto:KillDTO) {
   socket.emit('kl', dto)
 }
 
+// Somente posições de movimento contínuo são descartáveis.
+// Eventos críticos (parada/colisão/bomba) continuam confiáveis.
 export function emitMove (dto:MoveDTO) {
-  socket.emit('mv', dto)
+  if (dto.m === 0) socket.emit('mv', dto)
+  else socket.volatile.emit('mv', dto)
 }
 
 export function emitMoveBomb (dto:MoveBombDTO) {

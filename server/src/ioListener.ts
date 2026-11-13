@@ -23,6 +23,10 @@ export default function ioListener (io:Server) {
     socket.on('select_character', dto => selectCharacter(io, socket, dto))
     socket.on('lobby_ready', dto => setLobbyReady(io, socket, dto))
     socket.on('ready',        () => onReady(io, socket))
+    // RTT medido pelo cliente: resposta imediata, sem relógios sincronizados.
+    socket.on('net_probe',    (ack: unknown) => {
+      if (typeof ack === 'function') ack()
+    })
     socket.on('exit_pairing', () => exitPairing(io, socket))
     socket.on('disconnect',   () => onDisconnect(io, socket))
 

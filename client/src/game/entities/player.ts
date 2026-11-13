@@ -1,5 +1,6 @@
 import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
+import { shouldSyncMovement } from '#/network'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
@@ -42,6 +43,7 @@ export interface Player {
   holding           : 0|1
   index              : number
   kick               : boolean
+  lastMovementSentAt : number
   lastPress  : LastPress
   moveKeys   : {[key:string]:SIDES}
   moving     : 0|1
@@ -116,6 +118,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
     holding: 0,
     index: props.index,
     kick: false,
+    lastMovementSentAt: 0,
     lastPress: {bomb:0},
     moveKeys: {
       'W': 'U',
@@ -240,6 +243,9 @@ function removeGamepadSupport (this:Player, state:GameState) {
 
 function startMove (this:Player, side:SIDES) {
   if (!this.active || Date.now() < this.stunnedUntil) return
+  // Nova direção ou retomada: envia a posição imediatamente no próximo tick.
+  // Não reinicia o intervalo a cada keydown repetido do teclado.
+  if (!this.moving || this.side !== side) this.lastMovementSentAt = 0
   this.movingSide[side] = true
   this.side = side
   this.moving = 1
@@ -266,14 +272,20 @@ this.speedMultiplier =
 
   state.blocks.tick(state)
 
-  emitMove({
-    h:this.holding,
-    m:this.moving,
-    p:this.index,
-    s:this.side,
-    x:this.x,
-    y:this.y
-  })
+  // A física local continua em 60 FPS, mas somente snapshots recentes
+  // cruzam a rede. O último movimento (keyup/colisão) é confiável.
+  const now = Date.now()
+  if (shouldSyncMovement(now, this.lastMovementSentAt)) {
+    emitMove({
+      h:this.holding,
+      m:this.moving,
+      p:this.index,
+      s:this.side,
+      x:this.x,
+      y:this.y
+    })
+    this.lastMovementSentAt = now
+  }
 }
 
 function moveDown (this:Player) {

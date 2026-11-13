@@ -17,6 +17,7 @@ import { Pairing, SkillButton, Timer } from './style'
 import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { renderExplosionPreview } from '~/game/util/explosionPreview'
 import { RankingPanel, RankingToggle } from './rankingStyle'
+import NetworkLatency from './networkLatency'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
 
@@ -411,6 +412,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       <span className="ranking-subtitle">
         Vitórias nesta sessão
       </span>
+      <NetworkLatency/>
     </div>
 
     <span className="ranking-count">

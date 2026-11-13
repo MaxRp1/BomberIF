@@ -9752,3 +9752,87 @@ A mensagem visual pode indicar `VOCÊ NÃO FOI JUBILADO!` somente para o vencedo
 - A tela não cria cadastro, classificação permanente, opção de revanche imediata ou estatísticas adicionais.
 - A documentação anterior que descreve `Canvas.checkWin` com retorno imediato dos perdedores permanece **histórica** e é substituída por este fluxo depois da aprovação da funcionalidade.
 - Ao ajustar duração visual, editar `RESULT_DISPLAY_MS` no Canvas e `ProgressFill` no CSS para manter a barra sincronizada.
+
+
+---
+
+## FUNCIONALIDADE 13/11/2026 — SELEÇÃO DE PERSONAGENS E PRONTO POR LOBBY
+
+**Status:** implementação criada na branch `feat/character-selection-ready-2026-11-13`, aguardando build e testes multiplayer antes do merge/deploy. Não confundir com a versão publicada.
+
+### Regras do design
+- Ao entrar ou mudar de lobby, `selectedSprite = null` (modo **Aleatório**) e `isReady = false`. Não há escolha obrigatória; o modo Aleatório já pode ser marcado Pronto.
+- O painel de seleção permite optar por qualquer ID inteiro em `[0, SPRITES - 1]`. Atualmente `SPRITES = 12`, permitindo personagens repetidos na mesma sala. Personagens sem habilidade exclusiva continuam utilizáveis. Os sprites visuais são recortados das folhas em `client/public/sprites/chars/{id}.png`, respeitando a escala pixelada. Nomes/descrições confirmados: Proença (2), Mamedes (8), Frank (10), Ino (11); os demais usam identificação numérica para evitar atribuir nomes a IDs não verificados.
+- Cada participante pode alternar entre Pronto e Pendente. Trocar de sprite desmarca Pronto se a escolha realmente mudou. Ao confirmar o início de qualquer pareamento, **todos os participantes do lobby voltam a Pendente** para a rodada seguinte; a escolha do sprite é preservada durante permanência no mesmo lobby.
+- O botão Jogar é desabilitado no frontend até `players.every(p => p.ready)`; **a verificação obrigatória ocorre no backend**, para impedir a emissão de `join_room` malicioso sem confirmação de todos.
+- A regra se aplica tanto ao início imediato (`fillRoom=false`) quanto a `Preencher Sala` (`fillRoom=true`), que entra em fila apenas depois de todos do lobby confirmarem.
+- Novos integrantes do lobby entram Pendentes; saída/desconexão atualiza o snapshot da sala para os demais. Alterações de personagem e Pronto são rejeitadas durante o pareamento.
+- A seleção do sprite determina as habilidades existentes via `PlayerFactory` e os controles do servidor, sem criar um sistema concorrente de habilidades. O sprite efetivo passa por `StartGameDTO.players[]` e é utilizado inclusive pela tela de resultado `RoundResultDTO.winner.sprite`.
+
+### Contratos e eventos Socket.IO
+| Direção | Evento | DTO | Observação |
+|---|---|---|---|
+| cliente → servidor | `select_character` | `CharacterSelectionDTO {sprite:number|null}` | Somente o próprio socket; valida ID e bloqueia durante pareamento |
+| cliente → servidor | `lobby_ready` | `LobbyReadyDTO {ready:boolean}` | Só altera o status do emissor, sem permitir alterar terceiros |
+| cliente → servidor | `join_room` | `JoinRoomDTO {fillRoom:boolean}` | Exige todos Prontos, valida lobby e pareamento antes do primeiro `await` |
+| servidor → lobby | `update_lobby` | `LobbyDTO.players[].{socketId,nick,wins,selectedSprite,ready}` | Snapshot autoritativo enviado após escolha, Pronto e mudanças de lobby |
+| servidor → solicitante | `error` | `ERRORS.LOBBY_NOT_READY`, `ERRORS.INVALID_CHARACTER_SELECTION` | Feedback quando tentativa é rejeitada |
+| servidor → partida | `start_game` | `StartGameDTO` | `sprite` escolhido, ou sorteado no servidor se `selectedSprite===null` |
+
+### Arquivos modificados
+- `shared/dto.ts`: `CharacterSelectionDTO`, `LobbyReadyDTO` e campos `selectedSprite/ready` em `LobbyPlayerDTO`.
+- `shared/errors.ts`: erros de Pronto ausente e seleção inválida.
+- `server/src/dto.ts`: estado por socket `selectedSprite` e `isReady`.
+- `server/src/manager.ts`: validações e broadcasts, estado inicial, reset ao trocar lobby/começar rodada, bloqueio durante pareamento, início exclusivo se TODOS prontos, proteção contra double-click e atualizações do lobby anterior.
+- `server/src/factory.ts`: substituição do sorteio incondicional por uso da escolha validada com fallback aleatório, e envio dos estados de escolha/Pronto em `updateLobbyFactory`.
+- `server/src/ioListener.ts`: listeners `select_character` e `lobby_ready`.
+- `client/src/services/socket.ts`: emissores tipados das duas ações.
+- `client/src/site/components/lobby/index.tsx`, `style.ts`: botão de seleção, botão Pronto/Cancelar, contagem Prontos, bloqueio do botão Jogar, cartões de status de cada jogador; o ranking existente é preservado.
+- `client/src/site/components/lobby/characterSelect.tsx` e `characterSelectStyle.ts` (novos): seleção com treze opções (Aleatório + 12 sprites), frame frontal recortado, descrições de habilidades, confirmação e modal responsivo.
+- `client/src/store/lobby/actions.ts`: evita reiniciar música e adicionar entradas repetidas ao histórico do navegador a cada atualização do snapshot.
+- `client/src/services/errorHandler.ts`: mensagens para falta de Pronto e sprite inválido.
+- `server/test/lobby.test.ts` (novo): onze testes de validação, fluxo de sala e concorrência.
+
+### Sequência de rede
+```text
+entrarLobby -> selectedSprite = null; isReady = false
+        -> update_lobby (para todos)
+select_character {sprite} -> valida e salva no socket (desmarca Pronto)
+        -> update_lobby (para todos)
+lobby_ready {ready:true} -> servidor salva no socket
+        -> update_lobby (para todos)
+join_room {fillRoom} -> valida todos do lobby prontos e livres
+        -> marca pairing + zera Pronto atomicamente antes de awaits
+        -> open_game -> start_game { players: [{sprite escolhido ou sorteado}, ...] }
+        -> retorno ao lobby: cada jogador marca Pronto novamente
+```
+
+### Testes de aceitação
+1. Em sala de duas pessoas, Jogar permanece bloqueado quando uma está Pendente; emissão manual de `join_room` pelo console recebe erro do servidor.
+2. Dois jogadores escolhem o mesmo sprite: ambos aparecem corretamente e têm as habilidades próprias sem conflitar.
+3. Aleatório sem escolha manual: ao marcar Pronto e iniciar, servidor sorteia um ID válido de 0 a 11.
+4. Trocar de escolha após marcar Pronto exige nova confirmação; escolher o mesmo sprite não causa reset desnecessário.
+5. A tentativa de enviar sprite inexistente, decimal, string ou estrutura malformada é rejeitada.
+6. Clique rápido simultâneo em Jogar não abre duas partidas nem cria dois processos de pareamento.
+7. Após o resultado e volta ao lobby, a seleção anterior permanece, mas Pronto volta a Pendente.
+8. Com 3–4 jogadores, todos devem confirmar; a entrada de um novo jogador no lobby exige sua confirmação e impede início prematuro.
+9. Com Preencher Sala, a fila só começa após os membros do lobby estarem Prontos; todos os sprites e habilidades continuam funcionando entre salas combinadas.
+10. Testar por navegador desktop, celular, nome repetido e troca de lobby.
+11. A regressão da vitória, habilidade de Mamedes, placar e morte solo deve continuar intacta.
+
+### Comandos de verificação (Kali)
+```bash
+cd ~/BomberIF/server
+yarn ts-node --transpile-only -r tsconfig-paths/register test/lobby.test.ts
+yarn test:ranking
+yarn test:stun
+yarn build
+cd ../client
+yarn build
+```
+A implementação só deve ser considerada aprovada quando build + testes automatizados + testes reais em dois dispositivos forem executados.
+
+### Limitações
+- O estado de escolha/Pronto é mantido na memória do servidor, associado ao socket; não existe perfil ou salvamento entre reconexões.
+- A solução não introduz seleção exclusiva/reserva de personagem, host obrigatório, expulsão, tela de revanche, gerenciamento de identidade ou autenticação de conta.
+- A regra de Pronto vale para o **lobby de origem**. No modo Preencher Sala, grupos já confirmados podem ser combinados pelo pareamento sem uma segunda confirmação de uma sala global.

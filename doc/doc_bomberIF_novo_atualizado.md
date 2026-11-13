@@ -9994,3 +9994,47 @@ yarn deploy
 Se `yarn deploy` rodar o script `client/deploy.sh`, a branch `client` receberá a build por push com force; isso é o fluxo existente do projeto. Conferir o GitHub Pages e o Render após essa operação, sobretudo porque o servidor atualizado **exige Pronto antes de aceitar `join_room`** e o frontend antigo não fornece essa confirmação.
 
 **Documentação sincronizada:** GDD do Google Docs atualizado nas seções 3.7 e 3.8 com a conclusão da integração à main e a ressalva de que o site publicado depende de deploy distinto. Os capítulos de desenvolvimento anteriores nesta documentação permanecem como histórico da branch e não devem ser interpretados como status atual.
+
+
+---
+
+## CORREÇÃO 13/11/2026 — PISCAR DA VIDA EXTRA DO FRANK PARA TODOS
+
+**Status:** alteração implementada na branch `fix/frank-life-blink-sync-2026-11-13`, em revisão no PR. Ainda não incorporada à `main` nem publicada. O comportamento foi identificado no teste multiplayer: somente o navegador do próprio Frank mostrava os 1,5 segundo de piscar após a primeira explosão fatal.
+
+### Causa
+Em `client/src/game/entities/player.ts`, o método `kill(emit:true,cause:'bomb')` consumia `extraLife` exclusivamente na cópia local do jogador. A função `render` já utiliza `invulnerableUntil` para omitir um quadro a cada 100 ms, mas os outros clientes jamais recebiam o instante de início do efeito e por isso desenhavam o Frank continuamente.
+
+### Fluxo e contrato
+1. O **cliente do próprio Frank** detecta a colisão com a bomba como já fazia antes. Ao consumir a primeira vida extra, `consumeExtraLife()` atualiza `extraLife=false` e `invulnerableUntil=Date.now()+FRANK_PROTECTION_MS` e envia `frank_life_used` via Socket.IO, sem aceitar índice do jogador a partir do navegador.
+2. O servidor recebe em `server/src/ioListener.ts` e valida em `server/src/game.ts:onFrankLifeUsed()` que a conexão está ativa, pertence à sala e ao `roomId` da rodada, é o sprite `FRANK_SPRITE_ID=10`, ainda está viva e não anunciou o consumo antes nesta mesma rodada.
+3. Na primeira confirmação válida, marca `socket.data.frankLifeUsed=true` e transmite para a **sala inteira** `frank_life_used: FrankLifeUsedDTO { roomId:string, p:number }`, com o índice `p` obtido pelo servidor.
+4. Os demais clientes recebem o evento em `client/src/game/components/canvas/index.tsx:onFrankLifeUsed()`, filtram a sala atual e o índice, e aplicam `player.consumeExtraLife()` somente à cópia remota do Frank correspondente. O próprio Frank ignora o eco da confirmação para não reiniciar a animação local.
+5. O `render()` já existente mantém o mesmo piscar (100 ms alternados durante 1.500 ms), agora visível a todos os participantes, independentemente de quem causou a explosão.
+6. `server/src/factory.ts:startGameFactory()` redefine `frankLifeUsed=false` ao iniciar **cada nova rodada**, permitindo a habilidade novamente quando Frank for selecionado ou sorteado.
+
+### Constantes e garantias
+- `shared/constants.ts`: `FRANK_SPRITE_ID=10`; `FRANK_PROTECTION_MS=1500`, evitando números mágicos divergentes.
+- `shared/dto.ts`: `FrankLifeUsedDTO` identifica a sala e o jogador cujo efeito deve aparecer.
+- `server/src/dto.ts`: estado interno `frankLifeUsed:boolean` por socket e rodada.
+- `client/src/services/socket.ts`: `emitFrankLifeUsed()` para disparo após consumo legítimo local; `client/src/game/entities/player.ts` expõe `consumeExtraLife()` como aplicação compartilhada do estado visual.
+- A proteção não foi aumentada, continua válida somente para a **primeira explosão fatal**, e eventos `kl`, `round_result`, pontuação, seleção e habilidade de Mamedes não são modificados.
+- O servidor valida quem pode **anunciar** o consumo e impede duplicações; não simula a física de explosão para comprovar o impacto. Essa limitação já existe na arquitetura atual de colisões calculadas pelos clientes.
+
+### Arquivos modificados
+`shared/constants.ts`, `shared/dto.ts`, `client/src/game/entities/player.ts`, `client/src/game/components/canvas/index.tsx`, `client/src/services/socket.ts`, `server/src/game.ts`, `server/src/dto.ts`, `server/src/ioListener.ts`, `server/src/factory.ts`, `server/test/frank.test.ts`, `server/package.json`, `doc/doc_bomberIF_novo_atualizado.md`.
+
+**GDD:** ficha do personagem Frank em `GDD_BomberIF_Final` no Google Docs, com a sincronização da sinalização visual adicionada como funcionalidade em validação.
+
+### Regressões automáticas
+`cd server && yarn test:frank`: teste de propagação na sala, duplicatas, personagens diferentes, eliminação, conexão fora da sala, dois Franks na mesma partida e restabelecimento da vida extra numa rodada nova. Manter também `yarn test:lobby`, `yarn test:ranking`, `yarn test:stun`, `yarn build` e `cd ../client && yarn build`.
+
+### Testes multiplayer obrigatórios no Kali
+1. Duas abas: jogador A seleciona **Frank** e B seleciona outro personagem; B atinge A com bomba. **Ambos** precisam ver o Frank piscar por aproximadamente 1,5 s, sem a rodada terminar.
+2. Nova explosão fatal após a proteção: Frank morre normalmente; o resultado e ranking continuam corretos.
+3. Se dois jogadores escolherem Frank, cada um deve piscar independentemente ao gastar sua própria proteção.
+4. Depois de voltar ao lobby e iniciar outra partida com Frank, a vida extra e o efeito devem funcionar novamente.
+5. Se o Frank morrer por outra causa, a habilidade não deve disparar.
+6. Verificar que o frontend **e o backend** estão executando a versão desta branch antes de testar; publicar só um lado não sincroniza o efeito.
+
+**Não realizar merge/deploy automático até os testes de compilação e verificação multiplayer.**

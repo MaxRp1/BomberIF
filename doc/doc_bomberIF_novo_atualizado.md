@@ -9893,3 +9893,21 @@ O servidor mantém sua implementação de fila para eventual correção futura, 
 ### Nota de integração — tratamento da camada de sobreposição
 O componente `Container` utiliza `pointer-events:none` para não bloquear cliques nos menus superiores e na arte do fundo, reativando eventos apenas em `SidePanel` e `FooterBar`. Por isso `SelectionBackdrop` em `client/src/site/components/lobby/characterSelectStyle.ts` recebeu `pointer-events:auto`; sem essa exceção, o modal poderia abrir visualmente, mas seus botões não responderiam ao mouse/toque. O breakpoint de layout em fluxo foi alinhado para até **1100px**, com proteção adicional para janelas desktop de altura inferior a **540px**. A verificação deve incluir abrir o seletor e confirmar a escolha em mouse e toque.
 
+
+
+### Ajuste visual 13/11/2026 — Opções no topo, controles retangulares e paleta retrô
+
+**Status:** commitado na branch de teste do PR #9, ainda não integrado à `main` nem publicado. Modificações restritas à interface do cliente; sem mudança nos contratos Socket.IO, regra de Pronto, atribuição de sprites ou ranking.
+
+**Motivação:** na avaliação da captura do Kali, o menu inferior aparecia com os botões inclinados e cores artificiais. A causa foi localizada no seletor **global** `button, input[type="submit"]` de `client/src/index.css`, que aplica `clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%)` a todos os botões. Corrigir o arquivo global afetaria menu, páginas e diálogos não relacionados; por isso o estilo foi sobrescrito somente no escopo do lobby.
+
+**Arquivos e ações:**
+- `client/src/site/components/menu/index.tsx`: adicionada prop obrigatória `onOptionsClick` e botão **Opções** imediatamente à esquerda de **Menu** no canto superior direito, mantendo Sobre e Ajuda.
+- `client/src/site/pages/home/index.tsx`: vincula `onOptionsClick` a `setShowOptions(true)` e renderiza `Lobby` sem a antiga prop `setShowOptions`.
+- `client/src/site/components/lobby/index.tsx`: retira o botão Opções do painel lateral e elimina prop/importação não utilizados; preserva código copiável da sala, placar, status dos jogadores, seleção, Pronto e Jogar.
+- `client/src/site/components/lobby/style.ts`: `Container button {clip-path:none; border-radius:0; transform:none;}` neutraliza localmente a regra losangular global; os controles do rodapé são retangulares, com fundo **grafite fosco** (`#17191d` aproximadamente), avatar **verde-musgo**, botão Escolher em **marrom/dourado queimado**, Pronto em **verde escuro** e Jogar habilitado em **âmbar**, ficando cinza quando bloqueado. Removidos gradientes decorativos, linha neon e estilos obsoletos de Opções. Estados `:hover`, `:disabled` e `:focus-visible` foram protegidos para que o CSS global não converta botões em amarelo elétrico.
+- `client/src/site/components/lobby/rankingStyle.ts`: harmoniza bordas e cartões do ranking com grafite, bronze e verde discreto, sem alterar ordenação ou pontuação.
+- `client/src/site/components/onlinePlayers/style.ts`: ajusta a cor do contador online à nova paleta e reforça o estado hover.
+- `client/src/index.css` **não alterado** para evitar regressões nas outras páginas.
+
+**Verificações:** executar `cd ~/BomberIF && git pull --ff-only origin feat/character-selection-ready-2026-11-13 && cd client && yarn build`. No navegador, confirmar: (1) Opções aparece ao lado de Menu e abre/fecha a tela de opções; (2) nenhum controle do rodapé permanece inclinado, inclusive ao passar o mouse; (3) cores permanecem legíveis nos estados Pronto/Pendente/Jogar desabilitado; (4) modal de personagens continua clicável; (5) rodapé e ranking continuam responsivos. O build e a inspeção visual desta revisão **ainda não foram executados pelo assistente**.

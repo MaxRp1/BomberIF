@@ -31,6 +31,17 @@ export const RankingPanel = styled.aside`
     line-height: 1.6;
   }
 
+  .ranking-network {
+    display: block;
+    margin-top: 6px;
+    font-family: 'Trebuchet MS', sans-serif;
+    font-size: 10px;
+    font-weight: normal;
+    line-height: 1.35;
+    letter-spacing: 0;
+    color: #d7ccab;
+  }
+
   .ranking-subtitle {
     display: block;
     margin-top: 7px;

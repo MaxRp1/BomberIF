@@ -9889,3 +9889,7 @@ O servidor mantém sua implementação de fila para eventual correção futura, 
 - Caso Preencher Sala volte a funcionar futuramente, reintroduzir a escolha explicitamente na interface e voltar a parametrizar `emitJoinRoom({fillRoom})`. Reavaliar o fluxo entre lobbies e testes de pareamento antes de permitir preenchimento automático.
 - Para modificar somente as cores ou dimensões do lobby, editar principalmente `client/src/site/components/lobby/style.ts` e `rankingStyle.ts`, não o servidor.
 - O novo layout **não pressupõe que o PR #9 já foi publicado**. O resultado visual definitivo ainda depende do teste no navegador do projeto.
+
+### Nota de integração — tratamento da camada de sobreposição
+O componente `Container` utiliza `pointer-events:none` para não bloquear cliques nos menus superiores e na arte do fundo, reativando eventos apenas em `SidePanel` e `FooterBar`. Por isso `SelectionBackdrop` em `client/src/site/components/lobby/characterSelectStyle.ts` recebeu `pointer-events:auto`; sem essa exceção, o modal poderia abrir visualmente, mas seus botões não responderiam ao mouse/toque. O breakpoint de layout em fluxo foi alinhado para até **1100px**, com proteção adicional para janelas desktop de altura inferior a **540px**. A verificação deve incluir abrir o seletor e confirmar a escolha em mouse e toque.
+

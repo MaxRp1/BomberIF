@@ -1,6 +1,6 @@
 import { Server } from 'socket.io'
-import { ID_LENGTH, NICK } from '#/constants'
-import { DisconnectedDTO, JoinRoomDTO, UserDTO } from '#/dto'
+import { ID_LENGTH, NICK, SPRITES } from '#/constants'
+import { CharacterSelectionDTO, DisconnectedDTO, JoinRoomDTO, LobbyReadyDTO, UserDTO } from '#/dto'
 import { ERRORS } from '#/errors'
 import { MAX_PLAYERS } from '~/constants'
 import { Socket } from '~/extends'
@@ -16,11 +16,48 @@ export function setUser (io:Server, socket:Socket, user:UserDTO) {
   }
   socket.data.nick = user.nick
   socket.data.wins ??= 0
+  socket.data.selectedSprite ??= null
+  socket.data.isReady ??= false
   const dto = updateLobbyFactory(io, socket.data.lobbyId)
   dto && sendToLobby(io, socket, 'update_lobby', dto)
 }
 
+// Só a pessoa dona do socket pode alterar sua escolha ou o próprio Pronto.
+function mayConfigureLobby(io: Server, socket: Socket): boolean {
+  const lobbyId = socket.data.lobbyId
+  const lobby = lobbyId && io.sockets.adapter.rooms.get(lobbyId)
+  return !!lobby && lobby.has(socket.id) && socket.data.isPairing !== true
+}
+
+function broadcastLobby(io: Server, socket: Socket) {
+  const dto = updateLobbyFactory(io, socket.data.lobbyId)
+  if (dto) sendToLobby(io, socket, 'update_lobby', dto)
+}
+
+export function selectCharacter(io: Server, socket: Socket, dto: CharacterSelectionDTO) {
+  if (!mayConfigureLobby(io, socket)) return
+  const selected = dto?.sprite
+  if (selected !== null && !(Number.isInteger(selected) && selected >= 0 && selected < SPRITES)) {
+    return socket.emit('error', ERRORS.INVALID_CHARACTER_SELECTION)
+  }
+
+  // Alterar a escolha exige nova confirmação de Pronto (inclusive para Aleatório).
+  if (socket.data.selectedSprite !== selected) {
+    socket.data.selectedSprite = selected
+    socket.data.isReady = false
+    broadcastLobby(io, socket)
+  }
+}
+
+export function setLobbyReady(io: Server, socket: Socket, dto: LobbyReadyDTO) {
+  if (!mayConfigureLobby(io, socket)) return
+  if (typeof dto?.ready !== 'boolean') return
+  socket.data.isReady = dto.ready
+  broadcastLobby(io, socket)
+}
+
 export function createLobby (io : Server, socket : Socket) {
+  if (socket.data.isPairing) return socket.emit('error', ERRORS.ALREADY_PAIRING)
   const lobbyId = generateId()
   if (io.sockets.adapter.rooms.has(lobbyId)) {
     return socket.emit('error', ERRORS.CREATE_LOBBY_FAILED)
@@ -29,6 +66,7 @@ export function createLobby (io : Server, socket : Socket) {
 }
 
 export async function changeLobby (io : Server, socket : Socket, lobbyId : string) {
+  if (socket.data.isPairing) return socket.emit('error', ERRORS.ALREADY_PAIRING)
   if (typeof lobbyId !== 'string' || lobbyId.length !== ID_LENGTH) {
     return socket.emit('error', ERRORS.LOBBY_NOT_FOUND)
   }
@@ -46,34 +84,45 @@ export async function changeLobby (io : Server, socket : Socket, lobbyId : strin
 }
 
 export async function joinRoom (io:Server, socket:Socket, dto:JoinRoomDTO) {
-  const lobby = io.sockets.adapter.rooms.get(socket.data.lobbyId)
-  if (!lobby) {
+  const lobbyId = socket.data.lobbyId
+  const lobby = lobbyId && io.sockets.adapter.rooms.get(lobbyId)
+  if (!lobby || !lobby.has(socket.id)) {
     return socket.emit('error', ERRORS.LOBBY_NOT_FOUND)
   }
-  for (const socketId of lobby) {
-  const s = io.sockets.sockets.get(socketId) as Socket
-
-  console.log(
-    '[JOIN CHECK]',
-    {
-      nick: s.data.nick,
-      socket: s.id,
-      isPairing: s.data.isPairing,
-      roomId: s.data.roomId
-    }
-  )
-
-  if (s.data.isPairing) {
-    console.log('[BLOQUEOU A SALA]', s.data.nick)
-
-    return socket.emit(
-      'error',
-      ERRORS.ALREADY_PAIRING
-    )
+  if (typeof dto?.fillRoom !== 'boolean') {
+    return socket.emit('error', ERRORS.CREATE_ROOM_FAILED)
   }
-}
-  io.to(socket.data.lobbyId).emit('open_game')
-  const players = getLobbyPlayers(io, lobby)
+
+  // Validação autoritativa: eventos Socket.IO enviados manualmente não
+  // conseguem iniciar uma rodada com participantes ainda não prontos.
+  const players: Socket[] = []
+  for (const socketId of lobby) {
+    const player = io.sockets.sockets.get(socketId) as Socket | undefined
+    if (!player || player.data.lobbyId !== lobbyId) {
+      return socket.emit('error', ERRORS.LOBBY_NOT_READY)
+    }
+    if (player.data.isPairing) {
+      return socket.emit('error', ERRORS.ALREADY_PAIRING)
+    }
+    if (player.data.isReady !== true) {
+      return socket.emit('error', ERRORS.LOBBY_NOT_READY)
+    }
+    players.push(player)
+  }
+
+  if (players.length === 0 || players.length > MAX_PLAYERS) {
+    return socket.emit('error', ERRORS.CREATE_ROOM_FAILED)
+  }
+
+  // Bloqueia uma segunda requisição antes do primeiro await.
+  // Todos precisarão marcar Pronto de novo na rodada seguinte.
+  players.forEach(player => {
+    player.data.isPairing = true
+    player.data.isReady = false
+  })
+  broadcastLobby(io, socket)
+  io.to(lobbyId).emit('open_game')
+
   if (!dto.fillRoom || players.length === MAX_PLAYERS) {
     return lobbyToRoom(io, socket, players)
   }
@@ -112,6 +161,8 @@ async function enterLobby (
 
   socket.data.lobbyId = lobbyId
   socket.data.isPairing = false
+  socket.data.isReady = false
+  socket.data.selectedSprite = null
 
   // Zera antes de criar o DTO, para os demais verem o placar correto.
   if (previousLobbyId !== lobbyId) {
@@ -126,18 +177,14 @@ async function enterLobby (
     'update_lobby',
     dto
   )
+
+  // Retira da lista de Prontos e do placar da sala anterior.
+  if (previousLobbyId && previousLobbyId !== lobbyId) {
+    const oldDto = updateLobbyFactory(io, previousLobbyId)
+    if (oldDto) io.to(previousLobbyId).emit('update_lobby', oldDto)
+  }
 }
 
-function getLobbyPlayers (io : Server, lobby : Set<string>) {
-  const players:Socket[] = []
-  for (const socketId of lobby) {
-    const player:Socket|undefined = io.sockets.sockets.get(socketId)
-    if (!player) continue
-    player.data.isPairing = true
-    players.push(player)
-  }
-  return players
-}
 
 async function lobbyToRoom (io : Server, socket : Socket, players : Socket[]) {
   const roomId = generateId()
@@ -201,6 +248,9 @@ export function exitPairing (io:Server, socket:Socket) {
   registerDeparture(io, socket)
   updateRoomQueue(socket)
   socket.data.isPairing = false
+  socket.data.isReady = false
+  // A escolha do personagem permanece para a próxima rodada.
+  broadcastLobby(io, socket)
 
   // Um socket não pode continuar na sala de uma partida encerrada.
   if (roomId) {

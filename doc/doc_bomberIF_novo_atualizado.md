@@ -10038,3 +10038,38 @@ Em `client/src/game/entities/player.ts`, o método `kill(emit:true,cause:'bomb')
 6. Verificar que o frontend **e o backend** estão executando a versão desta branch antes de testar; publicar só um lado não sincroniza o efeito.
 
 **Não realizar merge/deploy automático até os testes de compilação e verificação multiplayer.**
+
+
+---
+
+## INTEGRAÇÃO 13/11/2026 — PR #10 (PISCAR COMPARTILHADO DO FRANK)
+
+**GitHub:** PR #10 `fix: sincronizar piscar da vida extra do Frank entre todos os jogadores` integrado à branch `main`, commit de merge `2fd780c42cbe9c8c1581a3c1d832fee69c1d8c59`.
+
+### Validações recebidas do Kali
+- `yarn test:frank`: **7/7** aprovados.
+- `yarn test:lobby`: **13/13** aprovados.
+- `yarn test:ranking`: **12/12** aprovados.
+- `yarn test:stun`: **8/8** aprovados.
+- **40/40 testes de servidor aprovados**.
+- `server/yarn build`: concluído; `client/yarn build`: compilado com avisos de ESLint e de versão de TypeScript, sem erros impeditivos. Os avisos preexistentes de hooks e lint devem ser acompanhados separadamente; não impedem este merge.
+
+### Status de publicação
+O merge de código-fonte na `main` **não atualiza automaticamente a branch `client`** do GitHub Pages. Após validar a versão correta do servidor no Render, publicar a build atual a partir da `main`:
+
+```bash
+cd ~/BomberIF
+git status
+git switch main
+git pull --ff-only origin main
+cd client
+yarn build
+yarn deploy
+```
+
+O pacote `client/package.json` confirma que `yarn deploy` executa `./deploy.sh`. O script publica a compilação na branch `client`. Verificar posteriormente o site https://maxrp1.github.io/BomberIF/ e o deploy do backend no Render. A animação sincronizada depende de **cliente e servidor atualizados**; apenas o frontend ou apenas o backend não entregam o efeito para todos.
+
+### Verificação pós-publicação
+Abrir duas sessões de navegador com Frank em uma delas; após a primeira explosão fatal, ambos devem ver o mesmo personagem piscando, por aproximadamente 1,5 segundo. Validar que a segunda explosão fatal elimina Frank e que o resultado da partida permanece correto. A aprovação automatizada e o merge foram confirmados, mas o teste multiplayer na hospedagem **ainda não foi comprovado** nesta conversa.
+
+**GDD:** ficha do Frank atualizada para indicar implementação integrada à `main` e publicação da hospedagem pendente de verificação.

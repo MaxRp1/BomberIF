@@ -10073,3 +10073,20 @@ O pacote `client/package.json` confirma que `yarn deploy` executa `./deploy.sh`.
 Abrir duas sessões de navegador com Frank em uma delas; após a primeira explosão fatal, ambos devem ver o mesmo personagem piscando, por aproximadamente 1,5 segundo. Validar que a segunda explosão fatal elimina Frank e que o resultado da partida permanece correto. A aprovação automatizada e o merge foram confirmados, mas o teste multiplayer na hospedagem **ainda não foi comprovado** nesta conversa.
 
 **GDD:** ficha do Frank atualizada para indicar implementação integrada à `main` e publicação da hospedagem pendente de verificação.
+
+---
+
+## INCIDÊNCIA 13/11/2026 — PISCAR DO FRANK NÃO VISÍVEL AOS ADVERSÁRIOS
+
+Após a integração do PR #10, foi relatado que Frank ainda pisca apenas no próprio navegador, apesar dos 40 testes de servidor aprovados e do build do cliente concluído. Os testes anteriores validaram retransmissão em mocks, não dois clientes reais em produção.
+
+**Evidência de diferença entre builds:** branch `client` atualizada em 13/11/2026 contém `frank_life_used`, enquanto a branch `server` continua em commit `fd850099fe03aa394a6999e0d4ac615ab5cd66d5` de 12/11/2026, cujo bundle `index.js` não contém `frank_life_used`, `lobby_ready` nem `select_character`. A `main` já contém o handler de Frank. Isso indica um problema caso Render execute a branch `server`, mas a branch de origem efetiva do serviço ainda não foi confirmada.
+
+### Procedimento de diagnóstico e publicação
+1. Render > serviço backend > Settings/Build & Deploy: conferir branch (`main` ou `server`) e último deploy em Events.
+2. Se for `server`, no Kali: `git switch main && git pull --ff-only origin main && cd server && bash build.sh && bash deploy.sh`. O `deploy.sh` faz `git push origin server --force` e substitui o conteúdo da branch de distribuição; preservar alterações locais antes.
+3. Se for `main`, executar Manual Deploy > Deploy latest commit e verificar build/start do subdiretório `server`.
+4. Confirmar deploy concluído, abrir nova rodada em dois clientes e testar a primeira explosão fatal do Frank.
+5. Se persistir com backend atualizado, inspecionar o evento `frank_life_used` em Network > WS dos navegadores e os logs do Render; verificar se o cliente emite, o servidor recebe/retransmite e o outro navegador aplica `consumeExtraLife()`.
+
+**Status:** correção ainda não validada de ponta a ponta na hospedagem. Não declarar resolvido antes de confirmar a versão do Render e o comportamento em dois clientes.

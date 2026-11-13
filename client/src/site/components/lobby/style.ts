@@ -75,7 +75,14 @@ export const PlayArea = styled.div`
   }
 
   @media (max-width: 1100px) and (max-height: 650px) {
-    top: 40%;
+    top: 6px;
+    bottom: 19%;
+    transform: none;
+    overflow-y: auto;
+    align-items: center;
+    justify-content: flex-start;
+    max-height: calc(81svh - 12px);
+    gap: 7px;
   }
 `
 

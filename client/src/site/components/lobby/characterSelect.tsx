@@ -26,7 +26,7 @@ function characterAbility(sprite: number|null): string {
 }
 
 // Mostra o frame frontal autêntico do sprite, sem desenhar outro personagem.
-function SpritePortrait({ sprite }: { sprite: number }) {
+export function SpritePortrait({ sprite }: { sprite: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {

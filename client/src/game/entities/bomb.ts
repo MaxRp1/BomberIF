@@ -1,4 +1,5 @@
 import { BOMB_MOVE, BOMB_SPEED, OVERCLOCK_DETONATION_MULTIPLIER, TILE_SIZE } from '#/constants'
+import { ArmedBombPosition, findChainReactionTargets } from '#/chainReaction'
 import { SIDES } from '#/dto'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { BOMB } from '~/game/animations/bomb'
@@ -103,6 +104,13 @@ function setDetonation (this:Bomb, multiplier=1) {
 }
 
 function detonate (this:Bomb, state:GameState) {
+  // Pode explodir por timer OU por cascata. Garante execução única em ambos.
+  if (!this.armed) return
+  this.armed = false
+  this.detonated = true
+  this.removeTime = Date.now() + 500
+  // O retorno da bomba ao arsenal do dono não depende mais do timer.
+  if (this.player) this.player.bombs++
   playBlastSound()
   if (this.holding) {
     if (this.playerIndex === state.players.myself!.index) {
@@ -110,8 +118,6 @@ function detonate (this:Bomb, state:GameState) {
     }
     this.stopMove(state)
   }
-  this.armed = false
-  this.detonated = true
   const [ax, ay] = this.getAxes()
   for (let i = ax; i > -1; i--) {
     if (this.directions.up === this.reach) break
@@ -168,6 +174,34 @@ function detonate (this:Bomb, state:GameState) {
       this.directions.left++
       state.blocks.destroyBlock([ax, i])
     }
+  }
+
+  // Só após calcular os quatro raios (com todas as paredes ainda no lugar)
+  // verifica outras bombas reais da partida. Isso inclui as bombas de
+  // adversários, que não precisam existir como blocos 'O' neste cliente.
+  const armedBombs: ArmedBombPosition[] = []
+  for (const entity of state.entities.entities.values()) {
+    const candidate = entity as Partial<Bomb>
+    if (typeof candidate.getAxes !== 'function' ||
+        typeof candidate.detonate !== 'function' ||
+        typeof candidate.armed !== 'boolean') continue
+
+    armedBombs.push({
+      id: entity.id,
+      axes: candidate.getAxes(),
+      armed: candidate.armed
+    })
+  }
+
+  const targets = findChainReactionTargets(
+    this.id, [ax, ay], this.directions, armedBombs
+  )
+
+  // A flag 'armed=false' é aplicada antes da recursão. Mesmo que
+  // A -> B -> C -> A, cada bomba explode uma vez, sem loop infinito.
+  for (const id of targets) {
+    const target = state.entities.get(id) as Bomb | undefined
+    if (target?.armed) target.detonate(state)
   }
 }
 
@@ -449,7 +483,6 @@ function tick (this:Bomb, state:GameState) {
       }
     }
     if (Date.now() > this.detonateTime) {
-      if (this.player) this.player.bombs++
       this.detonate(state)
     }
   }

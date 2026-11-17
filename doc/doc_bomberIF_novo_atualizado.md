@@ -10090,3 +10090,64 @@ Após a integração do PR #10, foi relatado que Frank ainda pisca apenas no pr�
 5. Se persistir com backend atualizado, inspecionar o evento `frank_life_used` em Network > WS dos navegadores e os logs do Render; verificar se o cliente emite, o servidor recebe/retransmite e o outro navegador aplica `consumeExtraLife()`.
 
 **Status:** correção ainda não validada de ponta a ponta na hospedagem. Não declarar resolvido antes de confirmar a versão do Render e o comportamento em dois clientes.
+
+
+---
+
+## MECÂNICA 17/11/2026 — DETONAÇÕES EM CASCATA (EFEITO DOMINÓ)
+
+**Status:** implementada na branch `feat/bomb-chain-reaction-2026-11-17`, aguardando build e teste multiplayer no Kali. Mudança independente do PR #11 (otimização de rede), ainda pendente de integração. Não houve merge em `main` nem deploy.
+
+### Regras da mecânica
+
+1. Uma bomba A aciona a bomba B **imediatamente quando o alcance calculado de sua explosão cobre a casa de B**, sem aguardar o término do timer original de B. Se B atingir C, a cascata continua A → B → C.
+2. O cálculo continua usando os **quatro raios da explosão original** (cima/direita/baixo/esquerda), já limitados por blocos destrutíveis, paredes indestrutíveis, bordas e alcance do jogador. A explosão não passa a atingir diagonais nem atravessar paredes.
+3. O alcance calculado inclui a casa central da bomba; duas bombas eventualmente na mesma casa (arremesso) também podem se acionar. Em níveis com paredes, a bomba atrás da parede não é acionada.
+4. O sistema consulta o **registro de entidades da partida** em vez de procurar apenas o bloco do tipo `O` na matriz. Isso é essencial: o evento remoto `onPlaceBomb` criava o `BombFactory` e adicionava a entidade, mas não inseria `O` na grade de blocos. Por isso, uma implementação que procurasse só blocos funcionaria apenas para as bombas locais.
+5. O estado `armed` é marcado como falso **antes** da propagação para os alvos. Ciclos A→B→C→A, bombas atingidas simultaneamente ou timers que terminem no mesmo tick não causam duas explosões para a mesma bomba.
+6. Ao detonar, seja por timer ou reação em cadeia, o dono da bomba recupera **uma unidade de capacidade de colocação** uma única vez. Isso evita que a habilidade prenda a contagem de bombas do dono quando ela explode antes de seu timer natural.
+7. O tempo de remoção `removeTime` é atualizado na detonação: a animação da bomba que explodiu antecipadamente continua por aproximadamente **500 ms**, em vez de ficar ativa até a remoção calculada pelo timer original.
+8. As explosões em cascata utilizam o mesmo áudio e os sprites existentes. O áudio agora usa um pequeno pool de seis instâncias para que detonações simultâneas não reiniciem e cortem imediatamente o mesmo som.
+9. **Proença** continua com o timer reduzido na detonação normal, e esse timer pode ser antecipado por uma explosão atingindo sua bomba; **Frank** mantém sua proteção contra uma explosão fatal, enquanto **Mamedes** permanece com seu stun. Não foram alterados os cooldowns nem o ranking.
+
+### Arquivos atualizados
+
+- `shared/chainReaction.ts` (novo): `blastHitsTile(source, target, reach)` valida coordenadas cardeais dentro da distância máxima calculada; `findChainReactionTargets` retorna os identificadores de outras bombas **armadas** atingidas, sem depender dos blocos `O`.
+- `client/src/game/entities/bomb.ts`: `detonate` passou a ser idempotente, liberta a bomba do arsenal do dono, atualiza `removeTime`, calcula os quatro raios como antes e aciona recursivamente os demais objetos `Bomb` encontrados nos raios. O retorno de capacidade foi retirado da verificação do timer no `tick`.
+- `client/src/game/sound/blast.ts`: seis instâncias do som de explosão utilizadas por rodízio.
+- `server/test/chainReaction.test.ts` (novo): **oito testes** de alcance, bloqueio por paredes, diagonais, alvo já detonado, bombas de donos diferentes, efeito dominó e interrupção de ciclos/detonacões repetidas.
+- `server/package.json`: novo script `yarn test:chain`.
+- `doc/doc_bomberIF_novo_atualizado.md` e GDD `GDD_BomberIF_Final`: regras e status da nova mecânica.
+
+### Validação no Kali
+
+```bash
+cd ~/BomberIF
+git status
+git fetch origin
+git switch --track origin/feat/bomb-chain-reaction-2026-11-17
+
+cd server
+yarn test:chain
+yarn test:lobby
+yarn test:ranking
+yarn test:stun
+yarn test:frank
+yarn build
+
+cd ../client
+yarn build
+```
+
+**Testes manuais obrigatórios:**
+1. Com B ainda longe de concluir o timer, colocar A dentro do alcance de B. Quando A explodir, **B deve detonar na hora**, e a animação de B deve terminar em ~0,5 segundo.
+2. Montar A—B—C numa linha sem barreiras (com poderes de alcance adequados): devem explodir em cascata, uma vez cada.
+3. Separar A e B por bloco destrutível ou parede indestrutível: a bomba B não deve ser antecipada.
+4. Usar dois jogadores: A coloca uma bomba que atinge a bomba de B; **ambos** devem ver a cascata. Aumentar o ping simulado para procurar diferenças entre clientes.
+5. Testar duas bombas vizinhas que poderiam se atingir mutuamente e várias detonando quase juntas; sem duplicação de dano/vida ou efeitos de som infinito.
+6. Após uma bomba explodir por cascata, seu dono deve conseguir posicionar outra normalmente.
+7. Repetir com bomba chutada/arremessada e com Proença, Frank e Mamedes; o fluxo de fim de rodada e o placar não podem regredir.
+
+**Limite de arquitetura:** ainda não há evento de detonação autoritativo do servidor: cada cliente calcula suas explosões usando seu estado local, como no comportamento anterior. O efeito é propagado localmente em todos os clientes que receberam as mesmas bombas, mas timers e posições divergentes por latência podem causar **diferenças de instante/resultado**. Para partidas competitivas com ping alto, uma etapa futura seria sincronizar o momento de detonação e a validação de impacto pelo servidor. Não afirmar sincronização perfeita sem testes reais.
+
+**Não realizar merge/deploy antes da validação de build e multiplayer.**

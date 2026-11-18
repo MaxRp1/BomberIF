@@ -20,7 +20,8 @@ import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
 import VirusHud from './virusHud'
-import { fillMissingLabLinearMutations, LABORATORY_STAGE } from '#/virus'
+import { effectiveBombReach, fillMissingLabLinearMutations, LABORATORY_STAGE } from '#/virus'
+import { ONDEV } from '~/constants'
 
 const RESULT_DISPLAY_MS = 5000
 
@@ -48,6 +49,7 @@ export default function Canvas ({myself, style, setShowGame, touchEnabled, touch
   const [skillRemaining, setSkillRemaining] = useState(0)
   const [stunRemaining, setStunRemaining] = useState(0)
   const [skillActive, setSkillActive] = useState(false)
+  const [labDebug, setLabDebug] = useState({ server:0, fallback:0 })
 
   function gameLoop () {
     try {
@@ -112,6 +114,7 @@ function startGame (dto:StartGameDTO) {
   const fallbackCount = fillMissingLabLinearMutations(
     dto.state.blocks, dto.state.stage, dto.roomId
   )
+  setLabDebug({ server: mutationsFromServer, fallback: fallbackCount })
   if (dto.state.stage === LABORATORY_STAGE) {
     console.info('[VIRUS] Laboratório:', {
       sorteadasPeloServidor: mutationsFromServer,
@@ -503,6 +506,35 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
         <strong>🌈 RAIO</strong>
         <span>{stunRemaining > 0 ? 'ATORDOADO' : skillRemaining > 0 ? `${skillRemaining}s` : 'E · LB/L1'}</span>
       </SkillButton>
+    )}
+    {ONDEV && state && (
+      <aside aria-label="Diagnóstico da fase e da Função Linear" style={{
+        position: 'fixed',
+        zIndex: 9998,
+        top: 80,
+        right: 8,
+        padding: '6px 8px',
+        background: '#17252b',
+        color: '#e4ffde',
+        border: '2px solid #7cdeaf',
+        fontFamily: 'monospace',
+        fontSize: 10,
+        lineHeight: 1.6,
+        pointerEvents: 'none',
+        maxWidth: 'min(260px, 40vw)'
+      }}>
+        <strong>LAB-VIRUS V3 · FASE {state.stage.name}</strong>
+        <div>{['LABORATÓRIO','CAMPO','REFEITÓRIO'][state.stage.name] ?? 'DESCONHECIDA'}</div>
+        {state.stage.name === LABORATORY_STAGE && (
+          <div>ITENS: serv.{labDebug.server} / comp.{labDebug.fallback}</div>
+        )}
+        <div>BASE: {localPlayer?.bombReach ?? '?'} | NOVA BOMBA: {localPlayer
+          ? effectiveBombReach({
+              baseReach:localPlayer.bombReach,
+              virusUntil:localPlayer.linearVirusUntil
+            }, Date.now())
+          : '?'}</div>
+      </aside>
     )}
     <VirusHud player={localPlayer} stage={state?.stage.name} />
     <Timer id='timer' />

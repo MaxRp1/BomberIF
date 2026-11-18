@@ -45,7 +45,7 @@ export default function VirusDebug({player, stage, server, fallback}: Props) {
       maxWidth: 'min(260px, 40vw)'
     }}>
       <strong>LAB-VIRUS V3 · FASE {stage}</strong>
-      <div>{['LABORATÓRIO','CAMPO','REFEITÓRIO'][stage] ?? 'DESCONHECIDA'}</div>
+      <div>{['CAMPO','LABORATÓRIO','REFEITÓRIO'][stage] ?? 'DESCONHECIDA'}</div>
       {stage === LABORATORY_STAGE && (
         <div>LINEARES: servidor {server} / fallback {fallback}</div>
       )}

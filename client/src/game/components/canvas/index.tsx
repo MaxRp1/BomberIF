@@ -20,6 +20,7 @@ import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
 import VirusHud from './virusHud'
+import { fillMissingLabLinearMutations, LABORATORY_STAGE } from '#/virus'
 
 const RESULT_DISPLAY_MS = 5000
 
@@ -98,6 +99,26 @@ function startGame (dto:StartGameDTO) {
 
   console.log('CLIENT STAGE:', dto.state.stage)
   console.log('CLIENT SLOW FLOORS:', dto.state.slowFloors)
+
+  // O servidor atualizado já envia a mutação de cada Função Linear.
+  // Se a versão remota ainda não tiver esse campo, os dois navegadores
+  // calculam o mesmo resultado determinístico a partir da sala e posição.
+  // Preencher ANTES de criar as entidades de bloco/bonus.
+  const mutationsFromServer = dto.state.blocks
+    .flat()
+    .filter(block => block?.b === 2 &&
+      (block.mutation === 'buff' || block.mutation === 'virus'))
+    .length
+  const fallbackCount = fillMissingLabLinearMutations(
+    dto.state.blocks, dto.state.stage, dto.roomId
+  )
+  if (dto.state.stage === LABORATORY_STAGE) {
+    console.info('[VIRUS] Laboratório:', {
+      sorteadasPeloServidor: mutationsFromServer,
+      fallbackDoCliente: fallbackCount,
+      total: mutationsFromServer + fallbackCount
+    })
+  }
 
   setState({
     ...dto.state,

@@ -1,4 +1,6 @@
 import { MAX_SPEED, SPEED, TILE_SIZE } from '#/constants'
+import { LinearMutation } from '#/virus'
+import { applyLinearPickup, LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS } from '#/virus'
 import { PassFactory } from '~/game/entities/pass'
 import { GameState } from '~/game/entities/state'
 import { playBonusSound } from '~/game/sound/bonus'
@@ -9,6 +11,7 @@ import { emitNullifyBlock } from '~/services/socket'
 interface BonusProps {
   axes  : [number, number]
   bonus : keyof typeof BONUS
+  mutation ?: LinearMutation
   x     : number
   y     : number
 }
@@ -113,7 +116,20 @@ function BlastBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, blast, () => {
-        state.players.myself!.bombReach++
+        const player = state.players.myself!
+        const now = Date.now()
+        const next = applyLinearPickup({
+          baseReach: player.bombReach,
+          virusUntil: player.linearVirusUntil
+        }, state.stage.name, props.mutation, now)
+
+        player.bombReach = next.baseReach
+        player.linearVirusUntil = next.virusUntil
+
+        if (state.stage.name === LABORATORY_STAGE && props.mutation) {
+          player.linearNotice = props.mutation
+          player.linearNoticeUntil = now + LINEAR_NOTICE_DURATION_MS
+        }
       })
     },
     render: (context:CanvasRenderingContext2D) => {

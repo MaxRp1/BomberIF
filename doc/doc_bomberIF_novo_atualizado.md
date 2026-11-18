@@ -10344,3 +10344,30 @@ Para **testar localmente**, executar em dois terminais `cd ~/BomberIF/server && 
 **Importante:** a versão pública de `https://maxrp1.github.io/BomberIF/` não contém essa branch enquanto o PR #13 estiver em rascunho e a branch `client` não receber novo deploy. Ao usar uma VM Kali em NAT, `localhost` no navegador do Windows pode significar o próprio Windows, não a VM; para evitar isso, use o navegador do **próprio Kali** para testar, ou configure encaminhamento de portas conscientemente.
 
 **Estado:** os testes anteriores (57/57) e os builds foram aprovados **antes** das duas séries de alterações de compatibilidade/diagnóstico. É obrigatório reexecutar `yarn test:virus`, demais suítes e ambos os builds, além de validar em navegador. Sem confirmação de funcionalidade no ambiente correto, **NÃO MESCLAR NEM PUBLICAR** o PR #13.
+
+
+### FORÇAR LABORATÓRIO EM DESENVOLVIMENTO (SEM ALTERAR PRODUÇÃO)
+
+A partir do diagnóstico visual V3, o servidor também permite escolher o mapa do Laboratório **somente em desenvolvimento**, por meio da variável `BOMBERIF_TEST_LAB=1`. Em `server/src/factory.ts`, se `process.env.dev` for verdadeiro e essa variável estiver definida, o estágio é forçado para `LABORATORY_STAGE=0` antes da mutação dos power-ups; sem a variável, ou em produção, o sorteio normal de estágios continua intacto.
+
+```bash
+# Primeiro confira a branch e atualize os arquivos
+cd ~/BomberIF
+git status
+git switch feat/lab-linear-virus-2026-11-18
+git pull --ff-only origin feat/lab-linear-virus-2026-11-18
+
+# Terminal A: sempre no laboratório, para diagnóstico
+cd ~/BomberIF/server
+BOMBERIF_TEST_LAB=1 yarn dev
+
+# Terminal B: navegador local
+cd ~/BomberIF/client
+yarn dev
+```
+
+No Kali, `curl -sk https://localhost:4000/debug/virus` deve mostrar `diagnostic-v3-2026-11-18`. Acesse `https://localhost:3000/BomberIF/` no navegador **dentro do Kali**. O painel fixo deve indicar `LAB-VIRUS V3 · CLIENTE NOVO`, `BACKEND NOVO` e `SOCKET CONECTADO`; dentro da partida deve indicar `FASE 0 LABORATÓRIO`, quantidade de itens marcados e valores `BASE`/`BOMBA`.
+
+Se o usuário não visualizar `LAB-VIRUS V3` nem no menu, o frontend aberto não é a versão local corrigida, independentemente dos resultados anteriores dos testes. Se o backend for `ANTIGO` ou `INACESSÍVEL`, revisar processo/porta/certificado. Se ambos forem NOVOS e a Função Linear ainda der +1, capturar screenshot dos painéis e do item para investigar a execução da coleta.
+
+**Status:** esta alteração de diagnóstico/ambiente e os novos testes de regressão não foram compilados nem executados no Kali após a última alteração. O PR #13 permanece em rascunho, sem merge nem deploy.

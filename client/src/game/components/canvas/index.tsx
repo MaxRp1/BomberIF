@@ -188,24 +188,34 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
   }
 
   function onMoveBomb (dto:MoveBombDTO) {
-    if (dto.p === myself) return
-    const bomb = state!.entities.get(dto.i) as Bomb
-    bomb.startMove(dto.s, state!)
+    if (dto.p === myself || !state) return
+    const bomb = state.entities.get(dto.i) as Bomb | undefined
+    // Pacotes podem chegar depois de a bomba explodir por cascata.
+    if (!bomb?.armed) return
+    bomb.startMove(dto.s, state)
   }
 
   function onHoldBomb (dto:HoldBombDTO) {
-    if (dto.p === myself) return
-    const bomb = state!.entities.get(dto.i) as Bomb
-    state!.players.players[dto.p].holding = 1
-    bomb.setHolding(dto.p, state!)
+    if (dto.p === myself || !state) return
+    const bomb = state.entities.get(dto.i) as Bomb | undefined
+    const holder = state.players.players[dto.p]
+    if (!bomb?.armed || !holder) return
+    holder.holding = 1
+    holder.bombId = dto.i
+    bomb.setHolding(dto.p, state)
   }
 
   function onFlingBomb (dto:FlingBombDTO) {
-    if (dto.p === myself) return
-    const bomb = state!.entities.get(dto.i) as Bomb
+    if (dto.p === myself || !state) return
+    const holder = state.players.players[dto.p]
+    if (holder) {
+      holder.holding = 0
+      holder.bombId = ''
+    }
+    const bomb = state.entities.get(dto.i) as Bomb | undefined
+    if (!bomb?.armed) return
     bomb.x = dto.x
     bomb.y = dto.y
-    state!.players.players[dto.p].holding = 0
     bomb.startFling(dto.s)
   }
 

@@ -82,7 +82,7 @@ function nullifyBlock (this:Blocks['blocks'], axes:[number,number]) {
   const block = this[axes[0]][axes[1]] as Block
   if (block && block.b) {
     this[axes[0]][axes[1]] = BonusFactory({
-      axes, bonus:block.b, x:block.x, y:block.y
+      axes, bonus:block.b, mutation:block.mutation, x:block.x, y:block.y
     })
   }
   else {

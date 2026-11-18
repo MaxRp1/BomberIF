@@ -8,7 +8,9 @@ import {
   applyLinearPickup,
   assignLabLinearMutations,
   chooseLinearMutation,
-  effectiveBombReach
+  effectiveBombReach,
+  fallbackLinearMutation,
+  fillMissingLabLinearMutations
 } from '../../shared/virus'
 import { blastHitsTile } from '../../shared/chainReaction'
 
@@ -97,7 +99,65 @@ test('bomba de alcance zero não propaga dano nem aciona outra por cascata', () 
   assert.equal(blastHitsTile([5,5],[5,6],dirs), false)
 })
 
-test('sem mutação em servidor antigo, Função Linear conserva o +1 tradicional', () => {
+test('servidor antigo sem campo mutation ganha resultado compartilhado, não +1', () => {
+  const serverMap: (BlockDTO|null)[][] = [
+    [block(2), block(1), null],
+    [block(2), block(2), block(3)]
+  ]
+  const client1 = JSON.parse(JSON.stringify(serverMap)) as (BlockDTO|null)[][]
+  const client2 = JSON.parse(JSON.stringify(serverMap)) as (BlockDTO|null)[][]
+
+  assert.equal(fillMissingLabLinearMutations(client1, LABORATORY_STAGE, 'sala-ABCD'), 3)
+  assert.equal(fillMissingLabLinearMutations(client2, LABORATORY_STAGE, 'sala-ABCD'), 3)
+  assert.deepEqual(client1, client2, 'ambos os navegadores devem sortear identicamente')
+  assert.equal(fillMissingLabLinearMutations(client1, LABORATORY_STAGE, 'sala-ABCD'), 0,
+    'reconstruir a sala não pode alterar as mutações já definidas')
+
+  for (const row of client1) {
+    for (const item of row) {
+      if (item?.b !== 2) continue
+      assert.ok(item.mutation === 'buff' || item.mutation === 'virus')
+      const result = applyLinearPickup({baseReach:2, virusUntil:0}, LABORATORY_STAGE, item.mutation, 100)
+      assert.ok(result.baseReach === 5 || result.virusUntil === 10100,
+        'o laboratório jamais aplica o +1 tradicional com fallback')
+    }
+  }
+})
+
+test('o fallback preserva mutações escolhidas pelo servidor atualizado', () => {
+  const map:(BlockDTO|null)[][] = [[
+    {...block(2), mutation:'buff'},
+    {...block(2), mutation:'virus'},
+    block(2)
+  ]]
+  assert.equal(fillMissingLabLinearMutations(map, LABORATORY_STAGE, 'sala-X'), 1)
+  assert.equal(map[0][0]?.mutation, 'buff')
+  assert.equal(map[0][1]?.mutation, 'virus')
+  assert.equal(map[0][2]?.mutation, fallbackLinearMutation('sala-X', 0, 2))
+})
+
+test('fallback não aplica mutação nos outros cenários', () => {
+  for (const stage of [1, 2]) {
+    const map:(BlockDTO|null)[][] = [[block(2)]]
+    assert.equal(fillMissingLabLinearMutations(map, stage, 'sala-Y'), 0)
+    assert.equal(map[0][0]?.mutation, undefined)
+    assert.equal(applyLinearPickup({baseReach:2, virusUntil:0}, stage, undefined, 100).baseReach, 3)
+  }
+})
+
+test('hash de fallback depende da sala e casa e produz ambos os efeitos', () => {
+  const outcomes = new Set<string>()
+  for (let row = 0; row < 11; row++) {
+    for (let column = 0; column < 13; column++) {
+      const value = fallbackLinearMutation('sala-1234', row, column)
+      outcomes.add(value)
+      assert.equal(value, fallbackLinearMutation('sala-1234', row, column))
+    }
+  }
+  assert.deepEqual([...outcomes].sort(), ['buff', 'virus'])
+})
+
+test('se uma coleta do laboratório ainda vier sem mutação, nunca volta silenciosamente a +1', () => {
   const result = applyLinearPickup({baseReach:2, virusUntil:0}, LABORATORY_STAGE, undefined, 0)
-  assert.deepEqual(result, {baseReach:3, virusUntil:0})
+  assert.deepEqual(result, {baseReach:5, virusUntil:0})
 })

@@ -439,11 +439,18 @@ function placeBomb (this:Player, state:GameState) {
 }
 
 function holdBomb (this:Player, state:GameState) {
-  const block = state.blocks.getBlock(this.getAxes())
+  const axes = this.getAxes()
+  const block = state.blocks.getBlock(axes)
   if (block && block.t === 'O') {
+    const bomb = state.entities.get(block.id) as Bomb | undefined
+    // Uma explosão (especialmente de alcance zero) pode deixar um marcador
+    // antigo no tabuleiro. Não tente segurar uma entidade já removida.
+    if (!bomb?.armed) {
+      state.blocks.destroyBlock(axes)
+      return
+    }
     this.holding = 1
-    this.bombId = block.id
-    const bomb = state.entities.get(block.id) as Bomb
+    this.bombId = bomb.id
     emitHoldBomb({i:bomb.id,p:this.index})
     bomb.setHolding(this.index, state)
   }
@@ -453,8 +460,11 @@ function holdBomb (this:Player, state:GameState) {
 }
 
 function flingBomb (this:Player, state:GameState) {
+  const bomb = state.entities.get(this.bombId) as Bomb | undefined
   this.holding = 0
-  const bomb = state.entities.get(this.bombId) as Bomb
+  this.bombId = ''
+  // A bomba pode ter explodido enquanto estava sendo carregada.
+  if (!bomb?.armed || !bomb.holding) return
   emitFlingBomb({i:bomb.id,p:this.index,s:this.side,x:this.x,y:this.y-9})
   bomb.startFling(this.side)
 }

@@ -32,6 +32,44 @@ export function assignLabLinearMutations(
   }
 }
 
+// Compatibilidade entre versões: se um backend antigo não fornecer
+// 'mutation', todos os clientes derivam o MESMO resultado a partir
+// da sala e das coordenadas do power-up, sem sorteio independente.
+// O servidor atualizado continua sendo a fonte de verdade quando enviar
+// 'mutation'. A distribuição do hash é aproximadamente 50/50.
+export function fallbackLinearMutation(
+  roomId: string,
+  row: number,
+  column: number
+): LinearMutation {
+  const key = `${roomId}:${row},${column}`
+  let hash = 2166136261
+  for (let i = 0; i < key.length; i++) {
+    hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0
+  }
+  return (hash & 1) === 0 ? 'buff' : 'virus'
+}
+
+export function fillMissingLabLinearMutations(
+  blocks: (BlockDTO | null)[][],
+  stage: number,
+  roomId: string
+): number {
+  if (stage !== LABORATORY_STAGE) return 0
+
+  let repaired = 0
+  for (let row = 0; row < blocks.length; row++) {
+    for (let column = 0; column < blocks[row].length; column++) {
+      const block = blocks[row][column]
+      if (block?.b !== 2) continue
+      if (block.mutation === 'buff' || block.mutation === 'virus') continue
+      block.mutation = fallbackLinearMutation(roomId, row, column)
+      repaired++
+    }
+  }
+  return repaired
+}
+
 // O alcance base acumula bônus; a supressão é apenas uma sobreposição
 // temporária. Pegar +3 durante o vírus não elimina nem perde o bônus.
 export function applyLinearPickup(
@@ -40,11 +78,14 @@ export function applyLinearPickup(
   mutation: LinearMutation | undefined,
   now: number
 ): LinearVirusState {
-  if (stage !== LABORATORY_STAGE || !mutation) {
+  if (stage !== LABORATORY_STAGE) {
     return { ...current, baseReach: current.baseReach + 1 }
   }
 
-  if (mutation === 'buff') {
+  // Caso alguma coleta chegue sem o campo (por atualização parcial),
+  // não aplicar silenciosamente o +1 tradicional no laboratório.
+  // O fallback determinístico do startGame deve preencher esse campo.
+  if (mutation !== 'virus') {
     return { ...current, baseReach: current.baseReach + LINEAR_BUFF_AMOUNT }
   }
 

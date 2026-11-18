@@ -1,7 +1,7 @@
 import { BlockDTO } from './dto'
 
 // Laboratório: mutações exclusivas do power-up Função Linear (bônus 2).
-export const LABORATORY_STAGE = 0
+export const LABORATORY_STAGE = 1 // sprite 1.png: laboratório (0 = campo, 2 = refeitório)
 export const LINEAR_BUFF_AMOUNT = 3
 export const LINEAR_VIRUS_DURATION_MS = 10000
 export const LINEAR_NOTICE_DURATION_MS = 2500

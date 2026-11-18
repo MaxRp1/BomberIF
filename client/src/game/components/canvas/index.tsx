@@ -19,6 +19,7 @@ import { renderExplosionPreview } from '~/game/util/explosionPreview'
 import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
+import VirusHud from './virusHud'
 
 const RESULT_DISPLAY_MS = 5000
 
@@ -482,6 +483,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
         <span>{stunRemaining > 0 ? 'ATORDOADO' : skillRemaining > 0 ? `${skillRemaining}s` : 'E · LB/L1'}</span>
       </SkillButton>
     )}
+    <VirusHud player={localPlayer} stage={state?.stage.name} />
     <Timer id='timer' />
     <canvas ref={canvasRef} width={240} height={208} style={style} />
     {roundResult && <RoundResult result={roundResult} myself={myself} />}

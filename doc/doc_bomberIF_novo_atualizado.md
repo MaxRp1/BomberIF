@@ -10285,3 +10285,40 @@ Logs enviados pela equipe após checkout de `feat/lab-linear-virus-2026-11-18` c
 **Ainda falta teste manual do jogo:** iniciar cliente e servidor da mesma branch e validar com dois jogadores no laboratório: +3 acumulativo, vírus por 10 segundos, recuperação do alcance, +3 coletado durante o debuff, bomba sem dano/sem reação em cadeia, efeitos em bombas previamente colocadas e os outros cenários (+1 tradicional). Suítes automatizadas não comprovam a experiência visual e multiplayer completa.
 
 **Status:** PR #13 permanece em rascunho, sem merge ou deploy, até validação manual.
+
+
+### CORREÇÃO DE REGRESSÃO — FUNÇÃO LINEAR CONTINUAVA COM +1 (18/11/2026)
+
+**Sintoma relatado:** no teste manual, o usuário verificou que a Função Linear continuava com o comportamento padrão (+1) em vez de +3 ou debuff. A causa exata do ambiente de teste não foi observada; uma condição concreta encontrada no código foi a regra `applyLinearPickup` que dava **+1 silenciosamente** quando a mutação estava ausente. Outra condição verificada: as branches públicas `client` e `server` ainda não continham o PR #13, logo o site publicado continuava com as regras antigas.
+
+**Correções no PR #13:**
+1. `shared/virus.ts:fillMissingLabLinearMutations()` cria mutações **apenas para Função Linear do laboratório** que vierem sem a propriedade `mutation` (por exemplo, em um servidor antigo). A decisão é **determinística por sala + coordenada**, via `fallbackLinearMutation`, garantindo que dois navegadores da mesma partida não façam sorteios independentes. Um hash FNV com mistura final distribui `buff`/`virus` aproximadamente 50/50. As mutações enviadas por um servidor atualizado são preservadas; não há alteração no Campo ou Refeitório.
+2. Em `client/src/game/components/canvas/index.tsx:startGame()`, o preenchimento ocorre **antes de criar `BlocksFactory`**. O console registra `[VIRUS] Laboratório: { sorteadasPeloServidor, fallbackDoCliente, total }` para distinguir backend atualizado de antigo. **Se a mensagem não aparecer quando o laboratório começar**, provavelmente o navegador está executando um frontend anterior à correção.
+3. Em `shared/virus.ts:applyLinearPickup()`, uma coleta no laboratório sem mutação não volta silenciosamente ao +1; a salvaguarda aplica +3. Normalmente não é usada, pois a normalização inicial preenche as mutações faltantes.
+4. Em `client/src/game/entities/bonus.ts`, a coleta da Função Linear no laboratório registra `[VIRUS] Função Linear coletada:` com mutação, alcance-base acumulado e alcance efetivo, para auxiliar o diagnóstico.
+5. `server/test/virus.test.ts` ampliado de **9 para 13 testes**: adicionado caso de servidor antigo com mapa sem mutação, consistência entre dois clientes, preservação do resultado do servidor novo, outros mapas e ausência de retorno silencioso ao +1.
+
+**Status de qualidade:** os **57 testes anteriores e builds passaram antes dessas alterações**. O teste novo de 13 casos e os builds **ainda precisam ser reexecutados no Kali**, e o jogo precisa ser reavaliado com cliente e servidor da branch atualizada. Não considerar corrigido no ambiente real antes disso.
+
+```bash
+cd ~/BomberIF
+git status
+git switch feat/lab-linear-virus-2026-11-18
+git pull --ff-only origin feat/lab-linear-virus-2026-11-18
+
+cd server
+yarn test:virus
+yarn test:chain
+yarn test:lobby
+yarn test:ranking
+yarn test:stun
+yarn test:frank
+yarn build
+
+cd ../client
+yarn build
+```
+
+Para **testar localmente**, executar em dois terminais `cd ~/BomberIF/server && yarn dev` e `cd ~/BomberIF/client && yarn dev`, abrir a versão HTTPS local em `https://localhost:3000/BomberIF/` e verificar no console F12 as duas mensagens `[VIRUS]` (início de rodada no laboratório e coleta da Função Linear). **Não usar a versão online para testar mudanças ainda não publicadas.**
+
+**Deploy futuro:** apesar do fallback permitir alguma compatibilidade do cliente novo com um servidor antigo, o servidor atualizado continua sendo a fonte de verdade planejada para o sorteio; após validar e mesclar, publicar tanto backend quanto frontend, confirmando os deployments. Não houve alteração na `main` nem publicação por esta correção.

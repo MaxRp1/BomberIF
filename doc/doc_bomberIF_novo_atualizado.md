@@ -10151,3 +10151,21 @@ yarn build
 **Limite de arquitetura:** ainda não há evento de detonação autoritativo do servidor: cada cliente calcula suas explosões usando seu estado local, como no comportamento anterior. O efeito é propagado localmente em todos os clientes que receberam as mesmas bombas, mas timers e posições divergentes por latência podem causar **diferenças de instante/resultado**. Para partidas competitivas com ping alto, uma etapa futura seria sincronizar o momento de detonação e a validação de impacto pelo servidor. Não afirmar sincronização perfeita sem testes reais.
 
 **Não realizar merge/deploy antes da validação de build e multiplayer.**
+
+
+### Validação automatizada no Kali — 18/11/2026
+
+Resultados fornecidos pelo projeto, executados na branch `feat/bomb-chain-reaction-2026-11-17`: 
+
+- `yarn test:chain`: **8/8** aprovados — alcance cardinal, barreiras, seleção de bombas e reação em cadeia sem duplicação.
+- `yarn test:lobby`: **13/13** aprovados.
+- `yarn test:ranking`: **12/12** aprovados.
+- `yarn test:stun`: **8/8** aprovados.
+- `yarn test:frank`: **7/7** aprovados.
+- **48/48 testes aprovados, zero falhas**.
+- `server/yarn build` concluído via `esbuild`; `client/yarn build` concluído via `craco build`, gerando `build/static/js/main.5948715a.js` (147,41 KB gzip), com avisos não impeditivos.
+- Os avisos do frontend incluem compatibilidade do analisador ESLint com TypeScript 5.9.3 e lint de hooks, acessibilidade e comparações; não houve erro que bloqueasse a build.
+
+**Pendência antes do merge:** verificar a mecânica em partida real com dois navegadores, usando bombas de donos diferentes, sequência A→B→C, paredes, bombas arremessadas e restituição da capacidade de colocação. Os testes automatizados da cascata verificam a geometria e a lógica pura, mas não comprovam o resultado visual/multiplayer de ponta a ponta.
+
+**Status:** branch e PR #12 continuam em rascunho, sem merge nem deploy, até a validação manual. O PR #11 de desempenho de rede também permanece separado e requer reavaliação de integração se a ordem de merges mudar.

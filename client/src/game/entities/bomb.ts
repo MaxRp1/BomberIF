@@ -118,7 +118,21 @@ function detonate (this:Bomb, state:GameState) {
     }
     this.stopMove(state)
   }
+  const holder = state.players.players[this.playerIndex]
+  // O jogador não pode continuar em modo 'segurando' depois da detonação.
+  if (holder?.bombId === this.id) {
+    holder.holding = 0
+    holder.bombId = ''
+  }
+
   const [ax, ay] = this.getAxes()
+  // Alcance 0 sai dos quatro loops antes de limpar a casa central.
+  // Remover o marcador 'O' do próprio explosivo evita a célula fantasma
+  // que fazia holdBomb/flingBomb acessar uma bomba já removida.
+  const center = state.blocks.getBlock([ax, ay])
+  if (center?.t === 'O' && center.id === this.id) {
+    state.blocks.destroyBlock([ax, ay])
+  }
   for (let i = ax; i > -1; i--) {
     if (this.directions.up === this.reach) break
     const b = state.blocks.getBlock([i, ay])

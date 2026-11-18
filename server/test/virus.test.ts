@@ -18,6 +18,15 @@ function block(b?: BlockDTO['b']): BlockDTO {
   return { t:'D', x:16, y:16, ...(b ? { b } : {}) }
 }
 
+test('índices corretos dos cenários: 0 campo, 1 laboratório, 2 refeitório', () => {
+  assert.equal(LABORATORY_STAGE, 1)
+  const blocks: (BlockDTO|null)[][] = [[block(2)]]
+  assignLabLinearMutations(blocks, 0, () => 0.1)
+  assert.equal(blocks[0][0]?.mutation, undefined)
+  assignLabLinearMutations(blocks, 1, () => 0.1)
+  assert.equal(blocks[0][0]?.mutation, 'buff')
+})
+
 test('sorteio 50/50 define +3 ou vírus no servidor, incluindo o limite', () => {
   assert.equal(chooseLinearMutation(0), 'buff')
   assert.equal(chooseLinearMutation(0.49), 'buff')
@@ -46,7 +55,7 @@ test('somente Função Linear do laboratório recebe mutação no mapa enviado',
 })
 
 test('outros cenários não sorteiam mutações nem alteram as regras originais', () => {
-  for (const stage of [1, 2]) {
+  for (const stage of [0, 2]) {
     const map: (BlockDTO|null)[][] = [[block(2)]]
     assignLabLinearMutations(map, stage, () => { throw new Error('RNG não deve rodar') })
     assert.equal(map[0][0]?.mutation, undefined)
@@ -137,7 +146,7 @@ test('o fallback preserva mutações escolhidas pelo servidor atualizado', () =>
 })
 
 test('fallback não aplica mutação nos outros cenários', () => {
-  for (const stage of [1, 2]) {
+  for (const stage of [0, 2]) {
     const map:(BlockDTO|null)[][] = [[block(2)]]
     assert.equal(fillMissingLabLinearMutations(map, stage, 'sala-Y'), 0)
     assert.equal(map[0][0]?.mutation, undefined)

@@ -1,5 +1,6 @@
 import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
+import { LinearMutation, effectiveBombReach } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
@@ -26,6 +27,9 @@ export interface Player {
   bombId            : string
   bombKeys          : {[key:string]:'B'}
   bombReach         : number
+  linearVirusUntil  : number
+  linearNotice      : LinearMutation | null
+  linearNoticeUntil : number
   bombs             : number
   collidable        : boolean
   extraLife         : boolean
@@ -100,6 +104,9 @@ export function PlayerFactory (props:PlayerProps) : Player {
       ' ': 'B'
     },
     bombReach: 2,
+    linearVirusUntil: 0,
+    linearNotice: null,
+    linearNoticeUntil: 0,
     bombs: 1,
     collidable: true,
     extraLife: props.sprite === FRANK_SPRITE_ID,
@@ -413,7 +420,10 @@ function placeBomb (this:Player, state:GameState) {
     axes,
     player     : this,
     playerIndex: this.index,
-    reach      : this.bombReach
+    reach      : effectiveBombReach({
+      baseReach: this.bombReach,
+      virusUntil: this.linearVirusUntil
+    }, Date.now())
   })
   state.blocks.putBomb(bomb)
   emitPlaceBomb({
@@ -429,11 +439,18 @@ function placeBomb (this:Player, state:GameState) {
 }
 
 function holdBomb (this:Player, state:GameState) {
-  const block = state.blocks.getBlock(this.getAxes())
+  const axes = this.getAxes()
+  const block = state.blocks.getBlock(axes)
   if (block && block.t === 'O') {
+    const bomb = state.entities.get(block.id) as Bomb | undefined
+    // Uma explosão (especialmente de alcance zero) pode deixar um marcador
+    // antigo no tabuleiro. Não tente segurar uma entidade já removida.
+    if (!bomb?.armed) {
+      state.blocks.destroyBlock(axes)
+      return
+    }
     this.holding = 1
-    this.bombId = block.id
-    const bomb = state.entities.get(block.id) as Bomb
+    this.bombId = bomb.id
     emitHoldBomb({i:bomb.id,p:this.index})
     bomb.setHolding(this.index, state)
   }
@@ -443,8 +460,11 @@ function holdBomb (this:Player, state:GameState) {
 }
 
 function flingBomb (this:Player, state:GameState) {
+  const bomb = state.entities.get(this.bombId) as Bomb | undefined
   this.holding = 0
-  const bomb = state.entities.get(this.bombId) as Bomb
+  this.bombId = ''
+  // A bomba pode ter explodido enquanto estava sendo carregada.
+  if (!bomb?.armed || !bomb.holding) return
   emitFlingBomb({i:bomb.id,p:this.index,s:this.side,x:this.x,y:this.y-9})
   bomb.startFling(this.side)
 }

@@ -1,0 +1,110 @@
+import { BlockDTO } from './dto'
+
+// Laboratório: mutações exclusivas do power-up Função Linear (bônus 2).
+export const LABORATORY_STAGE = 1 // sprite 1.png: laboratório (0 = campo, 2 = refeitório)
+export const LINEAR_BUFF_AMOUNT = 3
+export const LINEAR_VIRUS_DURATION_MS = 10000
+export const LINEAR_NOTICE_DURATION_MS = 2500
+
+export type LinearMutation = 'buff' | 'virus'
+
+export interface LinearVirusState {
+  baseReach: number
+  virusUntil: number
+}
+
+// O sorteio é realizado no servidor, antes de entregar o mapa aos clientes.
+export function chooseLinearMutation(roll: number): LinearMutation {
+  return roll < 0.5 ? 'buff' : 'virus'
+}
+
+export function assignLabLinearMutations(
+  blocks: (BlockDTO | null)[][],
+  stage: number,
+  random: () => number = Math.random
+): void {
+  if (stage !== LABORATORY_STAGE) return
+
+  for (const row of blocks) {
+    for (const block of row) {
+      if (block?.b === 2) block.mutation = chooseLinearMutation(random())
+    }
+  }
+}
+
+// Compatibilidade entre versões: se um backend antigo não fornecer
+// 'mutation', todos os clientes derivam o MESMO resultado a partir
+// da sala e das coordenadas do power-up, sem sorteio independente.
+// O servidor atualizado continua sendo a fonte de verdade quando enviar
+// 'mutation'. A distribuição do hash é aproximadamente 50/50.
+export function fallbackLinearMutation(
+  roomId: string,
+  row: number,
+  column: number
+): LinearMutation {
+  const key = `${roomId}:${row},${column}`
+  let hash = 2166136261
+  for (let i = 0; i < key.length; i++) {
+    hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0
+  }
+  // Finalização para não depender só da paridade do último dígito
+  // da coluna do bloco (o bit inferior do FNV é pouco misturado).
+  hash ^= hash >>> 16
+  hash = Math.imul(hash, 0x7feb352d)
+  hash ^= hash >>> 15
+  hash = Math.imul(hash, 0x846ca68b)
+  hash ^= hash >>> 16
+  return (hash & 1) === 0 ? 'buff' : 'virus'
+}
+
+export function fillMissingLabLinearMutations(
+  blocks: (BlockDTO | null)[][],
+  stage: number,
+  roomId: string
+): number {
+  if (stage !== LABORATORY_STAGE) return 0
+
+  let repaired = 0
+  for (let row = 0; row < blocks.length; row++) {
+    for (let column = 0; column < blocks[row].length; column++) {
+      const block = blocks[row][column]
+      if (block?.b !== 2) continue
+      if (block.mutation === 'buff' || block.mutation === 'virus') continue
+      block.mutation = fallbackLinearMutation(roomId, row, column)
+      repaired++
+    }
+  }
+  return repaired
+}
+
+// O alcance base acumula bônus; a supressão é apenas uma sobreposição
+// temporária. Pegar +3 durante o vírus não elimina nem perde o bônus.
+export function applyLinearPickup(
+  current: LinearVirusState,
+  stage: number,
+  mutation: LinearMutation | undefined,
+  now: number
+): LinearVirusState {
+  if (stage !== LABORATORY_STAGE) {
+    return { ...current, baseReach: current.baseReach + 1 }
+  }
+
+  // Caso alguma coleta chegue sem o campo (por atualização parcial),
+  // não aplicar silenciosamente o +1 tradicional no laboratório.
+  // O fallback determinístico do startGame deve preencher esse campo.
+  if (mutation !== 'virus') {
+    return { ...current, baseReach: current.baseReach + LINEAR_BUFF_AMOUNT }
+  }
+
+  return {
+    ...current,
+    virusUntil: now + LINEAR_VIRUS_DURATION_MS
+  }
+}
+
+export function effectiveBombReach(
+  current: LinearVirusState,
+  now: number
+): number {
+  return now < current.virusUntil ? 0 : Math.max(0, current.baseReach)
+}

@@ -19,6 +19,8 @@ import { renderExplosionPreview } from '~/game/util/explosionPreview'
 import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
+import VirusHud from './virusHud'
+import { fillMissingLabLinearMutations } from '#/virus'
 
 const RESULT_DISPLAY_MS = 5000
 
@@ -98,6 +100,12 @@ function startGame (dto:StartGameDTO) {
   console.log('CLIENT STAGE:', dto.state.stage)
   console.log('CLIENT SLOW FLOORS:', dto.state.slowFloors)
 
+  // O servidor atualizado já envia a mutação de cada Função Linear.
+  // Se a versão remota ainda não tiver esse campo, os dois navegadores
+  // calculam o mesmo resultado determinístico a partir da sala e posição.
+  // Preencher ANTES de criar as entidades de bloco/bonus.
+  fillMissingLabLinearMutations(dto.state.blocks, dto.state.stage, dto.roomId)
+
   setState({
     ...dto.state,
     blocks: BlocksFactory(dto.state.blocks),
@@ -162,24 +170,34 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
   }
 
   function onMoveBomb (dto:MoveBombDTO) {
-    if (dto.p === myself) return
-    const bomb = state!.entities.get(dto.i) as Bomb
-    bomb.startMove(dto.s, state!)
+    if (dto.p === myself || !state) return
+    const bomb = state.entities.get(dto.i) as Bomb | undefined
+    // Pacotes podem chegar depois de a bomba explodir por cascata.
+    if (!bomb?.armed) return
+    bomb.startMove(dto.s, state)
   }
 
   function onHoldBomb (dto:HoldBombDTO) {
-    if (dto.p === myself) return
-    const bomb = state!.entities.get(dto.i) as Bomb
-    state!.players.players[dto.p].holding = 1
-    bomb.setHolding(dto.p, state!)
+    if (dto.p === myself || !state) return
+    const bomb = state.entities.get(dto.i) as Bomb | undefined
+    const holder = state.players.players[dto.p]
+    if (!bomb?.armed || !holder) return
+    holder.holding = 1
+    holder.bombId = dto.i
+    bomb.setHolding(dto.p, state)
   }
 
   function onFlingBomb (dto:FlingBombDTO) {
-    if (dto.p === myself) return
-    const bomb = state!.entities.get(dto.i) as Bomb
+    if (dto.p === myself || !state) return
+    const holder = state.players.players[dto.p]
+    if (holder) {
+      holder.holding = 0
+      holder.bombId = ''
+    }
+    const bomb = state.entities.get(dto.i) as Bomb | undefined
+    if (!bomb?.armed) return
     bomb.x = dto.x
     bomb.y = dto.y
-    state!.players.players[dto.p].holding = 0
     bomb.startFling(dto.s)
   }
 
@@ -482,6 +500,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
         <span>{stunRemaining > 0 ? 'ATORDOADO' : skillRemaining > 0 ? `${skillRemaining}s` : 'E · LB/L1'}</span>
       </SkillButton>
     )}
+    <VirusHud player={localPlayer} stage={state?.stage.name} />
     <Timer id='timer' />
     <canvas ref={canvasRef} width={240} height={208} style={style} />
     {roundResult && <RoundResult result={roundResult} myself={myself} />}

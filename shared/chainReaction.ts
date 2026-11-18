@@ -22,6 +22,11 @@ export function blastHitsTile(
   target: TileAxes,
   reach: BlastReach
 ): boolean {
+  // Uma bomba suprimida (raio 0) não aciona nenhuma outra,
+  // nem mesmo se estiver dividindo a mesma casa.
+  if (reach.up <= 0 && reach.right <= 0 &&
+      reach.down <= 0 && reach.left <= 0) return false
+
   const rows = target[0] - source[0]
   const columns = target[1] - source[1]
 

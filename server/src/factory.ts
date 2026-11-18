@@ -1,5 +1,5 @@
 import { Server } from 'socket.io'
-import { assignLabLinearMutations, LABORATORY_STAGE } from '#/virus'
+import { assignLabLinearMutations } from '#/virus'
 import { BLASTS, BOMBS, BONUS, BONUSES, INITIAL_POSITION, SPRITES, STAGES } from '#/constants'
 import {
   BlockDTO,
@@ -143,11 +143,7 @@ function stateFactory () : GameStateDTO {
   const blast = Math.floor(Math.random() * BLASTS)
   const bomb = Math.floor(Math.random() * BOMBS)
   const bonus = Math.floor(Math.random() * BONUS)
-  // Opcional: forçar o Laboratório apenas durante o desenvolvimento,
-  // para testar a Função Linear sem depender do sorteio da arena.
-  const stage = process.env.dev && process.env.BOMBERIF_TEST_LAB === '1'
-    ? LABORATORY_STAGE
-    : Math.floor(Math.random() * STAGES)
+  const stage = Math.floor(Math.random() * STAGES)
 
   // O laboratório define a mutação de cada Função Linear uma única vez,
   // e o DTO resultante é compartilhado com todos os jogadores da sala.

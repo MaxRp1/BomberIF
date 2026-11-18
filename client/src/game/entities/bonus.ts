@@ -126,14 +126,6 @@ function BlastBonus (props:BonusProps) : Bonus {
         player.bombReach = next.baseReach
         player.linearVirusUntil = next.virusUntil
 
-        if (state.stage.name === LABORATORY_STAGE) {
-          console.info('[VIRUS] Função Linear coletada:', {
-            mutacao: props.mutation ?? 'AUSENTE',
-            alcanceAcumulado: next.baseReach,
-            raioEfetivo: now < next.virusUntil ? 0 : next.baseReach
-          })
-        }
-
         if (state.stage.name === LABORATORY_STAGE && props.mutation) {
           player.linearNotice = props.mutation
           player.linearNoticeUntil = now + LINEAR_NOTICE_DURATION_MS

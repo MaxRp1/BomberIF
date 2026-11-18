@@ -20,9 +20,7 @@ import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
 import VirusHud from './virusHud'
-import { fillMissingLabLinearMutations, LABORATORY_STAGE } from '#/virus'
-import VirusDebug from './virusDebug'
-import { ONDEV } from '~/constants'
+import { fillMissingLabLinearMutations } from '#/virus'
 
 const RESULT_DISPLAY_MS = 5000
 
@@ -50,7 +48,6 @@ export default function Canvas ({myself, style, setShowGame, touchEnabled, touch
   const [skillRemaining, setSkillRemaining] = useState(0)
   const [stunRemaining, setStunRemaining] = useState(0)
   const [skillActive, setSkillActive] = useState(false)
-  const [labDebug, setLabDebug] = useState({ server:0, fallback:0 })
 
   function gameLoop () {
     try {
@@ -107,22 +104,7 @@ function startGame (dto:StartGameDTO) {
   // Se a versão remota ainda não tiver esse campo, os dois navegadores
   // calculam o mesmo resultado determinístico a partir da sala e posição.
   // Preencher ANTES de criar as entidades de bloco/bonus.
-  const mutationsFromServer = dto.state.blocks
-    .flat()
-    .filter(block => block?.b === 2 &&
-      (block.mutation === 'buff' || block.mutation === 'virus'))
-    .length
-  const fallbackCount = fillMissingLabLinearMutations(
-    dto.state.blocks, dto.state.stage, dto.roomId
-  )
-  setLabDebug({ server: mutationsFromServer, fallback: fallbackCount })
-  if (dto.state.stage === LABORATORY_STAGE) {
-    console.info('[VIRUS] Laboratório:', {
-      sorteadasPeloServidor: mutationsFromServer,
-      fallbackDoCliente: fallbackCount,
-      total: mutationsFromServer + fallbackCount
-    })
-  }
+  fillMissingLabLinearMutations(dto.state.blocks, dto.state.stage, dto.roomId)
 
   setState({
     ...dto.state,
@@ -517,14 +499,6 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
         <strong>🌈 RAIO</strong>
         <span>{stunRemaining > 0 ? 'ATORDOADO' : skillRemaining > 0 ? `${skillRemaining}s` : 'E · LB/L1'}</span>
       </SkillButton>
-    )}
-    {ONDEV && state && (
-      <VirusDebug
-        player={localPlayer}
-        stage={state.stage.name}
-        server={labDebug.server}
-        fallback={labDebug.fallback}
-      />
     )}
     <VirusHud player={localPlayer} stage={state?.stage.name} />
     <Timer id='timer' />

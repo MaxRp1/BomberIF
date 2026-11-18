@@ -10324,92 +10324,14 @@ Para **testar localmente**, executar em dois terminais `cd ~/BomberIF/server && 
 **Deploy futuro:** apesar do fallback permitir alguma compatibilidade do cliente novo com um servidor antigo, o servidor atualizado continua sendo a fonte de verdade planejada para o sorteio; após validar e mesclar, publicar tanto backend quanto frontend, confirmando os deployments. Não houve alteração na `main` nem publicação por esta correção.
 
 
-### DIAGNÓSTICO VISUAL V3 — CHECAGEM DO AMBIENTE LOCAL (18/11/2026)
+### LIMPEZA DOS RECURSOS TEMPORÁRIOS — 18/11/2026
 
-**Contexto:** o usuário relatou que, mesmo após a correção para o +1 silencioso, não visualizou os logs `[VIRUS]` e a Função Linear continuou com o efeito antigo. Isso NÃO prova que o mecanismo da mutação está errado: a ausência dos logs pode indicar um frontend antigo, console filtrado, uma fase diferente ou a página publicada. Para isolar o ambiente, foram adicionados identificadores visuais de desenvolvimento, sem alterar o comportamento das builds de produção.
+Após confirmação manual de que o vírus da Função Linear funciona no Laboratório, foram removidos os recursos exclusivos de diagnóstico. O servidor voltou a sortear os cenários sem intervenção (`stage = Math.floor(Math.random() * STAGES)`); `BOMBERIF_TEST_LAB` deixou de ser utilizado. Permanecem os índices oficiais: **0 = Campo, 1 = Laboratório, 2 = Refeitório**.
 
-**Arquivos de diagnóstico:**
-- `server/src/router.ts`: endpoint **somente com `process.env.dev`** `GET /debug/virus`; devolve `feature=lab-linear-virus`, `version=diagnostic-v3-2026-11-18`, `stage=0`, `buff=3` e `virusMs=10000`. O cliente pode usar esse marcador para provar qual processo backend está servindo a partida.
-- `client/src/site/components/devVersion.tsx` **novo**, `siteApp.tsx`: em `NODE_ENV=development`, exibem no canto inferior esquerdo **LAB-VIRUS V3 · CLIENTE NOVO**, status do endpoint (**BACKEND NOVO**, **BACKEND ANTIGO** ou **LOCAL INACESSÍVEL**), status da conexão Socket.IO e URL `SERVER_URL`. Esse componente fica fora do site publicado (`NODE_ENV=production`).
-- `client/src/game/components/canvas/virusDebug.tsx` **novo**, `index.tsx`: durante partidas locais mostra **LAB-VIRUS V3 · FASE n**, o nome do cenário, quantidade de mutações vindas do servidor e quantidade preenchida por fallback, alcance acumulado e alcance efetivo das novas bombas. Atualiza a cada 200 ms, sem depender de React renderizar os dados internos mutáveis do jogador.
+Foram retirados o endpoint `GET /debug/virus`, os componentes `devVersion.tsx` e `virusDebug.tsx`, suas referências em `siteApp.tsx` e `canvas/index.tsx`, e logs de diagnóstico específicos de coleta. A função `fillMissingLabLinearMutations` foi mantida apenas como compatibilidade com mapas sem mutação, antes da criação dos blocos. Não confundir com ferramenta de teste.
 
-**Diagnóstico sem Console:**
-1. Após atualizar a branch com `git pull --ff-only origin feat/lab-linear-virus-2026-11-18`, **encerre instâncias antigas de `yarn dev`** e suba duas novas sessões, uma em `server/`, outra em `client/`.
-2. No próprio Kali, execute `curl -sk https://localhost:4000/debug/virus` e verifique `version: diagnostic-v3-2026-11-18`.
-3. Abra **https://localhost:3000/BomberIF/** no navegador do Kali. Caso não apareça o painel **LAB-VIRUS V3 · CLIENTE NOVO**, a página não está executando o bundle local corrigido (por exemplo, foi aberto GitHub Pages em vez da instância de `yarn dev`).
-4. O painel deve mostrar **BACKEND NOVO** e **SOCKET: CONECTADO**. Caso indique `BACKEND ANTIGO`, há um processo anterior em `localhost:4000`; caso indique `INACESSÍVEL`, verificar HTTPS/certificado/URL e processo.
-5. Dentro do jogo, `FASE 0 — LABORATÓRIO` deve aparecer para ativar a mutação. Se exibir `FASE 1` ou `FASE 2`, **+1 é o resultado correto**. No laboratório, o painel mostra quantos power-ups de Função Linear chegaram marcados pelo servidor (esperado: quantidade positiva) ou foram reparados pelo cliente.
-6. Ao coletar uma Função Linear, observe `BASE` e `BOMBA` no painel: um buff aumenta `BASE` em 3; um vírus deixa `BOMBA=0` por 10 s e restaura depois. O painel normal de mutação permanece com o contador.
+**Mecânica preservada:** somente Função Linear (bônus 2) no Laboratório recebe sorteio `buff` (+3 permanente e cumulativo) ou `virus` (alcance 0 por 10 segundos para bombas novas); o HUD de jogo permanece. No Campo e Refeitório, a Função Linear continua concedendo +1. Correções contra bombas órfãs em `bomb.ts`, `player.ts` e `canvas/index.tsx` também permanecem.
 
-**Importante:** a versão pública de `https://maxrp1.github.io/BomberIF/` não contém essa branch enquanto o PR #13 estiver em rascunho e a branch `client` não receber novo deploy. Ao usar uma VM Kali em NAT, `localhost` no navegador do Windows pode significar o próprio Windows, não a VM; para evitar isso, use o navegador do **próprio Kali** para testar, ou configure encaminhamento de portas conscientemente.
+**Procedimento local:** iniciar `yarn dev` no servidor sem variáveis de forçar fase e `yarn dev` no cliente. Aguardar o sorteio natural do Laboratório para avaliar a mecânica.
 
-**Estado:** os testes anteriores (57/57) e os builds foram aprovados **antes** das duas séries de alterações de compatibilidade/diagnóstico. É obrigatório reexecutar `yarn test:virus`, demais suítes e ambos os builds, além de validar em navegador. Sem confirmação de funcionalidade no ambiente correto, **NÃO MESCLAR NEM PUBLICAR** o PR #13.
-
-
-### FORÇAR LABORATÓRIO EM DESENVOLVIMENTO (SEM ALTERAR PRODUÇÃO)
-
-A partir do diagnóstico visual V3, o servidor também permite escolher o mapa do Laboratório **somente em desenvolvimento**, por meio da variável `BOMBERIF_TEST_LAB=1`. Em `server/src/factory.ts`, se `process.env.dev` for verdadeiro e essa variável estiver definida, o estágio é forçado para `LABORATORY_STAGE=0` antes da mutação dos power-ups; sem a variável, ou em produção, o sorteio normal de estágios continua intacto.
-
-```bash
-# Primeiro confira a branch e atualize os arquivos
-cd ~/BomberIF
-git status
-git switch feat/lab-linear-virus-2026-11-18
-git pull --ff-only origin feat/lab-linear-virus-2026-11-18
-
-# Terminal A: sempre no laboratório, para diagnóstico
-cd ~/BomberIF/server
-BOMBERIF_TEST_LAB=1 yarn dev
-
-# Terminal B: navegador local
-cd ~/BomberIF/client
-yarn dev
-```
-
-No Kali, `curl -sk https://localhost:4000/debug/virus` deve mostrar `diagnostic-v3-2026-11-18`. Acesse `https://localhost:3000/BomberIF/` no navegador **dentro do Kali**. O painel fixo deve indicar `LAB-VIRUS V3 · CLIENTE NOVO`, `BACKEND NOVO` e `SOCKET CONECTADO`; dentro da partida deve indicar `FASE 0 LABORATÓRIO`, quantidade de itens marcados e valores `BASE`/`BOMBA`.
-
-Se o usuário não visualizar `LAB-VIRUS V3` nem no menu, o frontend aberto não é a versão local corrigida, independentemente dos resultados anteriores dos testes. Se o backend for `ANTIGO` ou `INACESSÍVEL`, revisar processo/porta/certificado. Se ambos forem NOVOS e a Função Linear ainda der +1, capturar screenshot dos painéis e do item para investigar a execução da coleta.
-
-**Status:** esta alteração de diagnóstico/ambiente e os novos testes de regressão não foram compilados nem executados no Kali após a última alteração. O PR #13 permanece em rascunho, sem merge nem deploy.
-
-
-### CORREÇÃO DO ÍNDICE DOS CENÁRIOS E DE BOMBAS ÓRFÃS — 18/11/2026
-
-**Causa raiz do efeito +1 no teste:** o sprite `client/public/sprites/stages/0.png` foi inspecionado e representa o **Campo**, não o Laboratório. O sprite `1.png` representa o **Laboratório**, e `2.png` o **Refeitório**. A hipótese original `LABORATORY_STAGE=0` estava errada; assim, o servidor e o cliente aplicavam o vírus ao campo, e a Função Linear do laboratório recebia o +1 padrão. **Mapeamento oficial para o código:** `0=Campo`, `1=Laboratório`, `2=Refeitório`.
-
-**Correções no PR #13 (sem merge/deploy):**
-- `shared/virus.ts`: `LABORATORY_STAGE = 1`. Sorteio no servidor, fallback por sala, `+3` e supressão de 10 s usam o mesmo índice correto.
-- `server/src/factory.ts`: `BOMBERIF_TEST_LAB=1` agora força **stage 1** somente durante `yarn dev`. Sem flag e em produção, o sorteio das fases segue normal.
-- `server/src/router.ts`: `GET /debug/virus` agora identifica `stage:1`.
-- `client/src/game/components/canvas/virusDebug.tsx`: mapeamento visual `['CAMPO','LABORATÓRIO','REFEITÓRIO']`.
-- `server/test/virus.test.ts`: os cenários que não podem mutar foram corrigidos para índices `[0,2]`; acrescentado teste explícito para os três índices. **Total esperado: 14 testes na suíte do vírus** (anteriormente 13).
-- `client/src/game/entities/bomb.ts`: ao detonar, remove o marcador central `O` somente quando corresponde ao próprio ID, inclusive se o raio for **zero** (os loops das direções antes saíam sem limpar essa casa). Se a bomba estava sendo carregada, limpa `holder.holding` e `holder.bombId`.
-- `client/src/game/entities/player.ts`: `holdBomb` verifica se a bomba ainda existe e está armada, limpando marcador órfão antes de sair; `flingBomb` descarta a ação de forma segura se a bomba não existe ou já explodiu. Isso previne o `TypeError: Cannot read properties of undefined (reading 'id')` registrado ao segurar/arremessar.
-- `client/src/game/components/canvas/index.tsx`: handlers de eventos remotos de chute/segurar/arremesso verificam se a bomba ainda está armada, prevenindo acesso a entidades ausentes durante cascatas e atrasos de rede.
-
-**Teste local recomendado, após novo pull:**
-```bash
-cd ~/BomberIF
-git status
-git switch feat/lab-linear-virus-2026-11-18
-git pull --ff-only origin feat/lab-linear-virus-2026-11-18
-
-cd server
-yarn test:virus
-yarn test:chain
-yarn test:lobby
-yarn test:ranking
-yarn test:stun
-yarn test:frank
-yarn build
-BOMBERIF_TEST_LAB=1 yarn dev
-
-# Em outro terminal:
-cd ~/BomberIF/client
-yarn build
-yarn dev
-```
-
-No navegador do **Kali** (`https://localhost:3000/BomberIF/`), o HUD do teste precisa mostrar **FASE 1 LABORATÓRIO**. Testar `+3` acumulativo, vírus de 10 segundos, bomba com alcance zero sem dano e sem cascata, limpeza de marcadores ao terminar a explosão e segurar/arremessar bombas após detonar. Não repetir testes de laboratório em `FASE 0`: este é o Campo. Os 57 testes anteriores foram executados antes dessas correções e não as validam.
-
-**Limite/status:** não é possível confirmar compilação e comportamento real de ambas as correções apenas pela inspeção estática do GitHub. Reexecutar testes e builds no Kali; **PR #13 continua draft, sem merge/deploy**. Atualizar também o GDD em mapa do Laboratório e seção de power-ups, mantendo a identificação correta do estágio.
+**Qualidade:** após esta limpeza, reexecutar `yarn test:virus`, `yarn test:chain`, `yarn test:lobby`, `yarn test:ranking`, `yarn test:stun`, `yarn test:frank` e builds do cliente e servidor. O PR #13 permanece em rascunho até validação; não houve merge ou deploy nesta alteração.

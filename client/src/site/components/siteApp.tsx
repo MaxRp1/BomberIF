@@ -1,6 +1,4 @@
 import '~/index.css'
-import { ONDEV } from '~/constants'
-import DevVersion from './devVersion'
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useSearchParams } from 'react-router-dom'
@@ -121,11 +119,6 @@ export default function SiteApp ({ children } : SiteAppProps) {
     }
   }, [dispatch])
 
-  return (
-    <>
-      {children}
-      {ONDEV && <DevVersion />}
-    </>
-  )
+  return children
 
 }

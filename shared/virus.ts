@@ -47,6 +47,13 @@ export function fallbackLinearMutation(
   for (let i = 0; i < key.length; i++) {
     hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0
   }
+  // Finalização para não depender só da paridade do último dígito
+  // da coluna do bloco (o bit inferior do FNV é pouco misturado).
+  hash ^= hash >>> 16
+  hash = Math.imul(hash, 0x7feb352d)
+  hash ^= hash >>> 15
+  hash = Math.imul(hash, 0x846ca68b)
+  hash ^= hash >>> 16
   return (hash & 1) === 0 ? 'buff' : 'virus'
 }
 

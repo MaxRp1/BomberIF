@@ -10169,3 +10169,41 @@ Resultados fornecidos pelo projeto, executados na branch `feat/bomb-chain-reacti
 **Pendência antes do merge:** verificar a mecânica em partida real com dois navegadores, usando bombas de donos diferentes, sequência A→B→C, paredes, bombas arremessadas e restituição da capacidade de colocação. Os testes automatizados da cascata verificam a geometria e a lógica pura, mas não comprovam o resultado visual/multiplayer de ponta a ponta.
 
 **Status:** branch e PR #12 continuam em rascunho, sem merge nem deploy, até a validação manual. O PR #11 de desempenho de rede também permanece separado e requer reavaliação de integração se a ordem de merges mudar.
+
+
+---
+
+## PUBLICAÇÃO DA MECÂNICA — PR #12 INTEGRADO À MAIN EM 18/11/2026
+
+**Estado confirmado:** PR #12 (`feat: reação em cadeia de bombas atingidas por explosões`) **integrado com sucesso à `main`**, commit de merge `cfa8912487646cbf488ba7cafe216a1b62409dd6`. Usuário confirmou em 18/11/2026 que a mecânica funcionou normalmente no teste de jogo e autorizou a publicação.
+
+### Validações
+- `yarn test:chain`: 8/8.
+- `yarn test:lobby`: 13/13.
+- `yarn test:ranking`: 12/12.
+- `yarn test:stun`: 8/8.
+- `yarn test:frank`: 7/7.
+- **Total 48/48 testes aprovados**; compilação do servidor e build do frontend concluídas no Kali, com avisos não impeditivos de lint/TypeScript.
+- Validação funcional informada pelo usuário: a mecânica foi testada e funcionou. Não foram fornecidas métricas quantitativas de sincronização/latência para todas as condições de rede.
+
+### Publicação no GitHub Pages
+A implementação funcional da reação em cadeia reside em `client/src/game/entities/bomb.ts` e `shared/chainReaction.ts` (código compartilhado consumido pelo cliente); `client/src/game/sound/blast.ts` também foi atualizado. **O servidor de produção não precisa de atualização de lógica** para esta mecânica, pois o único arquivo `server/` alterado é `server/package.json` para testes e `server/test/chainReaction.test.ts`; o jogo calcula a cascata no navegador.
+
+O merge na `main` **não equivale ao deploy** da branch de publicação `client`. Para publicar a versão aprovada usando os scripts existentes:
+
+```bash
+cd ~/BomberIF
+git status                        # conferir antes de trocar de branch
+git switch main
+git pull --ff-only origin main
+cd client
+yarn deploy
+```
+
+`client/deploy.sh` executa `yarn build`, publica `build/` na branch `client` com push forçado e requer autenticação ao GitHub. Não é necessário repetir `yarn build` manualmente antes de `yarn deploy`.
+
+**Pós-deploy:** acessar https://maxrp1.github.io/BomberIF/ e verificar em nova partida que as bombas de ambos os jogadores provocam cascatas; conferir que paredes interrompem o raio e que a capacidade é devolvida após a explosão. Hard reload do navegador pode ser necessário devido a cache.
+
+**Nota de integração:** o PR #11 de otimização de rede permanece **aberto e em rascunho**, não foi incorporado à `main` por esta operação. Não publicar diretamente a branch PR #11 em conjunto com o PR #12 sem revisão de integração.
+
+**GDD:** seção 3.2 (Reação em cadeia e Regras de segurança e multiplayer) atualizada para indicar o merge e a confirmação funcional, com publicação do site público ainda não confirmada.

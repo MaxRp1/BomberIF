@@ -10267,3 +10267,21 @@ yarn build
 **Limites conhecidos:** os efeitos de coleta são locais ao dono (padrão atual do BomberIF); bombas continuam com alcance enviado pelo proprietário e detonação calculada por cliente. Uma transmissão atrasada pode provocar desencontros temporários, mesmo que os tipos de mutação dos blocos sejam iguais em todos os clientes. Testar em dois navegadores antes de publicar.
 
 **GDD:** atualizar seção do mapa Laboratório e seção 3.4 de power-ups para detalhar o vírus apenas da Função Linear; os demais power-ups permanecem inalterados.
+
+
+### VALIDAÇÃO PR #13 — 57 TESTES APROVADOS EM 18/11/2026
+
+Logs enviados pela equipe após checkout de `feat/lab-linear-virus-2026-11-18` confirmam:
+
+- `yarn test:virus`: **9/9 aprovados** — sorteio por item, laboratório apenas, +3 cumulativo, vírus por 10 segundos sem perder buffs, +3 durante debuff, novo vírus reiniciando a duração, reação em cadeia/alcance zero e fallback +1 para servidor antigo.
+- `yarn test:chain`: **8/8**.
+- `yarn test:lobby`: **13/13**.
+- `yarn test:ranking`: **12/12**.
+- `yarn test:stun`: **8/8**.
+- `yarn test:frank`: **7/7**.
+- **57/57 testes aprovados, 0 falhas**. Não inclui o PR #11 de otimização de rede, ainda separado.
+- Build do servidor aprovado (esbuild, 1,6 MB) e do cliente aprovado (CRACO, `build/static/js/main.8fc7daa0.js`, 148,09 KB gzip), com avisos não impeditivos de ESLint e compatibilidade TypeScript 5.9.3.
+
+**Ainda falta teste manual do jogo:** iniciar cliente e servidor da mesma branch e validar com dois jogadores no laboratório: +3 acumulativo, vírus por 10 segundos, recuperação do alcance, +3 coletado durante o debuff, bomba sem dano/sem reação em cadeia, efeitos em bombas previamente colocadas e os outros cenários (+1 tradicional). Suítes automatizadas não comprovam a experiência visual e multiplayer completa.
+
+**Status:** PR #13 permanece em rascunho, sem merge ou deploy, até validação manual.

@@ -11,7 +11,7 @@ export default (io:Server) => {
       return response.json({
         feature: 'lab-linear-virus',
         version: 'diagnostic-v3-2026-11-18',
-        stage: 0,
+        stage: 1,
         buff: 3,
         virusMs: 10000
       })

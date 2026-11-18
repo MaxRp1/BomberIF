@@ -10322,3 +10322,25 @@ yarn build
 Para **testar localmente**, executar em dois terminais `cd ~/BomberIF/server && yarn dev` e `cd ~/BomberIF/client && yarn dev`, abrir a versão HTTPS local em `https://localhost:3000/BomberIF/` e verificar no console F12 as duas mensagens `[VIRUS]` (início de rodada no laboratório e coleta da Função Linear). **Não usar a versão online para testar mudanças ainda não publicadas.**
 
 **Deploy futuro:** apesar do fallback permitir alguma compatibilidade do cliente novo com um servidor antigo, o servidor atualizado continua sendo a fonte de verdade planejada para o sorteio; após validar e mesclar, publicar tanto backend quanto frontend, confirmando os deployments. Não houve alteração na `main` nem publicação por esta correção.
+
+
+### DIAGNÓSTICO VISUAL V3 — CHECAGEM DO AMBIENTE LOCAL (18/11/2026)
+
+**Contexto:** o usuário relatou que, mesmo após a correção para o +1 silencioso, não visualizou os logs `[VIRUS]` e a Função Linear continuou com o efeito antigo. Isso NÃO prova que o mecanismo da mutação está errado: a ausência dos logs pode indicar um frontend antigo, console filtrado, uma fase diferente ou a página publicada. Para isolar o ambiente, foram adicionados identificadores visuais de desenvolvimento, sem alterar o comportamento das builds de produção.
+
+**Arquivos de diagnóstico:**
+- `server/src/router.ts`: endpoint **somente com `process.env.dev`** `GET /debug/virus`; devolve `feature=lab-linear-virus`, `version=diagnostic-v3-2026-11-18`, `stage=0`, `buff=3` e `virusMs=10000`. O cliente pode usar esse marcador para provar qual processo backend está servindo a partida.
+- `client/src/site/components/devVersion.tsx` **novo**, `siteApp.tsx`: em `NODE_ENV=development`, exibem no canto inferior esquerdo **LAB-VIRUS V3 · CLIENTE NOVO**, status do endpoint (**BACKEND NOVO**, **BACKEND ANTIGO** ou **LOCAL INACESSÍVEL**), status da conexão Socket.IO e URL `SERVER_URL`. Esse componente fica fora do site publicado (`NODE_ENV=production`).
+- `client/src/game/components/canvas/virusDebug.tsx` **novo**, `index.tsx`: durante partidas locais mostra **LAB-VIRUS V3 · FASE n**, o nome do cenário, quantidade de mutações vindas do servidor e quantidade preenchida por fallback, alcance acumulado e alcance efetivo das novas bombas. Atualiza a cada 200 ms, sem depender de React renderizar os dados internos mutáveis do jogador.
+
+**Diagnóstico sem Console:**
+1. Após atualizar a branch com `git pull --ff-only origin feat/lab-linear-virus-2026-11-18`, **encerre instâncias antigas de `yarn dev`** e suba duas novas sessões, uma em `server/`, outra em `client/`.
+2. No próprio Kali, execute `curl -sk https://localhost:4000/debug/virus` e verifique `version: diagnostic-v3-2026-11-18`.
+3. Abra **https://localhost:3000/BomberIF/** no navegador do Kali. Caso não apareça o painel **LAB-VIRUS V3 · CLIENTE NOVO**, a página não está executando o bundle local corrigido (por exemplo, foi aberto GitHub Pages em vez da instância de `yarn dev`).
+4. O painel deve mostrar **BACKEND NOVO** e **SOCKET: CONECTADO**. Caso indique `BACKEND ANTIGO`, há um processo anterior em `localhost:4000`; caso indique `INACESSÍVEL`, verificar HTTPS/certificado/URL e processo.
+5. Dentro do jogo, `FASE 0 — LABORATÓRIO` deve aparecer para ativar a mutação. Se exibir `FASE 1` ou `FASE 2`, **+1 é o resultado correto**. No laboratório, o painel mostra quantos power-ups de Função Linear chegaram marcados pelo servidor (esperado: quantidade positiva) ou foram reparados pelo cliente.
+6. Ao coletar uma Função Linear, observe `BASE` e `BOMBA` no painel: um buff aumenta `BASE` em 3; um vírus deixa `BOMBA=0` por 10 s e restaura depois. O painel normal de mutação permanece com o contador.
+
+**Importante:** a versão pública de `https://maxrp1.github.io/BomberIF/` não contém essa branch enquanto o PR #13 estiver em rascunho e a branch `client` não receber novo deploy. Ao usar uma VM Kali em NAT, `localhost` no navegador do Windows pode significar o próprio Windows, não a VM; para evitar isso, use o navegador do **próprio Kali** para testar, ou configure encaminhamento de portas conscientemente.
+
+**Estado:** os testes anteriores (57/57) e os builds foram aprovados **antes** das duas séries de alterações de compatibilidade/diagnóstico. É obrigatório reexecutar `yarn test:virus`, demais suítes e ambos os builds, além de validar em navegador. Sem confirmação de funcionalidade no ambiente correto, **NÃO MESCLAR NEM PUBLICAR** o PR #13.

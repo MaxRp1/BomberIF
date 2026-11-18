@@ -10207,3 +10207,63 @@ yarn deploy
 **Nota de integração:** o PR #11 de otimização de rede permanece **aberto e em rascunho**, não foi incorporado à `main` por esta operação. Não publicar diretamente a branch PR #11 em conjunto com o PR #12 sem revisão de integração.
 
 **GDD:** seção 3.2 (Reação em cadeia e Regras de segurança e multiplayer) atualizada para indicar o merge e a confirmação funcional, com publicação do site público ainda não confirmada.
+
+
+---
+
+## MECÂNICA 18/11/2026 — VÍRUS EXPERIMENTAL NA FUNÇÃO LINEAR DO LABORATÓRIO
+
+**Status:** implementada em branch experimental `feat/lab-linear-virus-2026-11-18`, ainda sem testes/build do Kali e sem deploy/merge. **Escopo exclusivo:** apenas o power-up *Função Linear*, bônus de ID `2`, no mapa do Laboratório (índice de estágio `0`). Os outros itens e os outros cenários mantêm os efeitos habituais.
+
+### Regras de jogo e sorteio
+
+- No início da rodada, **o servidor** atribui, para cada bloco que contém Função Linear (`b === 2`), uma mutação com probabilidades de 50%/50%. O resultado é serializado como `BlockDTO.mutation: 'buff'|'virus'` no mesmo `StartGameDTO` enviado a todos os clientes. Não há sorteios separados por navegador durante a coleta.
+- **Buff ('buff')**: soma **+3** ao alcance-base permanente do jogador. É cumulativo: alcance-base inicial `2` → `5` → `8` → `11` nas coletas positivas seguintes. Não tem limite temporal dentro da rodada.
+- **Vírus ('virus')**: por **10.000 ms desde a coleta**, novas bombas colocadas pelo jogador têm **alcance efetivo 0**, sem raio/dano de explosão; a animação visual central de explosão continua aparecendo. O alcance-base acumulado **não é modificado**.
+- Ao terminar o efeito, novas bombas retomam o alcance-base integral, incluindo todos os bônus +3 obtidos anteriormente ou **durante** o debuff. Bombas colocadas antes de ganhar o vírus preservam o alcance capturado no momento de sua colocação; o efeito não altera retroativamente bombas existentes.
+- Pegar **outro vírus durante os dez segundos reinicia** os dez segundos a partir dessa nova coleta; não subtrai pontos permanentes. Um novo +3 durante o vírus acumula normalmente, mas a supressão só termina na data estabelecida.
+- Fora do laboratório ou ao receber um servidor antigo que não forneça `mutation`, o bônus permanece com o ganho padrão de **+1**. Isso mantém a compatibilidade durante rollout.
+- Bombas com alcance 0 não destroem blocos, não causam dano e não iniciam **reações em cadeia**, inclusive se dividirem a mesma célula. A prévia de raio do Proença também omite essas bombas.
+- Apenas o usuário afetado vê o aviso no HUD do laboratório: **MUTAÇÃO POSITIVA! RAIO +3** (aviso breve) ou **VÍRUS DETECTADO! RAIO 0 · Ns restantes**, com contador aproximado. O aviso fica visível durante todo o debuff. Outras pessoas veem o alcance real de novas bombas via `PlaceBombDTO.r`.
+
+### Implementação por arquivo
+
+- `shared/virus.ts` **(novo)**: constantes `LABORATORY_STAGE=0`, `LINEAR_BUFF_AMOUNT=3`, `LINEAR_VIRUS_DURATION_MS=10000` e funções puras `chooseLinearMutation`, `assignLabLinearMutations`, `applyLinearPickup`, `effectiveBombReach`.
+- `shared/dto.ts`: propriedade opcional `mutation` nos blocos.
+- `server/src/factory.ts`: sorteia as mutações de Função Linear **somente no estágio 0**, depois de gerar blocos e bônus e selecionar o estágio.
+- `client/src/game/entities/block.ts`: repassa a mutação do bloco para a instância criada por `BonusFactory`.
+- `client/src/game/entities/bonus.ts`: a Função Linear aplica +1 habitual ou a mutação usando o estado de estágio e o tipo recebido do servidor.
+- `client/src/game/entities/player.ts`: separa `bombReach` acumulativo de `linearVirusUntil` temporário; aplica alcance efetivo apenas em `placeBomb()` e transmite esse valor via `PlaceBombDTO.r`.
+- `client/src/game/components/canvas/virusHud.tsx` **(novo)** e `index.tsx`: aviso no estilo retrô com countdown, sem reiniciar o loop do jogo.
+- `shared/chainReaction.ts`: evita que uma explosão de alcance zero acione qualquer bomba em cascata, mesmo na mesma posição.
+- `client/src/game/util/explosionPreview.ts`: não marca área de explosão de bombas com raio zero na habilidade de visão do Proença.
+- `server/test/virus.test.ts` **(novo)**, `server/package.json`: suíte `yarn test:virus` com 9 testes de sorteio, aplicação ao estágio, empilhamento, duração, coleta mista, reinício do debuff e alcance zero.
+
+### Qualidade e publicação
+
+```bash
+cd ~/BomberIF
+git status
+git fetch origin
+git switch --track origin/feat/lab-linear-virus-2026-11-18
+
+cd server
+yarn test:virus
+yarn test:chain
+yarn test:lobby
+yarn test:ranking
+yarn test:stun
+yarn test:frank
+yarn build
+
+cd ../client
+yarn build
+```
+
+**Testes manuais:** em laboratório, coletar +3 duas vezes (alcance-base 2→5→8); coletar vírus (alcance 0 em novas bombas por 10 s), coletar +3 durante o vírus (deve acumular mas manter raio zero até terminar), repetir vírus (reinicia 10 s), comprovar retorno do alcance; usar Proença, verificar bombas já colocadas antes do vírus e reação em cadeia. Confirmar que campo e refeitório mantêm Função Linear +1 e que ambos os jogadores veem o alcance correto de novas bombas. Verificar que indicador e contador aparecem e desaparecem corretamente.
+
+**Deploy:** ao contrário do PR #12, esta funcionalidade exige **cliente e servidor** atualizados: sem o servidor novo, o bônus no laboratório continuará com +1 pela regra de compatibilidade. Não publicar só o frontend; após testar/mesclar, atualizar o backend (Render/branch `server`, conforme a configuração) e o GitHub Pages (branch `client`).
+
+**Limites conhecidos:** os efeitos de coleta são locais ao dono (padrão atual do BomberIF); bombas continuam com alcance enviado pelo proprietário e detonação calculada por cliente. Uma transmissão atrasada pode provocar desencontros temporários, mesmo que os tipos de mutação dos blocos sejam iguais em todos os clientes. Testar em dois navegadores antes de publicar.
+
+**GDD:** atualizar seção do mapa Laboratório e seção 3.4 de power-ups para detalhar o vírus apenas da Função Linear; os demais power-ups permanecem inalterados.

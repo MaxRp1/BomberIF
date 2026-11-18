@@ -61,7 +61,8 @@ export function renderExplosionPreview(
     if (
       bomb.armed !== true ||
       typeof bomb.getAxes !== 'function' ||
-      typeof bomb.reach !== 'number'
+      typeof bomb.reach !== 'number' ||
+      bomb.reach <= 0
     ) {
       continue
     }

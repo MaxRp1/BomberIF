@@ -230,7 +230,8 @@ test('modificadores de velocidade valem só enquanto segura bomba', () => {
 test('vírus redefine apenas o raio da bomba arremessada para o inicial', () => {
   assert.equal(INITIAL_BOMB_REACH, 2)
   assert.equal(reachAfterFling('virus', 12), 2)
-  assert.equal(reachAfterFling('virus', 0), 2)
+  assert.equal(reachAfterFling('virus', 0), 0)
+  assert.equal(reachAfterFling('virus', 1), 1)
   assert.equal(reachAfterFling('buff', 12), 12)
   assert.equal(reachAfterFling(null, 5), 5)
 })

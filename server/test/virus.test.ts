@@ -3,6 +3,9 @@ import test from 'node:test'
 import type { BlockDTO } from '../../shared/dto'
 import {
   LABORATORY_STAGE,
+  LAB_ONLY_MUTATED_DROPS_FOR_TESTS,
+  canDropLabPowerup,
+  isLabMutatablePowerup,
   LINEAR_BUFF_AMOUNT,
   LINEAR_VIRUS_DURATION_MS,
   applyLinearPickup,
@@ -56,6 +59,53 @@ test('sorteio em duas etapas: 50% normal, 25% buff, 25% debuff', () => {
     totals[chooseLinearMutation(i / 10000)]++
   }
   assert.deepEqual(totals, {normal:5000, buff:2500, virus:2500})
+})
+
+test('modo de testes do Lab só distribui os quatro power-ups já mutáveis', () => {
+  const eligible = [2,3,8,9]
+  for (let bonus = 1; bonus <= 9; bonus++) {
+    assert.equal(isLabMutatablePowerup(bonus), eligible.includes(bonus))
+    assert.equal(canDropLabPowerup(LABORATORY_STAGE, bonus, true), eligible.includes(bonus))
+    assert.equal(canDropLabPowerup(LABORATORY_STAGE, bonus, false), true)
+    assert.equal(canDropLabPowerup(0, bonus, true), true)
+    assert.equal(canDropLabPowerup(2, bonus, true), true)
+    assert.equal(canDropLabPowerup(LABORATORY_STAGE, bonus),
+      LAB_ONLY_MUTATED_DROPS_FOR_TESTS ? eligible.includes(bonus) : true)
+  }
+})
+
+test('com modo temporário ligado, todo power-up elegível é mutado: 50% buff e 50% vírus', () => {
+  assert.equal(chooseLinearMutation(0, true), 'buff')
+  assert.equal(chooseLinearMutation(0.49, true), 'buff')
+  assert.equal(chooseLinearMutation(0.5, true), 'virus')
+  assert.equal(chooseLinearMutation(0.99, true), 'virus')
+  const map:(BlockDTO|null)[][] = [[block(1), block(2), block(3), block(8), block(9)]]
+  let i = 0
+  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0,0.49,0.5,0.99][i++], true)
+  assert.equal(i, 4)
+  assert.deepEqual(map[0].map(item => item?.mutation),
+    [undefined, 'buff', 'buff', 'virus', 'virus'])
+  assert.ok(map[0].slice(1).every(item => isMutatedBonus(item?.mutation)))
+})
+
+test('desligar modo de testes recupera 50% normal/25% buff/25% vírus e pool completo', () => {
+  const values = [0.1, 0.6, 0.9]
+  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(8), block(4)]]
+  let i = 0
+  assignLabLinearMutations(map, LABORATORY_STAGE, () => values[i++], false)
+  assert.equal(i, 3)
+  assert.deepEqual(map[0].map(item => item?.mutation),
+    ['normal','buff','virus',undefined])
+  for (let bonus = 1; bonus <= 9; bonus++) {
+    assert.equal(canDropLabPowerup(LABORATORY_STAGE, bonus, false), true)
+  }
+  const oldPacket:(BlockDTO|null)[][] = [[block(2),block(9),block(3)]]
+  const first = JSON.parse(JSON.stringify(oldPacket)) as (BlockDTO|null)[][]
+  const second = JSON.parse(JSON.stringify(oldPacket)) as (BlockDTO|null)[][]
+  assert.equal(fillMissingLabLinearMutations(first, LABORATORY_STAGE, 'sala-modo-teste', true), 3)
+  assert.equal(fillMissingLabLinearMutations(second, LABORATORY_STAGE, 'sala-modo-teste', true), 3)
+  assert.deepEqual(first, second)
+  assert.ok(first[0].every(item => isMutatedBonus(item?.mutation)))
 })
 
 test('sprite misterioso é idêntico para buff e debuff, normal permanece original', () => {

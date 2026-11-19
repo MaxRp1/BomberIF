@@ -1,5 +1,5 @@
 import { Server } from 'socket.io'
-import { assignLabLinearMutations } from '#/virus'
+import { assignLabPowerupMutations } from '#/virus'
 import { BLASTS, BOMBS, BONUS, BONUSES, INITIAL_POSITION, SPRITES, STAGES } from '#/constants'
 import {
   BlockDTO,
@@ -147,7 +147,7 @@ function stateFactory () : GameStateDTO {
 
   // O laboratório define a mutação de cada Função Linear uma única vez,
   // e o DTO resultante é compartilhado com todos os jogadores da sala.
-  assignLabLinearMutations(blocks, stage)
+  assignLabPowerupMutations(blocks, stage)
 
   const slowFloors =
     stage === CAFETERIA_STAGE

@@ -10447,18 +10447,50 @@ yarn build
 
 ### MODO TEMPORÁRIO DE TESTES — APENAS POWER-UPS MUTADOS NO LABORATÓRIO — 19/11/2026
 
-**Escopo:** **somente a branch `feat/lab-data-transfer-virus-2026-11-18`**, PR #14 em rascunho e **sem merge/deploy**. A `main` não foi alterada e mantém as regras existentes. Esta é uma configuração temporária de teste do Laboratório, **não** uma alteração do design final do GDD.
+**Escopo:** introduzido na branch `feat/lab-data-transfer-virus-2026-11-18` e continuado em `feat/lab-firewall-virus-2026-11-19`, **sem merge/deploy**. A `main` não foi alterada e mantém as regras existentes. Esta é uma configuração temporária de teste do Laboratório, **não** uma alteração do design final do GDD.
 
 **Interruptor único:** `shared/virus.ts` → `export const LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true`. Esta flag controla simultaneamente a seleção dos itens distribuídos no mapa, o sorteio do servidor e o fallback determinístico de clientes com dados incompletos. **Para restaurar a distribuição original**, mudar somente para `false`; não é preciso voltar commits ou reescrever os mutadores. Antes de mesclar a branch, restaurar também a escolha aleatória das três arenas em `server/src/factory.ts` (atualmente estágio 1 forçado).
 
 **Configuração com a flag `true` (atual para testes):**
-- No Laboratório, `server/src/factory.ts` passa a gerar **apenas os power-ups com mutações implementadas**: **Função Linear (2), Troca de Dados (3), Grafo (8) e IHM (9)**. Os demais IDs não aparecem no mapa temporariamente.
-- Cada instância dos quatro itens tem **100% de chance de receber mutação**, com **50% buff / 50% vírus**. Não há item `normal` desses tipos enquanto o modo está ligado; portanto, todos têm o **mesmo sprite misterioso** que oculta a polaridade da mutação.
+- No Laboratório, `server/src/factory.ts` passa a gerar **apenas os power-ups com mutações implementadas**: **Função Linear (2), Troca de Dados (3), Firewall (7), Grafo (8) e IHM (9)**. Os demais IDs não aparecem no mapa temporariamente.
+- Cada instância dos cinco itens tem **100% de chance de receber mutação**, com **50% buff / 50% vírus**. Não há item `normal` desses tipos enquanto o modo está ligado; portanto, todos têm o **mesmo sprite misterioso** que oculta a polaridade da mutação.
 - Os efeitos já definidos dos buffs e debuffs **não mudam**. O backend é a autoridade do sorteio, inclusive para as mutações do IHM.
 - Os cenários Campo e Refeitório continuam fora desse filtro. A branch de testes está forçando somente o Laboratório, mas o filtro foi explicitamente limitado ao `LABORATORY_STAGE`.
 
-**Configuração com a flag `false` (restauração):** volta o pool inteiro dos nove tipos de power-up, preservando a quantidade definida em `shared/constants.ts` → `BONUSES`. Os quatro itens que admitem mutações voltam à regra pretendida: **50% normal / 25% buff / 25% vírus**; os demais seguem tradicionais. O sprite original continua exclusivo das versões normais.
+**Configuração com a flag `false` (restauração):** volta o pool inteiro dos nove tipos de power-up, preservando a quantidade definida em `shared/constants.ts` → `BONUSES`. Os cinco itens que admitem mutações voltam à regra pretendida: **50% normal / 25% buff / 25% vírus**; os demais seguem tradicionais. O sprite original continua exclusivo das versões normais.
 
 **Implementação:** `shared/virus.ts` declara a flag, `isLabMutatablePowerup`, `canDropLabPowerup`, `chooseLinearMutation(roll, onlyMutated)` e os parâmetros opcionais de modo em `assignLabPowerupMutations`, `fallbackLinearMutation` e `fillMissingLabPowerupMutations`. `server/src/factory.ts` escolhe o estágio **antes** de distribuir os itens, aplica o filtro e passa a flag ao sorteio do servidor. `client/src/game/components/canvas/index.tsx` passa a mesma flag ao fallback, garantindo que clientes desatualizados não inventem um item saudável em modo de teste. `server/test/virus.test.ts` cobre ambos os modos e a reversibilidade.
 
-**Validar no Kali:** `cd server && yarn test:virus && yarn test:ihm && yarn test:ranking && yarn build`; depois `cd ../client && yarn build`. Conferir em partida que **nenhum** power-up sem mutação (IDs 1,4,5,6,7) apareça no Laboratório, que os quatro IDs elegíveis sempre tenham sprite misterioso e que os resultados ocorram em ambas as polaridades. Executar testes novamente após desligar a flag. **Os testes e builds deste novo modo ainda não foram executados no Kali.**
+**Validar no Kali:** `cd server && yarn test:virus && yarn test:ihm && yarn test:ranking && yarn build`; depois `cd ../client && yarn build`. Conferir em partida que **nenhum** power-up sem mutação (IDs 1,4,5,6) apareça no Laboratório, que os cinco IDs elegíveis sempre tenham sprite misterioso e que os resultados ocorram em ambas as polaridades. Executar testes novamente após desligar a flag. **Os testes e builds deste novo modo ainda não foram executados no Kali.**
+
+
+### FIREWALL MUTADO — LABORATÓRIO — 19/11/2026
+
+**Escopo de implementação:** branch `feat/lab-firewall-virus-2026-11-19` (derivada da branch de Troca de Dados); não integra a `main` até passar pelos testes e merge.
+
+**Identificação:** Firewall é o power-up ID **7**, renderizado e coletado por `PassBonus`. Agora faz parte do sorteio genérico de mutações do Laboratório. No modo de teste `LAB_ONLY_MUTATED_DROPS_FOR_TESTS=true`, o Firewall aparece sempre com sprite misterioso e tem chance 50/50 de buff ou vírus; com a flag desativada, segue 50% normal, 25% buff e 25% vírus.
+
+**Duração de todas as variantes:** **6 segundos**, como o Firewall original. A coleta de um novo Firewall substitui a variante anterior e reinicia o prazo, sem criar temporizadores em conflito. Fora do Laboratório, continua o Firewall original, sem mutações.
+
+| Variante | Colisão e passagem | Dano por explosão |
+|---|---|---|
+| Normal | Atravessa blocos destrutíveis, indestrutíveis e bordas do mapa durante 6s | Continua vulnerável |
+| Buff | Mantém toda a travessia do Firewall normal, incluindo bordas | Imune às explosões, durante os mesmos 6s |
+| Vírus/debuff | Atravessa **somente** blocos destrutíveis; blocos indestrutíveis, bombas e bordas continuam sólidos | Continua vulnerável |
+
+**Segurança e limites:** imunidade do buff se aplica somente à causa de morte `'bomb'`, sem impedir eventos como IHM, perda de foco da aba ou morte ao voltar ao estado sólido dentro de bloco. Encerrado o efeito, o jogador volta a ter colisões normais. Como na versão original, ficar preso dentro de um bloco na expiração resulta em morte, evitando posições permanentemente inválidas.
+
+**Arquivos e responsabilidades:**
+- `shared/virus.ts`: ID, elegibilidade para sorteio, duração e regras compartilhadas `firewallPickupMode`, `firewallExplosionImmune`, `firewallPassesDestructible`.
+- `client/src/game/entities/bonus.ts`: determina modo ao coletar.
+- `client/src/game/entities/pass.ts`: aplica duração, modo e reinício na coleta repetida.
+- `client/src/game/entities/block.ts`: libera só os blocos `D` quando o vírus está ativo.
+- `client/src/game/entities/player.ts`: estado temporário e imunidade a bombas.
+- `client/src/game/components/canvas/virusHud.tsx`: aviso da variante, com contagem regressiva.
+- `server/test/virus.test.ts`: valida sorteio, mapas, duração, elegibilidade e auxiliares de efeito.
+
+**Validação manual pendente:** rodar `cd server && yarn test:virus && yarn test:ihm && yarn build` e `cd ../client && yarn build` no Kali. Em dois navegadores, testar Firewall normal/buff/vírus; colisão com `D`, `I`, bombas e bordas; explosões próprias, rivais e em cadeia; coletas consecutivas; expiração dentro e fora de blocos; e ausência de alterações no Campo/Refeitório. Não considerar publicado sem esses testes.
+
+**GDD e documentação a sincronizar:** atualizar o quadro de power-ups e descrição temática do mapa Laboratório, além da seção de fluxo `PassBonus`/`PassFactory`, colisão de blocos e dano por bombas no documento técnico consolidado `doc/doc_bomberIF_completo_recuperado.md`, quando promover a funcionalidade à versão oficial. Os dois documentos não devem tratar a mutação como regra do Campo ou Refeitório.
+
+**Próxima mutação planejada, ainda NÃO implementada:** Sinal Ruim / Download Turbo e Download Limitado. Buff aumenta gradualmente a velocidade enquanto o jogador permanece em movimento, até **+70%**, reiniciando a aceleração quando para. Debuff remove todos os bônus de velocidade adquiridos até a coleta e reduz gradualmente a velocidade até **-40%** enquanto continua andando; parar por 1s restaura temporariamente a velocidade-base. Antes da implementação, definir como essa regra interage com as habilidades de velocidade dos personagens.

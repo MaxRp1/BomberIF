@@ -8,6 +8,7 @@ import {
   applyLinearPickup,
   assignLabLinearMutations,
   chooseLinearMutation,
+  isInfectedBonus,
   effectiveBombReach,
   fallbackLinearMutation,
   fillMissingLabLinearMutations,
@@ -40,6 +41,28 @@ test('sorteio 50/50 define +3 ou vírus no servidor, incluindo o limite', () => 
   assert.equal(chooseLinearMutation(0.49), 'buff')
   assert.equal(chooseLinearMutation(0.5), 'virus')
   assert.equal(chooseLinearMutation(0.99), 'virus')
+})
+
+test('somente a variante infectada utiliza o sprite modificado', () => {
+  assert.equal(isInfectedBonus('virus'), true)
+  assert.equal(isInfectedBonus('buff'), false)
+  assert.equal(isInfectedBonus(undefined), false)
+})
+
+test('sorteio do servidor mantém aparência e efeito sincronizados por item', () => {
+  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(4)]]
+  const rolls = [0.49, 0.5]
+  let index = 0
+  assignLabLinearMutations(map, LABORATORY_STAGE, () => rolls[index++])
+
+  assert.equal(index, 2)
+  assert.equal(isInfectedBonus(map[0][0]?.mutation), false)
+  assert.equal(isInfectedBonus(map[0][1]?.mutation), true)
+  assert.equal(isInfectedBonus(map[0][2]?.mutation), false)
+
+  const remote = JSON.parse(JSON.stringify(map)) as (BlockDTO|null)[][]
+  assert.deepEqual(remote.map(row => row.map(item => isInfectedBonus(item?.mutation))),
+    map.map(row => row.map(item => isInfectedBonus(item?.mutation))))
 })
 
 test('Função Linear e Troca de Dados são os únicos itens com mutação no laboratório', () => {

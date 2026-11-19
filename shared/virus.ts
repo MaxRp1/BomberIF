@@ -1,6 +1,7 @@
 import { BlockDTO, SIDES } from './dto'
 
-// Mutações exclusivas do Laboratório: Função Linear (2) e Troca de Dados (3).
+// Power-ups com mutação implementada no Laboratório: Função Linear,
+// Troca de Dados, Grafo e IHM.
 export const LABORATORY_STAGE = 1 // sprite 1.png: laboratório (0 = campo, 2 = refeitório)
 export const LINEAR_BUFF_AMOUNT = 3
 export const LINEAR_VIRUS_DURATION_MS = 10000
@@ -8,6 +9,25 @@ export const LINEAR_NOTICE_DURATION_MS = 2500
 export const HOLD_BONUS_ID = 3
 export const GRAPH_BONUS_ID = 8
 export const IHM_BONUS_ID = 9
+
+// MODO TEMPORÁRIO DE TESTES DESTA BRANCH.
+// true: o Lab dropa SOMENTE os quatro power-ups já mutáveis,
+//       todos com sprite misterioso e chance 50/50 de buff ou vírus.
+// false: restaura TODO o pool de itens e a distribuição original
+//        de 50% normal, 25% buff e 25% vírus nos quatro itens.
+export const LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true
+
+export function isLabMutatablePowerup(id:number): boolean {
+  return id === 2 || id === HOLD_BONUS_ID || id === GRAPH_BONUS_ID || id === IHM_BONUS_ID
+}
+
+export function canDropLabPowerup(
+  stage:number,
+  id:number,
+  onlyMutated = LAB_ONLY_MUTATED_DROPS_FOR_TESTS
+): boolean {
+  return stage !== LABORATORY_STAGE || !onlyMutated || isLabMutatablePowerup(id)
+}
 export const GRAPH_EFFECT_DURATION_MS = 10000
 export const GRAPH_BUFF_SPEED_MULTIPLIER = 1.5
 export const INITIAL_BOMB_REACH = 2
@@ -29,7 +49,8 @@ export interface LinearVirusState {
 
 // Sorteio único do servidor, equivalente a duas etapas independentes:
 // 50% efeito normal; nos outros 50%, 50% buff e 50% debuff.
-export function chooseLinearMutation(roll: number): LinearMutation {
+export function chooseLinearMutation(roll: number, onlyMutated = false): LinearMutation {
+  if (onlyMutated) return roll < 0.5 ? 'buff' : 'virus'
   if (roll < 0.5) return 'normal'
   return roll < 0.75 ? 'buff' : 'virus'
 }
@@ -37,14 +58,15 @@ export function chooseLinearMutation(roll: number): LinearMutation {
 export function assignLabLinearMutations(
   blocks: (BlockDTO | null)[][],
   stage: number,
-  random: () => number = Math.random
+  random: () => number = Math.random,
+  onlyMutated = false
 ): void {
   if (stage !== LABORATORY_STAGE) return
 
   for (const row of blocks) {
     for (const block of row) {
-      if (block?.b === 2 || block?.b === HOLD_BONUS_ID || block?.b === GRAPH_BONUS_ID || block?.b === IHM_BONUS_ID) {
-        block.mutation = chooseLinearMutation(random())
+      if (block?.b !== undefined && isLabMutatablePowerup(block.b)) {
+        block.mutation = chooseLinearMutation(random(), onlyMutated)
       }
     }
   }
@@ -59,7 +81,8 @@ export function assignLabLinearMutations(
 export function fallbackLinearMutation(
   roomId: string,
   row: number,
-  column: number
+  column: number,
+  onlyMutated = false
 ): LinearMutation {
   const key = `${roomId}:${row},${column}`
   let hash = 2166136261
@@ -73,13 +96,14 @@ export function fallbackLinearMutation(
   hash ^= hash >>> 15
   hash = Math.imul(hash, 0x846ca68b)
   hash ^= hash >>> 16
-  return chooseLinearMutation((hash >>> 0) / 0x100000000)
+  return chooseLinearMutation((hash >>> 0) / 0x100000000, onlyMutated)
 }
 
 export function fillMissingLabLinearMutations(
   blocks: (BlockDTO | null)[][],
   stage: number,
-  roomId: string
+  roomId: string,
+  onlyMutated = false
 ): number {
   if (stage !== LABORATORY_STAGE) return 0
 
@@ -87,9 +111,9 @@ export function fillMissingLabLinearMutations(
   for (let row = 0; row < blocks.length; row++) {
     for (let column = 0; column < blocks[row].length; column++) {
       const block = blocks[row][column]
-      if (block?.b !== 2 && block?.b !== HOLD_BONUS_ID && block?.b !== GRAPH_BONUS_ID && block?.b !== IHM_BONUS_ID) continue
+      if (block?.b === undefined || !isLabMutatablePowerup(block.b)) continue
       if (block.mutation === 'normal' || block.mutation === 'buff' || block.mutation === 'virus') continue
-      block.mutation = fallbackLinearMutation(roomId, row, column)
+      block.mutation = fallbackLinearMutation(roomId, row, column, onlyMutated)
       repaired++
     }
   }

@@ -58,6 +58,7 @@ export function startGameFactory (
     p.data.frankLifeUsed = false
     p.data.skillReadyAt = 0
     p.data.stunnedUntil = 0
+    p.data.pendingKickImpacts = new Set<string>()
     p.emit('myself', index)
   }
 

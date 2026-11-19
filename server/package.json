@@ -16,7 +16,8 @@
     "test:frank": "ts-node --transpile-only -r tsconfig-paths/register test/frank.test.ts",
     "test:virus": "ts-node --transpile-only -r tsconfig-paths/register test/virus.test.ts",
     "test:ihm": "ts-node --transpile-only -r tsconfig-paths/register test/ihm.test.ts",
-    "test:kick": "ts-node --transpile-only -r tsconfig-paths/register test/kick.test.ts"
+    "test:kick": "ts-node --transpile-only -r tsconfig-paths/register test/kick.test.ts",
+    "test:firewall": "ts-node --transpile-only -r tsconfig-paths/register test/firewall.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

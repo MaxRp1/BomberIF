@@ -1,6 +1,6 @@
 import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
-import { LinearMutation, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, reachAfterFling } from '#/virus'
+import { LinearMutation, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, graphControlsInverted, graphSpeedMultiplier, invertGraphDirection, reachAfterFling } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
@@ -49,6 +49,15 @@ export interface Player {
   holdMutation      : Exclude<LinearMutation, 'normal'> | null
   holdNotice        : LinearMutation | null
   holdNoticeUntil   : number
+  graphInvertedUntil : number
+  graphBoostedUntil  : number
+  graphInvertedUntilDeath : boolean
+  graphNotice        : 'buff'|'virus'|null
+  graphNoticeUntil   : number
+  heldMoveKeys       : Set<string>
+  gamepadDirection   : SIDES|null
+  lastGraphInverted  : boolean
+  onWindowBlur       : () => void
   index              : number
   kick               : boolean
   lastPress  : LastPress
@@ -78,7 +87,10 @@ export interface Player {
   moves                : {[key in SIDES] : () => void}
   onMove               : (dto:MoveDTO) => void
   stopMove             : (side:SIDES) => void
+  setGamepadDirection  : (side:SIDES|null) => void
+  refreshMovement      : () => void
   invertControls       : () => void
+  applyGraphBonus      : (stage:number, mutation:LinearMutation|undefined) => void
   handleBomb           : (state:GameState) => void
   useStunSkill        : () => void
   applyStun           : () => void
@@ -131,6 +143,14 @@ export function PlayerFactory (props:PlayerProps) : Player {
     holdMutation: null,
     holdNotice: null,
     holdNoticeUntil: 0,
+    graphInvertedUntil: 0,
+    graphBoostedUntil: 0,
+    graphInvertedUntilDeath: false,
+    graphNotice: null,
+    graphNoticeUntil: 0,
+    heldMoveKeys: new Set<string>(),
+    gamepadDirection: null,
+    lastGraphInverted: false,
     index: props.index,
     kick: false,
     lastPress: {bomb:0},
@@ -165,7 +185,10 @@ export function PlayerFactory (props:PlayerProps) : Player {
   player.moves = {D:moveDown.bind(player), L:moveLeft.bind(player), R:moveRight.bind(player), U:moveUp.bind(player)}
   player.onMove = onMove.bind(player)
   player.stopMove = stopMove.bind(player)
+  player.setGamepadDirection = setGamepadDirection.bind(player)
+  player.refreshMovement = refreshMovement.bind(player)
   player.invertControls = invertControls.bind(player)
+  player.applyGraphBonus = applyGraphBonus.bind(player)
   player.handleBomb = handleBomb.bind(player)
   player.useStunSkill = useStunSkill.bind(player)
   player.applyStun = applyStun.bind(player)
@@ -193,6 +216,8 @@ function getAxes (this:Player) : [number, number] {
 function addInputListener (this:Player, state:GameState) {
   this.onVisibilityChange = () => onVisibilityChange.call(this)
   document.addEventListener('visibilitychange', this.onVisibilityChange)
+  this.onWindowBlur = () => clearInputOnBlur.call(this)
+  window.addEventListener('blur', this.onWindowBlur)
   this.keydownListener = event => keydownListener.call(this, event, state)
   document.addEventListener('keydown', this.keydownListener)
   this.keyupListener = event => keyupListener.call(this, event)
@@ -206,14 +231,22 @@ function addInputListener (this:Player, state:GameState) {
 
 function removeInputListener (this:Player) {
   document.removeEventListener('visibilitychange', this.onVisibilityChange)
+  window.removeEventListener('blur', this.onWindowBlur)
   document.removeEventListener('keydown', this.keydownListener)
   document.removeEventListener('keyup', this.keyupListener)
   window.removeEventListener('gamepaddisconnected', this.removeGamepadSupport)
   window.removeEventListener('gamepadconnected', this.addGamepadSupport)
 }
 
+function clearInputOnBlur (this:Player) {
+  this.isSpaceHeld = false
+  this.heldMoveKeys.clear()
+  this.gamepadDirection = null
+  this.refreshMovement()
+}
+
 function onVisibilityChange (this:Player) {
-  if (document.hidden) this.isSpaceHeld = false
+  if (document.hidden) clearInputOnBlur.call(this)
   if (document.hidden && this.active) this.kill(true)
 }
 
@@ -224,7 +257,8 @@ function keydownListener (this:Player, event:KeyboardEvent, state:GameState) {
   if (key === ' ') this.isSpaceHeld = true
   if (key === 'E' && !event.repeat) this.useStunSkill()
   if (this.moveKeys[key]) {
-    this.startMove(this.moveKeys[key])
+    this.heldMoveKeys.add(key)
+    this.refreshMovement()
   }
   if (this.bombKeys[key]) {
     // Nas mutações da Troca de Dados, manter Espaço pressionado não
@@ -241,8 +275,14 @@ function keyupListener (this:Player, event:KeyboardEvent) {
   event.preventDefault()
   const key = event.key.toUpperCase()
   if (key === ' ') this.isSpaceHeld = false
-  if (!this.active) return
-  if (this.moveKeys[key]) this.stopMove(this.moveKeys[key])
+  if (!this.active) {
+    this.heldMoveKeys.delete(key)
+    return
+  }
+  if (this.moveKeys[key]) {
+    this.heldMoveKeys.delete(key)
+    this.refreshMovement()
+  }
 }
 
 function addGamepadSupport (this:Player, state:GameState) {
@@ -252,7 +292,6 @@ function addGamepadSupport (this:Player, state:GameState) {
   const id = `G${this.index}`
   if (state.entities.has(id)) return
   const gamepad = GamepadFactory({id, index, player:this})
-  //if (this.moveKeys['W'] === 'D') gamepad.invertControls() funcao comentada por conta do bug 
   state.entities.add(gamepad)
 }
 
@@ -262,11 +301,44 @@ function removeGamepadSupport (this:Player, state:GameState) {
   state.entities.remove(gamepad)
 }
 
+// Armazenamos as teclas FÍSICAS, não as direções já invertidas.
+// Isso evita andar sozinho quando a inversão acaba durante um pressionamento.
+function refreshMovement (this:Player) {
+  const previousMoving = this.moving
+  const now = Date.now()
+  const active = this.active && now >= this.stunnedUntil
+  const inverted = graphControlsInverted(this, now)
+  this.lastGraphInverted = inverted
+
+  const inputs:SIDES[] = []
+  if (active) {
+    for (const key of this.heldMoveKeys) {
+      if (this.moveKeys[key]) inputs.push(this.moveKeys[key])
+    }
+    if (this.gamepadDirection) inputs.push(this.gamepadDirection)
+  }
+
+  this.movingSide = { U:false, D:false, L:false, R:false }
+  for (const input of inputs) {
+    this.movingSide[invertGraphDirection(input, inverted)] = true
+  }
+  this.moving = inputs.length ? 1 : 0
+  if (inputs.length) this.side = invertGraphDirection(inputs[inputs.length - 1], inverted)
+
+  if (this.myself && previousMoving && !this.moving) {
+    emitMove({ h:this.holding, m:0, p:this.index, s:this.side, x:this.x, y:this.y, v:this.speedMultiplier })
+  }
+}
+
+function setGamepadDirection (this:Player, direction:SIDES|null) {
+  if (this.gamepadDirection === direction) return
+  this.gamepadDirection = direction
+  this.refreshMovement()
+}
+
 function startMove (this:Player, side:SIDES) {
   if (!this.active || Date.now() < this.stunnedUntil) return
-  this.movingSide[side] = true
-  this.side = side
-  this.moving = 1
+  this.setGamepadDirection(side)
 }
 
 function moveTick (
@@ -274,14 +346,20 @@ function moveTick (
   state:GameState
 ) {
 
+  // Mudanças de inversão não alteram mais o mapeamento das teclas.
+  // Ao vencer o prazo, recalculamos a direção das teclas ainda pressionadas.
+  if (this.myself && graphControlsInverted(this, Date.now()) !== this.lastGraphInverted) {
+    this.refreshMovement()
+  }
   if (!this.moving || Date.now() < this.stunnedUntil) return
 
-const onSlowFloor =
-  state.slowFloors.isPlayerOnFloor(this)
-
-this.speedMultiplier =
-  (onSlowFloor && !this.ignoresSlowFloor ? 0.3 : 1) *
-  carrySpeedMultiplier(this.holdMutation, this.holding === 1)
+  if (this.myself) {
+    const onSlowFloor = state.slowFloors.isPlayerOnFloor(this)
+    this.speedMultiplier =
+      (onSlowFloor && !this.ignoresSlowFloor ? 0.3 : 1) *
+      carrySpeedMultiplier(this.holdMutation, this.holding === 1) *
+      graphSpeedMultiplier(this, Date.now())
+  }
 
   this.moves[this.side]()
 
@@ -295,7 +373,8 @@ this.speedMultiplier =
     p:this.index,
     s:this.side,
     x:this.x,
-    y:this.y
+    y:this.y,
+    v:this.speedMultiplier
   })
 }
 
@@ -357,32 +436,32 @@ function onMove (this:Player, dto:MoveDTO) {
   this.side = dto.s
   this.x = dto.x
   this.y = dto.y
+  if (typeof dto.v === 'number' && Number.isFinite(dto.v) && dto.v > 0 && dto.v <= 5) {
+    this.speedMultiplier = dto.v
+  }
 }
 
 function stopMove (this:Player, side:SIDES) {
-  this.movingSide[side] = false
-  this.moving = 0
-  if (Date.now() < this.stunnedUntil) return
-  for (const side in this.movingSide) {
-    if (this.movingSide[side as SIDES]) {
-      this.side = side as SIDES
-      this.moving = 1
-      break
-    }
-  }
-  emitMove({h:this.holding, m:this.moving, p:this.index, s:this.side, x:this.x, y:this.y})
+  if (this.gamepadDirection === side) this.setGamepadDirection(null)
 }
 
-//alteracao na função de inverter os controles (adicionar um tmepo para o bonus)
+// Mantido para compatibilidade com chamadas antigas. Nunca fazer toggle
+// de teclas: o efeito precisa ser idempotente mesmo em coletas consecutivas.
 function invertControls (this:Player) {
-  this.moveKeys['W'] = (this.moveKeys['W'] == 'U') ? 'D' : 'U'
-  this.moveKeys['A'] = (this.moveKeys['A'] == 'L') ? 'R' : 'L'
-  this.moveKeys['S'] = (this.moveKeys['W'] == 'D') ? 'U' : 'D'
-  this.moveKeys['D'] = (this.moveKeys['D'] == 'R') ? 'L' : 'R'
-  this.moveKeys['ARROWUP'] = 'D'
-  this.moveKeys['ARROWLEFT'] = 'R'
-  this.moveKeys['ARROWDOWN'] = 'U'
-  this.moveKeys['ARROWRIGHT'] = 'L'
+  this.applyGraphBonus(0, 'normal')
+}
+
+function applyGraphBonus (this:Player, stage:number, mutation:LinearMutation|undefined) {
+  const now = Date.now()
+  const next = applyGraphPickup(this, stage, mutation, now)
+  this.graphInvertedUntil = next.invertedUntil
+  this.graphBoostedUntil = next.boostedUntil
+  this.graphInvertedUntilDeath = next.invertedUntilDeath
+
+  const mode = stage === 1 ? (mutation ?? 'normal') : 'normal'
+  this.graphNotice = mode === 'buff' || mode === 'virus' ? mode : null
+  this.graphNoticeUntil = this.graphNotice ? now + 2500 : 0
+  this.refreshMovement()
 }
 
 function handleBomb (this:Player, state:GameState) {
@@ -420,6 +499,8 @@ function applyStun (this:Player) {
   const wasMoving = this.moving !== 0
   this.moving = 0
   this.movingSide = { U: false, D: false, L: false, R: false }
+  this.heldMoveKeys.clear()
+  this.gamepadDirection = null
 
   if (this.myself && wasMoving) {
     emitMove({ h:this.holding, m:0, p:this.index, s:this.side, x:this.x, y:this.y })
@@ -537,6 +618,11 @@ function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   this.moving = 0
   this.holding = 0
   this.isSpaceHeld = false
+  this.heldMoveKeys.clear()
+  this.gamepadDirection = null
+  this.graphInvertedUntilDeath = false
+  this.graphInvertedUntil = 0
+  this.graphBoostedUntil = 0
   this.collidable = false
 
   this.tick = () => {

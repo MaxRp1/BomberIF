@@ -10369,10 +10369,12 @@ yarn build
 **Teste manual obrigatório:** dois jogadores no Laboratório, pegar bomba adversária no chão, +20% enquanto segura, -60% enquanto segura, arremesso com raio 2 após o debuff, recuperação da velocidade após soltar, bombas próprias e rivais, combos com Função Linear, ausência de mudanças em Campo/Refeitório e explosões em cadeia. A implantação deve atualizar servidor e cliente juntos.
 
 
-### SORTEIO NORMAL DOS CENÁRIOS E TESTE LOCAL DO LABORATÓRIO — 19/11/2026
+### LABORATÓRIO FIXO NA BRANCH DE DESENVOLVIMENTO — 19/11/2026
 
-**Decisão:** não forçar cenários em nenhuma branch publicada no GitHub. Tanto a `main` quanto `feat/lab-data-transfer-virus-2026-11-18` mantêm o sorteio natural dos três mapas usando `const stage = Math.floor(Math.random() * STAGES)` em `server/src/factory.ts`: Campo (0), Laboratório (1), Refeitório (2).
+**Decisão de desenvolvimento:** a branch `feat/lab-data-transfer-virus-2026-11-18` (PR #14, aberto em rascunho, sem merge) mantém todas as novas partidas exclusivamente no Laboratório. A mudança está em `server/src/factory.ts`, com `const stage = LABORATORY_STAGE` (`LABORATORY_STAGE = 1`). O sorteio das mutações dos power-ups continua aleatório.
 
-**Teste exclusivo da VM:** durante o desenvolvimento de personagens e mutações, quem roda o jogo na VM pode substituir **somente no arquivo local**, sem commit/push, a linha acima por `const stage = 1`. Isso não altera o servidor do GitHub ou outros usuários. A modificação local é intencional e aparecerá em `git status`. Para desfazê-la, executar `git restore server/src/factory.ts` a partir da raiz do projeto. Não registrar essa alteração em commits futuros.
+**A branch principal (`main`) permanece inalterada:** `const stage = Math.floor(Math.random() * STAGES)`, alternando entre Campo (0), Laboratório (1) e Refeitório (2). Nenhum outro mapa foi apagado. Quem baixar a `main` continuará recebendo os três mapas normalmente. Quem executar esta branch de desenvolvimento terá o Laboratório fixo.
 
-**Importante:** essa decisão substitui a proposta anterior de fixação temporária do Laboratório na branch remota. Testes em Campo e Refeitório continuam necessários antes de finalizar o PR #14.
+**Ao concluir o ciclo de implementação de personagens e power-ups:** restaurar o sorteio em `server/src/factory.ts`, removendo a importação de `LABORATORY_STAGE` caso deixe de ser usada e reintroduzindo `STAGES`. Testar novamente os três cenários antes de mesclar o PR com a `main`.
+
+**Status:** mudança enviada ao GitHub apenas nesta branch de desenvolvimento. Não há merge nem deploy associado; execução de build e testes multiplayer no Kali ainda depende de validação local.

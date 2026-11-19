@@ -20,7 +20,7 @@ import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
 import VirusHud from './virusHud'
-import { fillMissingLabPowerupMutations } from '#/virus'
+import { fillMissingLabPowerupMutations, LAB_ONLY_MUTATED_DROPS_FOR_TESTS } from '#/virus'
 
 const RESULT_DISPLAY_MS = 5000
 
@@ -104,7 +104,12 @@ function startGame (dto:StartGameDTO) {
   // Se a versão remota ainda não tiver esse campo, os dois navegadores
   // calculam o mesmo resultado determinístico a partir da sala e posição.
   // Preencher ANTES de criar as entidades de bloco/bonus.
-  fillMissingLabPowerupMutations(dto.state.blocks, dto.state.stage, dto.roomId)
+  fillMissingLabPowerupMutations(
+    dto.state.blocks,
+    dto.state.stage,
+    dto.roomId,
+    LAB_ONLY_MUTATED_DROPS_FOR_TESTS
+  )
 
   setState({
     ...dto.state,

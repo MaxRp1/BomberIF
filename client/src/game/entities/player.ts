@@ -49,9 +49,9 @@ export interface Player {
   holdMutation      : Exclude<LinearMutation, 'normal'> | null
   holdNotice        : LinearMutation | null
   holdNoticeUntil   : number
-  graphInvertedUntil : number
-  graphBoostedUntil  : number
-  graphInvertedUntilDeath : boolean
+  invertedUntil : number
+  boostedUntil  : number
+  invertedUntilDeath : boolean
   graphNotice        : 'buff'|'virus'|null
   graphNoticeUntil   : number
   heldMoveKeys       : Set<string>
@@ -143,9 +143,9 @@ export function PlayerFactory (props:PlayerProps) : Player {
     holdMutation: null,
     holdNotice: null,
     holdNoticeUntil: 0,
-    graphInvertedUntil: 0,
-    graphBoostedUntil: 0,
-    graphInvertedUntilDeath: false,
+    invertedUntil: 0,
+    boostedUntil: 0,
+    invertedUntilDeath: false,
     graphNotice: null,
     graphNoticeUntil: 0,
     heldMoveKeys: new Set<string>(),
@@ -454,9 +454,9 @@ function invertControls (this:Player) {
 function applyGraphBonus (this:Player, stage:number, mutation:LinearMutation|undefined) {
   const now = Date.now()
   const next = applyGraphPickup(this, stage, mutation, now)
-  this.graphInvertedUntil = next.invertedUntil
-  this.graphBoostedUntil = next.boostedUntil
-  this.graphInvertedUntilDeath = next.invertedUntilDeath
+  this.invertedUntil = next.invertedUntil
+  this.boostedUntil = next.boostedUntil
+  this.invertedUntilDeath = next.invertedUntilDeath
 
   const mode = stage === 1 ? (mutation ?? 'normal') : 'normal'
   this.graphNotice = mode === 'buff' || mode === 'virus' ? mode : null
@@ -620,9 +620,9 @@ function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   this.isSpaceHeld = false
   this.heldMoveKeys.clear()
   this.gamepadDirection = null
-  this.graphInvertedUntilDeath = false
-  this.graphInvertedUntil = 0
-  this.graphBoostedUntil = 0
+  this.invertedUntilDeath = false
+  this.invertedUntil = 0
+  this.boostedUntil = 0
   this.collidable = false
 
   this.tick = () => {

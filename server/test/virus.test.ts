@@ -61,8 +61,8 @@ test('sorteio em duas etapas: 50% normal, 25% buff, 25% debuff', () => {
   assert.deepEqual(totals, {normal:5000, buff:2500, virus:2500})
 })
 
-test('modo de testes do Lab só distribui os seis power-ups já mutáveis', () => {
-  const eligible = [2,3,4,7,8,9]
+test('modo de testes do Lab só distribui os sete power-ups já mutáveis', () => {
+  const eligible = [2,3,4,6,7,8,9]
   for (let bonus = 1; bonus <= 9; bonus++) {
     assert.equal(isLabMutatablePowerup(bonus), eligible.includes(bonus))
     assert.equal(canDropLabPowerup(LABORATORY_STAGE, bonus, true), eligible.includes(bonus))
@@ -79,23 +79,23 @@ test('com modo temporário ligado, todo power-up elegível é mutado: 50% buff e
   assert.equal(chooseLinearMutation(0.49, true), 'buff')
   assert.equal(chooseLinearMutation(0.5, true), 'virus')
   assert.equal(chooseLinearMutation(0.99, true), 'virus')
-  const map:(BlockDTO|null)[][] = [[block(1), block(2), block(3), block(4), block(7), block(8), block(9)]]
+  const map:(BlockDTO|null)[][] = [[block(1), block(2), block(3), block(4), block(6), block(7), block(8), block(9)]]
   let i = 0
-  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0,0.49,0.5,0.25,0.75,0.99][i++], true)
-  assert.equal(i, 6)
+  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0,0.49,0.5,0.25,0.8,0.75,0.99][i++], true)
+  assert.equal(i, 7)
   assert.deepEqual(map[0].map(item => item?.mutation),
-    [undefined, 'buff', 'buff', 'virus', 'buff', 'virus', 'virus'])
+    [undefined, 'buff', 'buff', 'virus', 'buff', 'virus', 'virus', 'virus'])
   assert.ok(map[0].slice(1).every(item => isMutatedBonus(item?.mutation)))
 })
 
 test('desligar modo de testes recupera 50% normal/25% buff/25% vírus e pool completo', () => {
-  const values = [0.1, 0.6, 0.9, 0.5, 0.8]
-  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(8), block(4), block(7), block(5)]]
+  const values = [0.1, 0.6, 0.9, 0.5, 0.7, 0.8]
+  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(8), block(4), block(6), block(7), block(5)]]
   let i = 0
   assignLabLinearMutations(map, LABORATORY_STAGE, () => values[i++], false)
-  assert.equal(i, 5)
+  assert.equal(i, 6)
   assert.deepEqual(map[0].map(item => item?.mutation),
-    ['normal','buff','virus','buff','virus',undefined])
+    ['normal','buff','virus','buff','buff','virus',undefined])
   for (let bonus = 1; bonus <= 9; bonus++) {
     assert.equal(canDropLabPowerup(LABORATORY_STAGE, bonus, false), true)
   }

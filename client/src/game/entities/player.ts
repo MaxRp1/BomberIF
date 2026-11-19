@@ -46,7 +46,7 @@ export interface Player {
   hold              : boolean
   holding           : 0|1
   isSpaceHeld       : boolean
-  holdMutation      : LinearMutation | null
+  holdMutation      : Exclude<LinearMutation, 'normal'> | null
   holdNotice        : LinearMutation | null
   holdNoticeUntil   : number
   index              : number

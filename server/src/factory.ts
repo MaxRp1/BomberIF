@@ -146,7 +146,7 @@ function stateFactory () : GameStateDTO {
   // Configuração temporária DESTA BRANCH de desenvolvimento:
   // manter apenas o Laboratório durante a implementação/testes.
   // A branch main continua com sorteio aleatório dos três cenários.
-  const stage = LABORATORY_STAGE
+  const stage: number = LABORATORY_STAGE
 
   // O laboratório define as mutações de Função Linear e Troca de Dados
   // uma única vez e compartilha os mesmos resultados com toda a sala.

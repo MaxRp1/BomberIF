@@ -67,7 +67,7 @@ export function startGameFactory (
   const state = stateFactory()
 
   // Inicializa o acompanhamento de vitórias da rodada
-  beginRankingRound(roomId, playerIds)
+  beginRankingRound(roomId, playerIds, state)
 
   return { roomId, players, state }
 }
@@ -148,8 +148,8 @@ function stateFactory () : GameStateDTO {
   // A branch main continua com sorteio aleatório dos três cenários.
   const stage: number = LABORATORY_STAGE
 
-  // O laboratório sorteia as mutações de Função Linear, Troca de Dados
-  // e Grafo uma única vez e compartilha os mesmos resultados com toda a sala.
+  // O laboratório sorteia as mutações de Função Linear, Troca de Dados,
+  // Grafo e IHM uma única vez e compartilha o resultado com toda a sala.
   assignLabPowerupMutations(blocks, stage)
 
   const slowFloors =

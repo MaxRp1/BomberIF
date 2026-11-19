@@ -1,11 +1,12 @@
 import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
-import { LinearMutation, effectiveBombReach } from '#/virus'
+import { LinearMutation, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, reachAfterFling } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { GamepadFactory } from '~/game/entities/gamepad'
 import { GameState } from '~/game/entities/state'
+import { isCollidingForced } from '~/game/util/collision'
 import { playBombSound } from '~/game/sound/bomb'
 import { playKillSound } from '~/game/sound/kill'
 import { emitFlingBomb, emitFrankLifeUsed, emitHoldBomb, emitKill, emitMove, emitPlaceBomb, emitStunFire } from '~/services/socket'
@@ -44,6 +45,10 @@ export interface Player {
   lastSkillRequestAt: number
   hold              : boolean
   holding           : 0|1
+  isSpaceHeld       : boolean
+  holdMutation      : LinearMutation | null
+  holdNotice        : LinearMutation | null
+  holdNoticeUntil   : number
   index              : number
   kick               : boolean
   lastPress  : LastPress
@@ -79,6 +84,7 @@ export interface Player {
   applyStun           : () => void
   placeBomb            : (state:GameState) => void
   holdBomb             : (state:GameState) => void
+  takeBomb             : (bomb:Bomb, state:GameState) => boolean
   flingBomb            : (state:GameState) => void
   consumeExtraLife     : () => boolean
   kill                 : (emit:boolean, cause?: 'bomb'|'other') => void
@@ -121,6 +127,10 @@ export function PlayerFactory (props:PlayerProps) : Player {
     invulnerableUntil: 0,
     hold: false,
     holding: 0,
+    isSpaceHeld: false,
+    holdMutation: null,
+    holdNotice: null,
+    holdNoticeUntil: 0,
     index: props.index,
     kick: false,
     lastPress: {bomb:0},
@@ -161,6 +171,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
   player.applyStun = applyStun.bind(player)
   player.placeBomb = placeBomb.bind(player)
   player.holdBomb = holdBomb.bind(player)
+  player.takeBomb = takeBomb.bind(player)
   player.flingBomb = flingBomb.bind(player)
   player.consumeExtraLife = consumeExtraLife.bind(player)
   player.kill = kill.bind(player)
@@ -202,6 +213,7 @@ function removeInputListener (this:Player) {
 }
 
 function onVisibilityChange (this:Player) {
+  if (document.hidden) this.isSpaceHeld = false
   if (document.hidden && this.active) this.kill(true)
 }
 
@@ -209,6 +221,7 @@ function keydownListener (this:Player, event:KeyboardEvent, state:GameState) {
   event.preventDefault()
   if (!this.active || Date.now() < this.stunnedUntil) return
   const key = event.key.toUpperCase()
+  if (key === ' ') this.isSpaceHeld = true
   if (key === 'E' && !event.repeat) this.useStunSkill()
   if (this.moveKeys[key]) {
     this.startMove(this.moveKeys[key])
@@ -223,8 +236,9 @@ function keydownListener (this:Player, event:KeyboardEvent, state:GameState) {
 
 function keyupListener (this:Player, event:KeyboardEvent) {
   event.preventDefault()
-  if (!this.active) return
   const key = event.key.toUpperCase()
+  if (key === ' ') this.isSpaceHeld = false
+  if (!this.active) return
   if (this.moveKeys[key]) this.stopMove(this.moveKeys[key])
 }
 
@@ -263,9 +277,8 @@ const onSlowFloor =
   state.slowFloors.isPlayerOnFloor(this)
 
 this.speedMultiplier =
-  onSlowFloor && !this.ignoresSlowFloor
-    ? 0.3
-    : 1
+  (onSlowFloor && !this.ignoresSlowFloor ? 0.3 : 1) *
+  carrySpeedMultiplier(this.holdMutation, this.holding === 1)
 
   this.moves[this.side]()
 
@@ -438,21 +451,38 @@ function placeBomb (this:Player, state:GameState) {
   playBombSound()
 }
 
+function takeBomb (this:Player, bomb:Bomb, state:GameState): boolean {
+  if (!this.myself || !this.hold || this.holding || !bomb.armed ||
+      bomb.holding || bomb.moving || bomb.flinging) return false
+  if (!canPickUpBomb(this.holdMutation, this.index, bomb.ownerIndex)) return false
+  // Contato real: bombas remotas podem não existir como bloco no mapa local.
+  if (!isCollidingForced(this, bomb)) return false
+
+  this.holding = 1
+  this.bombId = bomb.id
+  emitHoldBomb({i:bomb.id, p:this.index, mutation:this.holdMutation ?? undefined})
+  bomb.setHolding(this.index, state)
+  return true
+}
+
 function holdBomb (this:Player, state:GameState) {
+  if (this.holdMutation === 'buff') {
+    for (const entity of state.entities.entities.values()) {
+      const bomb = entity as Partial<Bomb>
+      if (typeof bomb.getAxes !== 'function' || !bomb.id || !bomb.armed) continue
+      if (this.takeBomb(bomb as Bomb, state)) return
+    }
+  }
+
   const axes = this.getAxes()
   const block = state.blocks.getBlock(axes)
   if (block && block.t === 'O') {
     const bomb = state.entities.get(block.id) as Bomb | undefined
-    // Uma explosão (especialmente de alcance zero) pode deixar um marcador
-    // antigo no tabuleiro. Não tente segurar uma entidade já removida.
     if (!bomb?.armed) {
       state.blocks.destroyBlock(axes)
       return
     }
-    this.holding = 1
-    this.bombId = bomb.id
-    emitHoldBomb({i:bomb.id,p:this.index})
-    bomb.setHolding(this.index, state)
+    if (this.takeBomb(bomb, state)) return
   }
   else {
     this.placeBomb(state)
@@ -465,7 +495,9 @@ function flingBomb (this:Player, state:GameState) {
   this.bombId = ''
   // A bomba pode ter explodido enquanto estava sendo carregada.
   if (!bomb?.armed || !bomb.holding) return
-  emitFlingBomb({i:bomb.id,p:this.index,s:this.side,x:this.x,y:this.y-9})
+  // A penalidade altera o raio desta bomba, sem apagar o alcance-base.
+  bomb.reach = reachAfterFling(this.holdMutation, bomb.reach)
+  emitFlingBomb({i:bomb.id,p:this.index,s:this.side,x:this.x,y:this.y-9,r:bomb.reach})
   bomb.startFling(this.side)
 }
 
@@ -501,6 +533,7 @@ function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   this.active = false
   this.moving = 0
   this.holding = 0
+  this.isSpaceHeld = false
   this.collidable = false
 
   this.tick = () => {

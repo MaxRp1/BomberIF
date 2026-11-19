@@ -20,7 +20,7 @@ import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
 import VirusHud from './virusHud'
-import { fillMissingLabLinearMutations } from '#/virus'
+import { fillMissingLabPowerupMutations } from '#/virus'
 
 const RESULT_DISPLAY_MS = 5000
 
@@ -104,7 +104,7 @@ function startGame (dto:StartGameDTO) {
   // Se a versão remota ainda não tiver esse campo, os dois navegadores
   // calculam o mesmo resultado determinístico a partir da sala e posição.
   // Preencher ANTES de criar as entidades de bloco/bonus.
-  fillMissingLabLinearMutations(dto.state.blocks, dto.state.stage, dto.roomId)
+  fillMissingLabPowerupMutations(dto.state.blocks, dto.state.stage, dto.roomId)
 
   setState({
     ...dto.state,
@@ -184,6 +184,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     if (!bomb?.armed || !holder) return
     holder.holding = 1
     holder.bombId = dto.i
+    holder.holdMutation = dto.mutation ?? null
     bomb.setHolding(dto.p, state)
   }
 
@@ -198,6 +199,9 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     if (!bomb?.armed) return
     bomb.x = dto.x
     bomb.y = dto.y
+    if (typeof dto.r === 'number' && Number.isFinite(dto.r) && dto.r >= 0) {
+      bomb.reach = dto.r
+    }
     bomb.startFling(dto.s)
   }
 

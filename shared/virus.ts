@@ -1,7 +1,7 @@
 import { BlockDTO, SIDES } from './dto'
 
 // Power-ups com mutação implementada no Laboratório: Função Linear,
-// Troca de Dados, Chute, Firewall, Grafo e IHM.
+// Troca de Dados, Chute, Sinal Ruim, Firewall, Grafo e IHM.
 export const LABORATORY_STAGE = 1 // sprite 1.png: laboratório (0 = campo, 2 = refeitório)
 export const LINEAR_BUFF_AMOUNT = 3
 export const LINEAR_VIRUS_DURATION_MS = 10000
@@ -10,20 +10,21 @@ export const HOLD_BONUS_ID = 3
 export const KICK_BONUS_ID = 4
 export const KICK_VIRUS_STUN_MS = 1000
 export const FIREWALL_BONUS_ID = 7
+export const SIGNAL_BAD_BONUS_ID = 6
 export const FIREWALL_EFFECT_DURATION_MS = 6000
 export const GRAPH_BONUS_ID = 8
 export const IHM_BONUS_ID = 9
 
 // MODO TEMPORÁRIO DE TESTES DESTA BRANCH.
-// true: o Lab dropa SOMENTE os seis power-ups já mutáveis,
+// true: o Lab dropa SOMENTE os sete power-ups já mutáveis,
 //       todos com sprite misterioso e chance 50/50 de buff ou vírus.
 // false: restaura TODO o pool de itens e a distribuição original
-//        de 50% normal, 25% buff e 25% vírus nos seis itens.
+//        de 50% normal, 25% buff e 25% vírus nos sete itens.
 export const LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true
 
 export function isLabMutatablePowerup(id:number): boolean {
   return id === 2 || id === HOLD_BONUS_ID || id === KICK_BONUS_ID ||
-    id === FIREWALL_BONUS_ID || id === GRAPH_BONUS_ID || id === IHM_BONUS_ID
+     id === SIGNAL_BAD_BONUS_ID || id === FIREWALL_BONUS_ID || id === GRAPH_BONUS_ID || id === IHM_BONUS_ID
 }
 
 export function canDropLabPowerup(
@@ -40,6 +41,77 @@ export const HOLD_BUFF_SPEED_MULTIPLIER = 1.2
 export const HOLD_VIRUS_SPEED_MULTIPLIER = 0.4
 
 export type LinearMutation = 'normal' | 'buff' | 'virus'
+
+// Sinal Ruim (ID 6): regras de progressão independentes do FPS.
+// Os quatro segundos de rampa são configuráveis e valem para o
+// bônus +70% e a penalidade -40%, sem alterar a velocidade inata.
+export const SIGNAL_RAMP_DURATION_MS = 4000
+export const SIGNAL_BUFF_MAX_MULTIPLIER = 1.7
+export const SIGNAL_VIRUS_MIN_MULTIPLIER = 0.6
+export const SIGNAL_VIRUS_REST_MS = 1000
+
+export interface SignalMotion {
+  mode: LinearMutation
+  movingSince: number|null
+  stoppedSince: number|null
+  multiplier: number
+}
+
+export function signalPickupMode(
+  stage:number,
+  mutation:LinearMutation|undefined
+):LinearMutation {
+  return stage === LABORATORY_STAGE ? (mutation ?? 'normal') : 'normal'
+}
+
+export function initialSignalMotion(mode:LinearMutation):SignalMotion {
+  return { mode, movingSince:null, stoppedSince:null, multiplier:1 }
+}
+
+// Um intervalo interrompido por menos de 1 s mantém o progresso do vírus;
+// ao completar 1 s parado, o debuff reinicia em velocidade normal.
+// O buff, ao contrário, perde sua aceleração ao parar imediatamente.
+export function updateSignalMotion(
+  current:SignalMotion,
+  moving:boolean,
+  now:number
+):SignalMotion {
+  if (current.mode === 'normal') {
+    return {mode:'normal', movingSince:null, stoppedSince:null, multiplier:1}
+  }
+
+  if (!moving) {
+    if (current.mode === 'buff') {
+      return { ...current, movingSince:null, stoppedSince:current.stoppedSince ?? now, multiplier:1 }
+    }
+    const stoppedSince = current.stoppedSince ?? now
+    const rested = now - stoppedSince >= SIGNAL_VIRUS_REST_MS
+    return {
+      ...current,
+      stoppedSince,
+      movingSince:rested ? null : current.movingSince,
+      multiplier:rested ? 1 : current.multiplier
+    }
+  }
+
+  let movingSince = current.movingSince
+  if (current.stoppedSince !== null) {
+    if (current.mode === 'buff' || now - current.stoppedSince >= SIGNAL_VIRUS_REST_MS) {
+      movingSince = now
+    } else if (movingSince !== null) {
+      // Não contabilizar o breve período em que ficou parado.
+      movingSince += now - current.stoppedSince
+    }
+  }
+  if (movingSince === null) movingSince = now
+
+  const progress = Math.max(0, Math.min(1, (now - movingSince) / SIGNAL_RAMP_DURATION_MS))
+  const multiplier = current.mode === 'buff'
+    ? 1 + (SIGNAL_BUFF_MAX_MULTIPLIER - 1) * progress
+    : 1 - (1 - SIGNAL_VIRUS_MIN_MULTIPLIER) * progress
+  return { mode:current.mode, movingSince, stoppedSince:null, multiplier }
+}
+
 
 // Firewall normal mantém a travessia geral original de 6 segundos.
 // Buff acrescenta imunidade a explosões; vírus atravessa apenas

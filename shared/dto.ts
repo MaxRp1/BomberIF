@@ -2,7 +2,7 @@ export type SIDES = 'U'|'L'|'D'|'R' // player side: up, left, down, right
 
 export interface BlockDTO {
   b ?: 1|2|3|4|5|6|7|8 // bonus item id
-  mutation ?: 'buff'|'virus' // Função Linear no laboratório; escolhida pelo servidor
+  mutation ?: 'buff'|'virus' // Itens 2 e 3 no Laboratório; sorteio do servidor
   t  : 'D'|'I'         // block type: destructible or indestructible
   x  : number          // block x position
   y  : number          // block y position
@@ -28,6 +28,7 @@ export interface FlingBombDTO {
   s : SIDES  // bomb side
   x : number // player x position
   y : number // player y position
+  r ?: number // Alcance efetivo após o arremesso
 }
 
 // Tecla E, botão LB/L1 ou botão na tela -> servidor.
@@ -73,6 +74,7 @@ export interface GameStateDTO {
 export interface HoldBombDTO {
   i : string // bomb id
   p : number // player index
+  mutation ?: 'buff'|'virus' // Modificador de velocidade do carregador
 }
 
 export interface IceCandidateDTO {

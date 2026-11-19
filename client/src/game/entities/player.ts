@@ -227,9 +227,9 @@ function keydownListener (this:Player, event:KeyboardEvent, state:GameState) {
     this.startMove(this.moveKeys[key])
   }
   if (this.bombKeys[key]) {
-    // No buff, segurar Espaço enquanto avança até uma bomba rival não
-    // pode lançar a bomba automaticamente por eventos de repetição da tecla.
-    if (key === ' ' && this.holdMutation === 'buff' && event.repeat) return
+    // Nas mutações da Troca de Dados, manter Espaço pressionado não
+    // pode arremessar automaticamente a bomba por repetição da tecla.
+    if (key === ' ' && this.holdMutation !== null && event.repeat) return
     if (Date.now() > this.lastPress.bomb) {
       this.lastPress.bomb = Date.now() + PRESS_INTERVAL
       this.handleBomb(state)

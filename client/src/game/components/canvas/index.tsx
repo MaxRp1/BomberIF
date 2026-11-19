@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FRANK_SPRITE_ID, OVERCLOCK_DETONATION_MULTIPLIER, STUN_COOLDOWN_MS } from '#/constants'
-import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
+import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmResultDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
 import { BlocksFactory } from '~/game/entities/block'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { EntitiesFactory } from '~/game/entities/factory'
@@ -242,6 +242,12 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     frank.consumeExtraLife()
   }
 
+  function onIhmResult (dto:IhmResultDTO) {
+    // Para IHM do Laboratório, a morte já foi validada pelo servidor.
+    // Quando a vítima é o próprio navegador, o antigo onKill a ignoraria.
+    if (dto.p === myself) state?.players.myself?.kill(false)
+  }
+
   function onKill (dto:KillDTO) {
     if (dto.p !== myself) {
       state?.players.players[dto.p]?.kill(false)
@@ -293,6 +299,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     socket.on('fb', onFlingBomb)
     socket.on('nb', onNullifyBlock)
     socket.on('kl', onKill)
+    socket.on('ihm_result', onIhmResult)
     socket.on('frank_life_used', onFrankLifeUsed)
     socket.on('round_result', onRoundResult)
     socket.on('wins_update', onWinsUpdate)
@@ -308,6 +315,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       socket.off('fb', onFlingBomb)
       socket.off('nb', onNullifyBlock)
       socket.off('kl', onKill)
+      socket.off('ihm_result', onIhmResult)
       socket.off('frank_life_used', onFrankLifeUsed)
       socket.off('round_result', onRoundResult)
       socket.off('wins_update', onWinsUpdate)

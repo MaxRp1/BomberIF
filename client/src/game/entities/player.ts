@@ -516,7 +516,19 @@ function applySignalBonus (
     // temporários do Grafo e da Troca de Dados já coletados.
     this.speed = this.baseSpeed
     this.boostedUntil = 0
+    // O indicador do Grafo não deve continuar prometendo +50%
+    // depois que o Download Limitado cancela esse ganho.
+    if (this.graphNotice === 'buff') {
+      this.graphNotice = null
+      this.graphNoticeUntil = 0
+    }
     this.holdSpeedBuffSuppressed = true
+    // Mantém a possibilidade de apanhar bombas adversárias, mas a
+    // mensagem de +20% deixa de aparecer após cancelar a velocidade.
+    if (this.holdMutation === 'buff') {
+      this.holdNotice = null
+      this.holdNoticeUntil = 0
+    }
   }
 }
 

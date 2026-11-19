@@ -1,5 +1,5 @@
 import { MAX_SPEED, SPEED, TILE_SIZE } from '#/constants'
-import { LinearMutation, isInfectedBonus } from '#/virus'
+import { LinearMutation, isMutatedBonus } from '#/virus'
 import { applyLinearPickup, holdPickupMutation, LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS } from '#/virus'
 import { PassFactory } from '~/game/entities/pass'
 import { GameState } from '~/game/entities/state'
@@ -126,9 +126,14 @@ function BlastBonus (props:BonusProps) : Bonus {
         player.bombReach = next.baseReach
         player.linearVirusUntil = next.virusUntil
 
-        if (state.stage.name === LABORATORY_STAGE && props.mutation) {
-          player.linearNotice = props.mutation
+        // O item normal dá apenas +1, sem acionar aviso de mutação.
+        // O sorteio da polaridade de um item mutado só aparece após a coleta.
+        if (state.stage.name === LABORATORY_STAGE && isMutatedBonus(props.mutation)) {
+          player.linearNotice = props.mutation === 'buff' ? 'buff' : 'virus'
           player.linearNoticeUntil = now + LINEAR_NOTICE_DURATION_MS
+        } else {
+          player.linearNotice = null
+          player.linearNoticeUntil = 0
         }
       })
     },
@@ -151,9 +156,12 @@ function HoldBonus (props:BonusProps) : Bonus {
         const player = state.players.myself!
         player.hold = true
         player.holdMutation = holdPickupMutation(state.stage.name, props.mutation)
-        if (player.holdMutation) {
+        if (player.holdMutation === 'buff' || player.holdMutation === 'virus') {
           player.holdNotice = player.holdMutation
           player.holdNoticeUntil = Date.now() + LINEAR_NOTICE_DURATION_MS
+        } else {
+          player.holdNotice = null
+          player.holdNoticeUntil = 0
         }
       })
     },
@@ -285,9 +293,9 @@ function KillBonus (props:BonusProps) : Bonus {
   return kill
 }
 
-// Reaproveita os spritesheets originais (16x16) e muda APENAS a aparência
-// dos power-ups infectados. O resultado é igual em todos os clientes, porque
-// a mutação do item vem do servidor no mapa da rodada.
+// O sprite alterado indica um item MUTADO, sem revelar buff ou debuff.
+// Os dois resultados usam o MESMO desenho roxo com glitch; a polaridade
+// permanece desconhecida até a coleta. Itens normais mantêm o sprite original.
 function renderBonusSprite (
   context:CanvasRenderingContext2D,
   props:BonusProps,
@@ -295,7 +303,7 @@ function renderBonusSprite (
 ) {
   const { x, y, mutation } = props
 
-  if (!isInfectedBonus(mutation)) {
+  if (!isMutatedBonus(mutation)) {
     context.drawImage(Assets.bonusSprite, 0, spriteY, TILE_SIZE, TILE_SIZE, x, y, TILE_SIZE, TILE_SIZE)
     return
   }

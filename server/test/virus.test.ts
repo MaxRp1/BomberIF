@@ -8,7 +8,7 @@ import {
   applyLinearPickup,
   assignLabLinearMutations,
   chooseLinearMutation,
-  isInfectedBonus,
+  isMutatedBonus,
   effectiveBombReach,
   fallbackLinearMutation,
   fillMissingLabLinearMutations,
@@ -32,37 +32,45 @@ test('índices corretos dos cenários: 0 campo, 1 laboratório, 2 refeitório', 
   const blocks: (BlockDTO|null)[][] = [[block(2)]]
   assignLabLinearMutations(blocks, 0, () => 0.1)
   assert.equal(blocks[0][0]?.mutation, undefined)
-  assignLabLinearMutations(blocks, 1, () => 0.1)
+  assignLabLinearMutations(blocks, 1, () => 0.6)
   assert.equal(blocks[0][0]?.mutation, 'buff')
 })
 
-test('sorteio 50/50 define +3 ou vírus no servidor, incluindo o limite', () => {
-  assert.equal(chooseLinearMutation(0), 'buff')
-  assert.equal(chooseLinearMutation(0.49), 'buff')
-  assert.equal(chooseLinearMutation(0.5), 'virus')
+test('sorteio em duas etapas: 50% normal, 25% buff, 25% debuff', () => {
+  assert.equal(chooseLinearMutation(0), 'normal')
+  assert.equal(chooseLinearMutation(0.49), 'normal')
+  assert.equal(chooseLinearMutation(0.5), 'buff')
+  assert.equal(chooseLinearMutation(0.7499), 'buff')
+  assert.equal(chooseLinearMutation(0.75), 'virus')
   assert.equal(chooseLinearMutation(0.99), 'virus')
+
+  const totals = { normal:0, buff:0, virus:0 }
+  for (let i = 0; i < 10000; i++) {
+    totals[chooseLinearMutation(i / 10000)]++
+  }
+  assert.deepEqual(totals, {normal:5000, buff:2500, virus:2500})
 })
 
-test('somente a variante infectada utiliza o sprite modificado', () => {
-  assert.equal(isInfectedBonus('virus'), true)
-  assert.equal(isInfectedBonus('buff'), false)
-  assert.equal(isInfectedBonus(undefined), false)
+test('sprite misterioso é idêntico para buff e debuff, normal permanece original', () => {
+  assert.equal(isMutatedBonus('virus'), true)
+  assert.equal(isMutatedBonus('buff'), true)
+  assert.equal(isMutatedBonus('normal'), false)
+  assert.equal(isMutatedBonus(undefined), false)
 })
 
-test('sorteio do servidor mantém aparência e efeito sincronizados por item', () => {
-  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(4)]]
-  const rolls = [0.49, 0.5]
+test('servidor mantém o segredo visual e o estado sincronizados entre jogadores', () => {
+  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(2), block(4)]]
+  const rolls = [0.49, 0.5, 0.75]
   let index = 0
   assignLabLinearMutations(map, LABORATORY_STAGE, () => rolls[index++])
 
-  assert.equal(index, 2)
-  assert.equal(isInfectedBonus(map[0][0]?.mutation), false)
-  assert.equal(isInfectedBonus(map[0][1]?.mutation), true)
-  assert.equal(isInfectedBonus(map[0][2]?.mutation), false)
+  assert.equal(index, 3)
+  assert.deepEqual(map[0].map(item => item?.mutation), ['normal','buff','virus',undefined])
+  assert.deepEqual(map[0].map(item => isMutatedBonus(item?.mutation)), [false,true,true,false])
 
   const remote = JSON.parse(JSON.stringify(map)) as (BlockDTO|null)[][]
-  assert.deepEqual(remote.map(row => row.map(item => isInfectedBonus(item?.mutation))),
-    map.map(row => row.map(item => isInfectedBonus(item?.mutation))))
+  assert.deepEqual(remote.map(row => row.map(item => isMutatedBonus(item?.mutation))),
+    map.map(row => row.map(item => isMutatedBonus(item?.mutation))))
 })
 
 test('Função Linear e Troca de Dados são os únicos itens com mutação no laboratório', () => {
@@ -70,19 +78,19 @@ test('Função Linear e Troca de Dados são os únicos itens com mutação no la
     [block(2), block(1), null],
     [block(2), block(3), block(2)]
   ]
-  const rolls = [0.1, 0.6, 0.2, 0.4]
+  const rolls = [0.1, 0.6, 0.8, 0.95]
   let count = 0
   assignLabLinearMutations(map, LABORATORY_STAGE, () => rolls[count++])
 
   assert.equal(count, 4)
-  assert.equal(map[0][0]?.mutation, 'buff')
-  assert.equal(map[1][0]?.mutation, 'virus')
-  assert.equal(map[1][2]?.mutation, 'buff')
+  assert.equal(map[0][0]?.mutation, 'normal')
+  assert.equal(map[1][0]?.mutation, 'buff')
+  assert.equal(map[1][2]?.mutation, 'virus')
   assert.equal(map[0][1]?.mutation, undefined)
-  assert.equal(map[1][1]?.mutation, 'buff')
+  assert.equal(map[1][1]?.mutation, 'virus')
 
   // Dados de blocos são serializados e enviados no StartGameDTO para todos.
-  assert.equal(JSON.parse(JSON.stringify(map))[1][0].mutation, 'virus')
+  assert.equal(JSON.parse(JSON.stringify(map))[1][0].mutation, 'buff')
 })
 
 test('outros cenários não sorteiam mutações nem alteram as regras originais', () => {
@@ -139,7 +147,7 @@ test('bomba de alcance zero não propaga dano nem aciona outra por cascata', () 
   assert.equal(blastHitsTile([5,5],[5,6],dirs), false)
 })
 
-test('servidor antigo sem campo mutation ganha resultado compartilhado, não +1', () => {
+test('servidor antigo sem campo mutation ganha resultado determinístico compartilhado', () => {
   const serverMap: (BlockDTO|null)[][] = [
     [block(2), block(1), null],
     [block(2), block(2), block(3)]
@@ -156,24 +164,26 @@ test('servidor antigo sem campo mutation ganha resultado compartilhado, não +1'
   for (const row of client1) {
     for (const item of row) {
       if (item?.b !== 2) continue
-      assert.ok(item.mutation === 'buff' || item.mutation === 'virus')
+      assert.ok(item.mutation === 'normal' || item.mutation === 'buff' || item.mutation === 'virus')
       const result = applyLinearPickup({baseReach:2, virusUntil:0}, LABORATORY_STAGE, item.mutation, 100)
-      assert.ok(result.baseReach === 5 || result.virusUntil === 10100,
-        'o laboratório jamais aplica o +1 tradicional com fallback')
+      assert.ok(result.baseReach === 3 || result.baseReach === 5 || result.virusUntil === 10100,
+        'o fallback precisa respeitar as três variantes possíveis')
     }
   }
 })
 
 test('o fallback preserva mutações escolhidas pelo servidor atualizado', () => {
   const map:(BlockDTO|null)[][] = [[
+    {...block(2), mutation:'normal'},
     {...block(2), mutation:'buff'},
     {...block(2), mutation:'virus'},
     block(2)
   ]]
   assert.equal(fillMissingLabLinearMutations(map, LABORATORY_STAGE, 'sala-X'), 1)
-  assert.equal(map[0][0]?.mutation, 'buff')
-  assert.equal(map[0][1]?.mutation, 'virus')
-  assert.equal(map[0][2]?.mutation, fallbackLinearMutation('sala-X', 0, 2))
+  assert.equal(map[0][0]?.mutation, 'normal')
+  assert.equal(map[0][1]?.mutation, 'buff')
+  assert.equal(map[0][2]?.mutation, 'virus')
+  assert.equal(map[0][3]?.mutation, fallbackLinearMutation('sala-X', 0, 3))
 })
 
 test('fallback não aplica mutação nos outros cenários', () => {
@@ -185,7 +195,7 @@ test('fallback não aplica mutação nos outros cenários', () => {
   }
 })
 
-test('hash de fallback depende da sala e casa e produz ambos os efeitos', () => {
+test('hash de fallback depende da sala e posição e produz os três estados', () => {
   const outcomes = new Set<string>()
   for (let row = 0; row < 11; row++) {
     for (let column = 0; column < 13; column++) {
@@ -194,12 +204,17 @@ test('hash de fallback depende da sala e casa e produz ambos os efeitos', () => 
       assert.equal(value, fallbackLinearMutation('sala-1234', row, column))
     }
   }
-  assert.deepEqual([...outcomes].sort(), ['buff', 'virus'])
+  assert.deepEqual([...outcomes].sort(), ['buff', 'normal', 'virus'])
 })
 
-test('se uma coleta do laboratório ainda vier sem mutação, nunca volta silenciosamente a +1', () => {
-  const result = applyLinearPickup({baseReach:2, virusUntil:0}, LABORATORY_STAGE, undefined, 0)
-  assert.deepEqual(result, {baseReach:5, virusUntil:0})
+test('Função Linear normal no laboratório concede apenas +1 e não altera infecção', () => {
+  const original = {baseReach:2, virusUntil:0}
+  assert.deepEqual(applyLinearPickup(original, LABORATORY_STAGE, 'normal', 0),
+    {baseReach:3, virusUntil:0})
+  assert.deepEqual(applyLinearPickup(original, LABORATORY_STAGE, undefined, 0),
+    {baseReach:3, virusUntil:0})
+  const stillInfected = applyLinearPickup({baseReach:2, virusUntil:5000}, LABORATORY_STAGE, 'normal', 100)
+  assert.deepEqual(stillInfected, {baseReach:3, virusUntil:5000})
 })
 
 test('Troca de Dados (ID 3) só recebe mutação no laboratório', () => {
@@ -209,7 +224,7 @@ test('Troca de Dados (ID 3) só recebe mutação no laboratório', () => {
   assignLabLinearMutations(map, 0, () => { rolls++; return 0.7 })
   assert.equal(rolls, 0)
   assert.equal(map[0][1]?.mutation, undefined)
-  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0.9, 0.1][rolls++])
+  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0.9, 0.6][rolls++])
   assert.equal(map[0][0]?.mutation, 'virus')
   assert.equal(map[0][1]?.mutation, 'buff')
   assert.equal(map[0][2]?.mutation, undefined)
@@ -221,7 +236,7 @@ test('Troca de Dados sem campo mutation tem fallback igual para ambos os cliente
   assert.equal(fillMissingLabLinearMutations(a, 1, 'sala-T'), 2)
   assert.equal(fillMissingLabLinearMutations(b, 1, 'sala-T'), 2)
   assert.deepEqual(a, b)
-  assert.ok(a[0][0]?.mutation === 'buff' || a[0][0]?.mutation === 'virus')
+  assert.ok(a[0][0]?.mutation === 'normal' || a[0][0]?.mutation === 'buff' || a[0][0]?.mutation === 'virus')
 })
 
 test('Troca de Dados usa a última mutação e modo comum fora do laboratório', () => {
@@ -229,12 +244,14 @@ test('Troca de Dados usa a última mutação e modo comum fora do laboratório',
   assert.equal(holdPickupMutation(2, 'virus'), null)
   assert.equal(holdPickupMutation(1, 'buff'), 'buff')
   assert.equal(holdPickupMutation(1, 'virus'), 'virus')
-  assert.equal(holdPickupMutation(1, undefined), 'buff')
+  assert.equal(holdPickupMutation(1, 'normal'), null)
+  assert.equal(holdPickupMutation(1, undefined), null)
 })
 
 test('buff permite pegar bombas rivais; demais modos não', () => {
   assert.equal(canPickUpBomb('buff', 0, 1), true)
   assert.equal(canPickUpBomb('virus', 0, 1), false)
+  assert.equal(canPickUpBomb('normal', 0, 1), false)
   assert.equal(canPickUpBomb(null, 0, 1), false)
   assert.equal(canPickUpBomb('virus', 0, 0), true)
 })
@@ -248,6 +265,7 @@ test('modificadores de velocidade valem só enquanto segura bomba', () => {
   assert.equal(carrySpeedMultiplier('buff', true), 1.2)
   assert.equal(carrySpeedMultiplier('virus', true), 0.4)
   assert.equal(carrySpeedMultiplier(null, true), 1)
+  assert.equal(carrySpeedMultiplier('normal', true), 1)
 })
 
 test('vírus redefine apenas o raio da bomba arremessada para o inicial', () => {
@@ -257,4 +275,5 @@ test('vírus redefine apenas o raio da bomba arremessada para o inicial', () => 
   assert.equal(reachAfterFling('virus', 1), 1)
   assert.equal(reachAfterFling('buff', 12), 12)
   assert.equal(reachAfterFling(null, 5), 5)
+  assert.equal(reachAfterFling('normal', 5), 5)
 })

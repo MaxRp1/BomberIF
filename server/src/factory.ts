@@ -145,8 +145,8 @@ function stateFactory () : GameStateDTO {
   const bonus = Math.floor(Math.random() * BONUS)
   const stage = Math.floor(Math.random() * STAGES)
 
-  // O laboratório define a mutação de cada Função Linear uma única vez,
-  // e o DTO resultante é compartilhado com todos os jogadores da sala.
+  // O laboratório define as mutações de Função Linear e Troca de Dados
+  // uma única vez e compartilha os mesmos resultados com toda a sala.
   assignLabPowerupMutations(blocks, stage)
 
   const slowFloors =

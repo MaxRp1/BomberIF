@@ -2,7 +2,7 @@ export type SIDES = 'U'|'L'|'D'|'R' // player side: up, left, down, right
 
 export interface BlockDTO {
   b ?: 1|2|3|4|5|6|7|8 // bonus item id
-  mutation ?: 'normal'|'buff'|'virus' // IDs 2/3 no Lab: normal 50%, buff 25%, virus 25%
+  mutation ?: 'normal'|'buff'|'virus' // IDs 2/3/8 no Lab: normal 50%, buff 25%, virus 25%
   t  : 'D'|'I'         // block type: destructible or indestructible
   x  : number          // block x position
   y  : number          // block y position
@@ -138,6 +138,7 @@ export interface MoveDTO {
   s : SIDES  // player side
   x : number // player x position
   y : number // player y position
+  v ?: number // modificador total de velocidade, inclusive Grafo, para clientes remotos
 }
 
 export interface NullifyBlockDTO {

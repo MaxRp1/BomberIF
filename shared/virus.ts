@@ -1,24 +1,27 @@
 import { BlockDTO, SIDES } from './dto'
 
 // Power-ups com mutação implementada no Laboratório: Função Linear,
-// Troca de Dados, Grafo e IHM.
+// Troca de Dados, Chute, Grafo e IHM.
 export const LABORATORY_STAGE = 1 // sprite 1.png: laboratório (0 = campo, 2 = refeitório)
 export const LINEAR_BUFF_AMOUNT = 3
 export const LINEAR_VIRUS_DURATION_MS = 10000
 export const LINEAR_NOTICE_DURATION_MS = 2500
 export const HOLD_BONUS_ID = 3
+export const KICK_BONUS_ID = 4
+export const KICK_VIRUS_STUN_MS = 1000
 export const GRAPH_BONUS_ID = 8
 export const IHM_BONUS_ID = 9
 
 // MODO TEMPORÁRIO DE TESTES DESTA BRANCH.
-// true: o Lab dropa SOMENTE os quatro power-ups já mutáveis,
+// true: o Lab dropa SOMENTE os cinco power-ups já mutáveis,
 //       todos com sprite misterioso e chance 50/50 de buff ou vírus.
 // false: restaura TODO o pool de itens e a distribuição original
-//        de 50% normal, 25% buff e 25% vírus nos quatro itens.
+//        de 50% normal, 25% buff e 25% vírus nos cinco itens.
 export const LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true
 
 export function isLabMutatablePowerup(id:number): boolean {
-  return id === 2 || id === HOLD_BONUS_ID || id === GRAPH_BONUS_ID || id === IHM_BONUS_ID
+  return id === 2 || id === HOLD_BONUS_ID || id === KICK_BONUS_ID ||
+    id === GRAPH_BONUS_ID || id === IHM_BONUS_ID
 }
 
 export function canDropLabPowerup(
@@ -267,4 +270,42 @@ export function chooseIhmVictim<T>(alive: readonly T[], roll: number): T | undef
   if (alive.length === 0) return undefined
   const normalized = Number.isFinite(roll) ? Math.min(1 - Number.EPSILON, Math.max(0, roll)) : 0
   return alive[Math.floor(normalized * alive.length)]
+}
+
+
+// Chute: fora do Laboratório, a mecânica continua original.
+// No Lab a última coleta determina a modalidade até a morte.
+export function kickPickupMutation(
+  stage:number,
+  mutation:LinearMutation|undefined
+): LinearMutation {
+  return stage === LABORATORY_STAGE ? (mutation ?? 'normal') : 'normal'
+}
+
+// Uma bomba do chute buff percorre as células livres até atingir
+// bloco destrutível/indestrutível, outra bomba, jogador vivo ou a borda.
+// Bônus no chão ('B') não são uma barreira física.
+export function canBuffKickAdvance(
+  row:number,
+  column:number,
+  side:SIDES,
+  blocks:ReadonlyArray<ReadonlyArray<{t:string}|null>>,
+  livingPlayers:ReadonlyArray<readonly [number,number]>,
+  otherBombs:ReadonlyArray<readonly [number,number]>
+): boolean {
+  const nextRow = row + (side === 'D' ? 1 : side === 'U' ? -1 : 0)
+  const nextColumn = column + (side === 'R' ? 1 : side === 'L' ? -1 : 0)
+  if (nextRow < 0 || nextRow >= blocks.length) return false
+  if (nextColumn < 0 || nextColumn >= blocks[nextRow].length) return false
+  const block = blocks[nextRow][nextColumn]
+  if (block && block.t !== 'B') return false
+  if (livingPlayers.some(([r,c]) => r === nextRow && c === nextColumn)) return false
+  if (otherBombs.some(([r,c]) => r === nextRow && c === nextColumn)) return false
+  return true
+}
+
+// A mutação negativa nunca modifica o alcance do chute normal,
+// mas impede qualquer novo reset do timer quando há chute.
+export function shouldResetKickTimer(mode:LinearMutation): boolean {
+  return mode !== 'virus'
 }

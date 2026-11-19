@@ -2,7 +2,7 @@ export type SIDES = 'U'|'L'|'D'|'R' // player side: up, left, down, right
 
 export interface BlockDTO {
   b ?: 1|2|3|4|5|6|7|8|9 // bonus item id (IHM = 9)
-  mutation ?: 'normal'|'buff'|'virus' // IDs 2/3/8/9 no Lab: normal 50%, buff 25%, virus 25%
+  mutation ?: 'normal'|'buff'|'virus' // IDs 2/3/4/8/9 no Lab: normal 50%, buff 25%, virus 25%
   t  : 'D'|'I'         // block type: destructible or indestructible
   x  : number          // block x position
   y  : number          // block y position
@@ -138,8 +138,20 @@ export interface LobbyWinsUpdateDTO {
 
 export interface MoveBombDTO {
   i : string // bomb id
-  p : number // player index
-  s : SIDES  // bomb side
+  p : number // índice de quem CHUTOU (não necessariamente dono da bomba)
+  s : SIDES  // direção do chute
+  k ?: 'buff'|'virus' // modo do chute mutado, quando houver
+}
+
+// A explosão antecipada é emitida só pelo jogador que chutou.
+export interface KickImpactDTO {
+  i : string
+  x : number
+  y : number
+}
+
+export interface KickStunDTO {
+  p : number // jogador que chutou uma bomba com debuff
 }
 
 export interface MoveDTO {

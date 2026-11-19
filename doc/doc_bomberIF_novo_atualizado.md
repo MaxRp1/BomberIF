@@ -10335,3 +10335,35 @@ Foram retirados o endpoint `GET /debug/virus`, os componentes `devVersion.tsx` e
 **Procedimento local:** iniciar `yarn dev` no servidor sem variáveis de forçar fase e `yarn dev` no cliente. Aguardar o sorteio natural do Laboratório para avaliar a mecânica.
 
 **Qualidade:** após esta limpeza, reexecutar `yarn test:virus`, `yarn test:chain`, `yarn test:lobby`, `yarn test:ranking`, `yarn test:stun`, `yarn test:frank` e builds do cliente e servidor. O PR #13 permanece em rascunho até validação; não houve merge ou deploy nesta alteração.
+
+
+### SEGUNDA MUTAÇÃO EXPERIMENTAL: TROCA DE DADOS (LABORATÓRIO) — 18/11/2026
+
+**Status:** implementada na branch `feat/lab-data-transfer-virus-2026-11-18`, aguardando validação local e multiplayer. Não mesclar nem publicar sem testes e builds no Kali. O PR #13 da Função Linear foi integrado à `main` pelo merge `4b984ce` após validação manual.
+
+A **Troca de Dados (bônus ID 3)** mantém o comportamento original de segurar e arremessar bombas nas fases Campo e Refeitório. Somente no **Laboratório (stage 1)** recebe, por item, mutação aleatória `buff` ou `virus` (50% cada) sorteada no servidor e enviada para todos em `BlockDTO.mutation`. O fallback determinístico por sala/coordenada também inclui esse bônus.
+
+- **Buff:** permite coletar bombas adversárias que estejam no chão, pressionando Espaço ao encostar ou mantendo Espaço enquanto avança contra a bomba. A verificação usa as entidades reais de bomba, pois bombas remotas podem não possuir marcador no tabuleiro local. Enquanto segura qualquer bomba, a velocidade do portador é multiplicada por **1,2** (+20%).
+- **Debuff:** enquanto segura uma bomba, sua velocidade é multiplicada por **0,4** (-60%). Ao arremessar, o alcance daquela bomba torna-se **2**, o alcance inicial do jogo, mesmo quando foi colocada com alcance superior. Esse alcance é enviado aos clientes pelo campo opcional `FlingBombDTO.r`. A penalidade não diminui o alcance-base do jogador nem altera bombas colocadas normalmente.
+- **Persistência:** a última Troca de Dados coletada define o modo de carregamento pelo restante da rodada ou até outra coleta do mesmo power-up. O efeito de velocidade existe somente enquanto uma bomba está sendo segurada. Pisos lentos continuam modificando velocidade e o fator de carregamento é multiplicativo.
+- **Multiplayer:** `Bomb.ownerIndex` permanece vinculado ao autor original; `playerIndex` identifica o carregador atual. `HoldBombDTO.mutation` comunica o efeito de carregamento aos clientes remotos. Ao pegar uma bomba, seu marcador no mapa só é removido se for o marcador correspondente ao próprio ID da bomba.
+- **Controle e HUD:** o buff habilita coleta de bombas adversárias pressionando ou segurando Espaço; eventos de repetição da tecla não arremessam automaticamente a bomba. O HUD da mutação passa a mostrar mensagens de Troca de Dados, preservando o aviso da Função Linear.
+
+**Arquivos modificados:** `shared/virus.ts`, `shared/dto.ts`, `server/src/factory.ts`, `client/src/game/entities/bonus.ts`, `client/src/game/entities/player.ts`, `client/src/game/entities/bomb.ts`, `client/src/game/components/canvas/index.tsx` e `virusHud.tsx`. Testes de regras estão em `server/test/virus.test.ts`.
+
+**Validação pendente no Kali:**
+
+```bash
+cd ~/BomberIF/server
+yarn test:virus
+yarn test:chain
+yarn test:lobby
+yarn test:ranking
+yarn test:stun
+yarn test:frank
+yarn build
+cd ../client
+yarn build
+```
+
+**Teste manual obrigatório:** dois jogadores no Laboratório, pegar bomba adversária no chão, +20% enquanto segura, -60% enquanto segura, arremesso com raio 2 após o debuff, recuperação da velocidade após soltar, bombas próprias e rivais, combos com Função Linear, ausência de mudanças em Campo/Refeitório e explosões em cadeia. A implantação deve atualizar servidor e cliente juntos.

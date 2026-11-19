@@ -15,5 +15,7 @@ export interface PlayerDTO {
   frankLifeUsed: boolean
   skillReadyAt: number
   stunnedUntil: number
+  // Autorizações temporárias do chute buff, privadas do servidor.
+  pendingKickImpacts?: Set<string>
 }
 

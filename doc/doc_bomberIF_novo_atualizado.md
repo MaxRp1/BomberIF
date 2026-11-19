@@ -10378,3 +10378,18 @@ yarn build
 **Ao concluir o ciclo de implementação de personagens e power-ups:** restaurar o sorteio em `server/src/factory.ts`, removendo a importação de `LABORATORY_STAGE` caso deixe de ser usada e reintroduzindo `STAGES`. Testar novamente os três cenários antes de mesclar o PR com a `main`.
 
 **Status:** mudança enviada ao GitHub apenas nesta branch de desenvolvimento. Não há merge nem deploy associado; execução de build e testes multiplayer no Kali ainda depende de validação local.
+
+
+### INDICAÇÃO VISUAL DE POWER-UPS INFECTADOS NO LABORATÓRIO — 19/11/2026
+
+**Estado:** implementada na branch `feat/lab-data-transfer-virus-2026-11-18` do PR #14, ainda em rascunho e sem merge/deploy; testes de compilação e multiplayer no Kali pendentes.
+
+**Regra de sorteio:** cada exemplar da Função Linear (ID 2) e da Troca de Dados (ID 3), exclusivamente no Laboratório (stage 1), recebe do servidor uma das duas mutações já existentes: `buff` com probabilidade de 50% ou `virus` com probabilidade de 50%. A expressão *saudável/não infectado* é o estado `buff`, que mantém a vantagem previamente implementada (+3 de alcance na Função Linear; captura de bombas rivais e +20% de velocidade enquanto carrega, na Troca de Dados). O estado infectado (`virus`) mantém os debuffs que já existiam. Não se criou uma terceira variante nem se alterou o balanceamento dos efeitos.
+
+**Nova aparência:** `client/src/game/entities/bonus.ts` usa a mesma spritesheet selecionada no início da partida (linhas de 16×16) e pinta o sprite alterado apenas quando `isInfectedBonus(props.mutation)` retorna verdadeiro. Os sprites saudáveis continuam originais. Para o infectado, o canvas aplica filtro roxo e alguns pixels de interferência rosa/verde; o estado do canvas é restaurado após desenhar, sem afetar o mapa e outros sprites. A versão visual é gerada em tempo real, sem arquivos PNG adicionais e sem mudar o tamanho/corte das spritesheets.
+
+**Multiplayer e compatibilidade:** o servidor continua definindo `BlockDTO.mutation` em `server/src/factory.ts` por meio de `shared/virus.ts`; o cliente replica a mesma escolha usando `fillMissingLabPowerupMutations` antes de criar `BlocksFactory`. Ao destruir o bloco, `client/src/game/entities/block.ts` já copia `mutation` para `BonusFactory`, de modo que a escolha visual acompanha o efeito real até a coleta. Foi adicionada a função compartilhada `isInfectedBonus` e testes específicos em `server/test/virus.test.ts`.
+
+**Escopo atual:** as mutações visuais e de gameplay funcionam apenas para os power-ups IDs 2 e 3. Os demais itens do Laboratório mantêm visual e comportamento normais enquanto suas mutações não forem criadas. O Laboratório continua forçado apenas nesta branch de desenvolvimento; `main` preserva o sorteio das arenas.
+
+**Validação:** executar `cd server && yarn test:virus && yarn build` e `cd ../client && yarn build` na VM, depois testar com dois navegadores: resultado visual igual em ambos, item roxo sempre causa o debuff, item original concede o buff, outras arenas não recebem efeito visual; repetir com as diferentes versões de spritesheet de power-ups.

@@ -50,6 +50,8 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
 
   if (!player || stage !== LABORATORY_STAGE || !player.active) return null
 
+  const firewallMode = now < player.firewallUntil ? player.firewallMode : null
+  const showFirewall = firewallMode === 'buff' || firewallMode === 'virus'
   const infected = now < player.linearVirusUntil
   const linearNotice = now < player.linearNoticeUntil ? player.linearNotice : null
   const holdNotice = now < player.holdNoticeUntil ? player.holdNotice : null
@@ -60,15 +62,23 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
   const showHold = !infected && !!holdNotice &&
     (!linearNotice || player.holdNoticeUntil >= player.linearNoticeUntil)
   const showGraph = !infected && !linearNotice && !holdNotice && !!graphMode
-  if (!infected && !linearNotice && !holdNotice && !graphMode) return null
+  if (!showFirewall && !infected && !linearNotice && !holdNotice && !graphMode) return null
 
   const seconds = Math.ceil(Math.max(0, player.linearVirusUntil - now) / 1000)
   const graphSeconds = Math.ceil(Math.max(0, player.boostedUntil - now) / 1000)
-  const negative = infected || (showGraph ? graphMode === 'virus'
+  const firewallSeconds = Math.ceil(Math.max(0, player.firewallUntil - now) / 1000)
+  const negative = showFirewall ? firewallMode === 'virus' : infected || (showGraph ? graphMode === 'virus'
     : showHold ? holdNotice === 'virus' : linearNotice === 'virus')
   return (
     <Panel $negative={negative}>
-      {showGraph
+      {showFirewall
+        ? <>
+            <strong>{firewallMode === 'buff' ? 'FIREWALL: IMUNE A EXPLOSÕES!' : 'FIREWALL: VÍRUS!'}</strong>
+            <span>{firewallMode === 'buff'
+              ? `Atravessa todos os blocos e bordas · ${firewallSeconds}s restantes`
+              : `Só atravessa blocos destrutíveis · ${firewallSeconds}s restantes`}</span>
+          </>
+        : showGraph
         ? <>
             <strong>{graphMode === 'buff' ? 'GRAFO: +50% VELOCIDADE!' : 'GRAFO: VÍRUS!'}</strong>
             <span>{graphMode === 'buff'

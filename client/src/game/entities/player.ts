@@ -296,6 +296,7 @@ function addGamepadSupport (this:Player, state:GameState) {
 }
 
 function removeGamepadSupport (this:Player, state:GameState) {
+  this.setGamepadDirection(null)
   const gamepad = state.entities.get(`G${this.index}`)
   if (!gamepad) return
   state.entities.remove(gamepad)

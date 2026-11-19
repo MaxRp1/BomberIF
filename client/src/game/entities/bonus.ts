@@ -257,14 +257,10 @@ function InvertBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, invert, () => {
-        state.players.myself!.invertControls()
-        state.entities.entities.forEach(e => {
-          e['invertControls'] && e['invertControls']()
-        })
-        //adicionado um tempo na função de inverter os controles ft Moreira
-        setTimeout(() => {
-          state.players.myself!.invertControls()
-        }, 10000)
+        // Normal: inversão por 10s.
+        // Buff: inversão por 10s +50% de velocidade.
+        // Vírus: inversão permanente até morrer.
+        state.players.myself!.applyGraphBonus(state.stage.name, props.mutation)
       })
     },
     render: (context:CanvasRenderingContext2D) => {

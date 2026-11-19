@@ -13,6 +13,13 @@ import {
   fallbackLinearMutation,
   fillMissingLabLinearMutations,
   HOLD_BONUS_ID,
+  GRAPH_BONUS_ID,
+  GRAPH_EFFECT_DURATION_MS,
+  GRAPH_BUFF_SPEED_MULTIPLIER,
+  applyGraphPickup,
+  graphControlsInverted,
+  graphHeldMovement,
+  graphSpeedMultiplier,
   INITIAL_BOMB_REACH,
   HOLD_BUFF_SPEED_MULTIPLIER,
   HOLD_VIRUS_SPEED_MULTIPLIER,
@@ -73,24 +80,25 @@ test('servidor mantém o segredo visual e o estado sincronizados entre jogadores
     map.map(row => row.map(item => isMutatedBonus(item?.mutation))))
 })
 
-test('Função Linear e Troca de Dados são os únicos itens com mutação no laboratório', () => {
+test('Função Linear, Troca de Dados e Grafo recebem mutação no laboratório', () => {
   const map: (BlockDTO|null)[][] = [
-    [block(2), block(1), null],
+    [block(2), block(1), block(8)],
     [block(2), block(3), block(2)]
   ]
-  const rolls = [0.1, 0.6, 0.8, 0.95]
+  const rolls = [0.1, 0.5, 0.6, 0.8, 0.95]
   let count = 0
   assignLabLinearMutations(map, LABORATORY_STAGE, () => rolls[count++])
 
-  assert.equal(count, 4)
+  assert.equal(count, 5)
   assert.equal(map[0][0]?.mutation, 'normal')
+  assert.equal(map[0][2]?.mutation, 'buff')
   assert.equal(map[1][0]?.mutation, 'buff')
   assert.equal(map[1][2]?.mutation, 'virus')
   assert.equal(map[0][1]?.mutation, undefined)
   assert.equal(map[1][1]?.mutation, 'virus')
 
   // Dados de blocos são serializados e enviados no StartGameDTO para todos.
-  assert.equal(JSON.parse(JSON.stringify(map))[1][0].mutation, 'buff')
+  assert.equal(JSON.parse(JSON.stringify(map))[0][2].mutation, 'buff')
 })
 
 test('outros cenários não sorteiam mutações nem alteram as regras originais', () => {
@@ -276,4 +284,107 @@ test('vírus redefine apenas o raio da bomba arremessada para o inicial', () => 
   assert.equal(reachAfterFling('buff', 12), 12)
   assert.equal(reachAfterFling(null, 5), 5)
   assert.equal(reachAfterFling('normal', 5), 5)
+})
+
+
+test('Grafo recebe os três resultados apenas no laboratório, preservando 50/25/25', () => {
+  assert.equal(GRAPH_BONUS_ID, 8)
+  const map:(BlockDTO|null)[][] = [[block(8), block(8), block(8)]]
+  let rolls = 0
+  assignLabLinearMutations(map, 0, () => { rolls++; return 0.7 })
+  assert.equal(rolls, 0)
+  assert.ok(map[0].every(item => item?.mutation === undefined))
+
+  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0.3,0.6,0.8][rolls++])
+  assert.deepEqual(map[0].map(item => item?.mutation), ['normal','buff','virus'])
+  assert.deepEqual(map[0].map(item => isMutatedBonus(item?.mutation)), [false,true,true])
+  const copy = JSON.parse(JSON.stringify(map)) as (BlockDTO|null)[][]
+  assert.deepEqual(copy, map)
+})
+
+test('Grafo normal inverte comandos por 10 segundos sem aumentar velocidade', () => {
+  assert.equal(GRAPH_EFFECT_DURATION_MS, 10000)
+  const empty = {invertedUntil:0, boostedUntil:0, invertedUntilDeath:false}
+  const normal = applyGraphPickup(empty, LABORATORY_STAGE, 'normal', 100)
+  assert.deepEqual(normal, {invertedUntil:10100, boostedUntil:0, invertedUntilDeath:false})
+  assert.equal(graphControlsInverted(normal, 100), true)
+  assert.equal(graphControlsInverted(normal, 10099), true)
+  assert.equal(graphControlsInverted(normal, 10100), false)
+  assert.equal(graphSpeedMultiplier(normal, 500), 1)
+  assert.deepEqual(empty, {invertedUntil:0, boostedUntil:0, invertedUntilDeath:false})
+})
+
+test('Grafo buff acelera 50% enquanto invertido por 10 segundos', () => {
+  assert.equal(GRAPH_BUFF_SPEED_MULTIPLIER, 1.5)
+  const start = {invertedUntil:0, boostedUntil:0, invertedUntilDeath:false}
+  const buff = applyGraphPickup(start, LABORATORY_STAGE, 'buff', 200)
+  assert.equal(graphControlsInverted(buff, 201), true)
+  assert.equal(graphSpeedMultiplier(buff, 201), 1.5)
+  assert.equal(graphSpeedMultiplier(buff, 10199), 1.5)
+  assert.equal(graphControlsInverted(buff, 10200), false)
+  assert.equal(graphSpeedMultiplier(buff, 10200), 1)
+
+  const refreshed = applyGraphPickup(buff, LABORATORY_STAGE, 'buff', 1000)
+  assert.equal(refreshed.invertedUntil, 11000)
+  assert.equal(refreshed.boostedUntil, 11000)
+  assert.equal(graphSpeedMultiplier(refreshed, 10200), 1.5)
+})
+
+test('Grafo debuff inverte até morrer, sem timeout e sem dar bônus de velocidade', () => {
+  const start = {invertedUntil:0, boostedUntil:0, invertedUntilDeath:false}
+  const virus = applyGraphPickup(start, LABORATORY_STAGE, 'virus', 300)
+  assert.equal(graphControlsInverted(virus, 300), true)
+  assert.equal(graphControlsInverted(virus, 99999999), true)
+  assert.equal(graphSpeedMultiplier(virus, 500), 1)
+
+  // O efeito permanente não desaparece ao coletar um Grafo normal.
+  const later = applyGraphPickup(virus, LABORATORY_STAGE, 'normal', 20000)
+  assert.equal(graphControlsInverted(later, 99999999), true)
+
+  // A próxima rodada cria outro Player e começa com estado limpo.
+  assert.equal(graphControlsInverted(start, 99999999), false)
+})
+
+test('Grafo mantém efeito tradicional nos outros dois mapas', () => {
+  const start = {invertedUntil:0, boostedUntil:0, invertedUntilDeath:false}
+  for (const stage of [0,2]) {
+    const normal = applyGraphPickup(start, stage, 'virus', 100)
+    assert.equal(normal.invertedUntil, 10100)
+    assert.equal(normal.invertedUntilDeath, false)
+    assert.equal(graphSpeedMultiplier(normal, 100), 1)
+  }
+})
+
+test('liberar tecla física durante inversão nunca deixa movimento preso', () => {
+  const normal = graphHeldMovement(['U','L'], false)
+  assert.equal(normal.moving, 1)
+  assert.equal(normal.side, 'L')
+  assert.equal(normal.movingSide.U, true)
+
+  const inverted = graphHeldMovement(['U','L'], true)
+  assert.equal(inverted.moving, 1)
+  assert.equal(inverted.side, 'R')
+  assert.equal(inverted.movingSide.D, true)
+  assert.equal(inverted.movingSide.R, true)
+
+  // Soltou apenas W enquanto ainda segurava A, e terminou a inversão.
+  const afterRelease = graphHeldMovement(['L'], false)
+  assert.equal(afterRelease.side, 'L')
+  assert.equal(afterRelease.movingSide.U, false)
+  assert.equal(afterRelease.movingSide.D, false)
+
+  const releasedAll = graphHeldMovement([], true)
+  assert.deepEqual(releasedAll, {
+    moving:0, side:null, movingSide:{U:false,D:false,L:false,R:false}
+  })
+})
+
+test('movimento do controle e teclado compartilha a inversão sem duplo toggle', () => {
+  const both = graphHeldMovement(['D','R'], true)
+  assert.equal(both.side, 'L')
+  assert.equal(both.movingSide.U, true)
+  assert.equal(both.movingSide.L, true)
+  const keyboardOnly = graphHeldMovement(['D'], true)
+  assert.equal(keyboardOnly.side, 'U')
+  assert.equal(graphHeldMovement([], false).moving, 0)
 })

@@ -7,6 +7,7 @@ export const LINEAR_VIRUS_DURATION_MS = 10000
 export const LINEAR_NOTICE_DURATION_MS = 2500
 export const HOLD_BONUS_ID = 3
 export const GRAPH_BONUS_ID = 8
+export const IHM_BONUS_ID = 9
 export const GRAPH_EFFECT_DURATION_MS = 10000
 export const GRAPH_BUFF_SPEED_MULTIPLIER = 1.5
 export const INITIAL_BOMB_REACH = 2
@@ -42,7 +43,7 @@ export function assignLabLinearMutations(
 
   for (const row of blocks) {
     for (const block of row) {
-      if (block?.b === 2 || block?.b === HOLD_BONUS_ID || block?.b === GRAPH_BONUS_ID) {
+      if (block?.b === 2 || block?.b === HOLD_BONUS_ID || block?.b === GRAPH_BONUS_ID || block?.b === IHM_BONUS_ID) {
         block.mutation = chooseLinearMutation(random())
       }
     }
@@ -86,7 +87,7 @@ export function fillMissingLabLinearMutations(
   for (let row = 0; row < blocks.length; row++) {
     for (let column = 0; column < blocks[row].length; column++) {
       const block = blocks[row][column]
-      if (block?.b !== 2 && block?.b !== HOLD_BONUS_ID && block?.b !== GRAPH_BONUS_ID) continue
+      if (block?.b !== 2 && block?.b !== HOLD_BONUS_ID && block?.b !== GRAPH_BONUS_ID && block?.b !== IHM_BONUS_ID) continue
       if (block.mutation === 'normal' || block.mutation === 'buff' || block.mutation === 'virus') continue
       block.mutation = fallbackLinearMutation(roomId, row, column)
       repaired++
@@ -233,4 +234,13 @@ export function graphHeldMovement(physicalDirections:readonly SIDES[], inverted:
     movingSide[side] = true
   }
   return { moving:side ? 1 : 0, side, movingSide }
+}
+
+
+// IHM mutado positivo: escolher sem favorecer o coletor nem os adversários.
+// A lista deve conter somente os jogadores que ainda estão vivos no servidor.
+export function chooseIhmVictim<T>(alive: readonly T[], roll: number): T | undefined {
+  if (alive.length === 0) return undefined
+  const normalized = Number.isFinite(roll) ? Math.min(1 - Number.EPSILON, Math.max(0, roll)) : 0
+  return alive[Math.floor(normalized * alive.length)]
 }

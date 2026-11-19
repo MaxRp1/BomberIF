@@ -51,17 +51,30 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
   if (!player || stage !== LABORATORY_STAGE || !player.active) return null
 
   const infected = now < player.linearVirusUntil
-  const notice = now < player.linearNoticeUntil ? player.linearNotice : null
-  if (!infected && !notice) return null
+  const linearNotice = now < player.linearNoticeUntil ? player.linearNotice : null
+  const holdNotice = now < player.holdNoticeUntil ? player.holdNotice : null
+  const showHold = !infected && !!holdNotice &&
+    (!linearNotice || player.holdNoticeUntil >= player.linearNoticeUntil)
+  if (!infected && !linearNotice && !holdNotice) return null
 
   const seconds = Math.ceil(Math.max(0, player.linearVirusUntil - now) / 1000)
+  const negative = infected || (showHold ? holdNotice === 'virus' : linearNotice === 'virus')
   return (
-    <Panel $negative={infected}>
-      {notice === 'buff' && <strong>MUTAÇÃO POSITIVA! RAIO +3</strong>}
-      {notice === 'virus' && <strong>VÍRUS DETECTADO!</strong>}
-      {infected
-        ? <span>RAIO 0 · {seconds}s restantes</span>
-        : <span>Alcance acumulado: {player.bombReach}</span>}
+    <Panel $negative={negative}>
+      {showHold
+        ? <>
+            <strong>{holdNotice === 'buff' ? 'TROCA DE DADOS: BUFF!' : 'TROCA DE DADOS: VÍRUS!'}</strong>
+            <span>{holdNotice === 'buff'
+              ? 'Pega bombas rivais · +20% velocidade ao carregar'
+              : '-60% velocidade ao carregar · arremesso com raio 2'}</span>
+          </>
+        : <>
+            {linearNotice === 'buff' && <strong>MUTAÇÃO POSITIVA! RAIO +3</strong>}
+            {(linearNotice === 'virus' || infected) && <strong>VÍRUS DETECTADO!</strong>}
+            {infected
+              ? <span>RAIO 0 · {seconds}s restantes</span>
+              : <span>Alcance acumulado: {player.bombReach}</span>}
+          </>}
     </Panel>
   )
 }

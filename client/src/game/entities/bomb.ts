@@ -11,7 +11,7 @@ import { playBlastSound } from '~/game/sound/blast'
 import { playFlingSound } from '~/game/sound/fling'
 import { playKickSound } from '~/game/sound/kick'
 import { Assets } from '~/game/util/assets'
-import { isColliding, stopPlayer } from '~/game/util/collision'
+import { isColliding, isCollidingForced, stopPlayer } from '~/game/util/collision'
 import { emitKickImpact, emitMoveBomb } from '~/services/socket'
 
 interface BombProps {
@@ -386,7 +386,14 @@ function moveBuffKick (this:Bomb, state:GameState) {
         bombs.push(candidate.getAxes())
       }
     }
-    if (!canBuffKickAdvance(
+    // Também detecta quando alguém entra lateralmente no espaço da
+    // bomba durante o deslizamento, não apenas na casa seguinte.
+    const touchingPlayer = state.players.players.some(player =>
+      player.active && !player.removeTime &&
+      player.index !== this.kickInitiator &&
+      isCollidingForced(player, this)
+    )
+    if (touchingPlayer || !canBuffKickAdvance(
       row, column, this.side, state.blocks.blocks, players, bombs
     )) {
       // Não entra na casa bloqueada: explode na última posição livre.

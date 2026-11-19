@@ -1,5 +1,5 @@
 import { Server } from 'socket.io'
-import { onFlingBomb, onFrankLifeUsed, onHoldBomb, onIhmPickup, onKill, onMove, onMoveBomb, onNullifyBlock, onPlaceBomb } from '~/game'
+import { onFlingBomb, onFrankLifeUsed, onHoldBomb, onIhmPickup, onKickImpact, onKill, onMove, onMoveBomb, onNullifyBlock, onPlaceBomb } from '~/game'
 import { changeLobby, createLobby, exitPairing, joinRoom, onDisconnect, onReady, selectCharacter, sendToLobby, setLobbyReady, setUser } from '~/manager'
 import { onStunFire, onStunHit } from '~/stun'
 
@@ -33,6 +33,7 @@ export default function ioListener (io:Server) {
     socket.on('mv', dto => onMove(io, socket, dto))
     socket.on('pb', dto => onPlaceBomb(io, socket, dto))
     socket.on('mb', dto => onMoveBomb(io, socket, dto))
+    socket.on('kick_impact', dto => onKickImpact(io, socket, dto))
     socket.on('hb', dto => onHoldBomb(io, socket, dto))
     socket.on('fb', dto => onFlingBomb(io, socket, dto))
     socket.on('nb', dto => onNullifyBlock(io, socket, dto))

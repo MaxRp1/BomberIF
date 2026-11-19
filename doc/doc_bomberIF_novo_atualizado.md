@@ -10369,14 +10369,10 @@ yarn build
 **Teste manual obrigatório:** dois jogadores no Laboratório, pegar bomba adversária no chão, +20% enquanto segura, -60% enquanto segura, arremesso com raio 2 após o debuff, recuperação da velocidade após soltar, bombas próprias e rivais, combos com Função Linear, ausência de mudanças em Campo/Refeitório e explosões em cadeia. A implantação deve atualizar servidor e cliente juntos.
 
 
-### BLOQUEIO TEMPORÁRIO DOS CENÁRIOS NO LABORATÓRIO — 18/11/2026
+### SORTEIO NORMAL DOS CENÁRIOS E TESTE LOCAL DO LABORATÓRIO — 19/11/2026
 
-**Objetivo:** facilitar a implementação e a verificação das mutações dos power-ups e dos personagens sem esperar pelo sorteio aleatório do cenário.
+**Decisão:** não forçar cenários em nenhuma branch publicada no GitHub. Tanto a `main` quanto `feat/lab-data-transfer-virus-2026-11-18` mantêm o sorteio natural dos três mapas usando `const stage = Math.floor(Math.random() * STAGES)` em `server/src/factory.ts`: Campo (0), Laboratório (1), Refeitório (2).
 
-**Aplicação atual:** na branch de desenvolvimento `feat/lab-data-transfer-virus-2026-11-18` (PR #14, sem merge/deploy), o servidor utiliza `const stage = LABORATORY_STAGE` em `server/src/factory.ts`. Como `LABORATORY_STAGE = 1`, todas as novas partidas dessa branch terão o mapa do Laboratório, inclusive reinícios de rodada e salas multiplayer. A escolha fixa não depende de flags, variáveis de ambiente ou painéis temporários. O sorteio das mutações de cada power-up dentro do Laboratório continua normal e aleatório.
+**Teste exclusivo da VM:** durante o desenvolvimento de personagens e mutações, quem roda o jogo na VM pode substituir **somente no arquivo local**, sem commit/push, a linha acima por `const stage = 1`. Isso não altera o servidor do GitHub ou outros usuários. A modificação local é intencional e aparecerá em `git status`. Para desfazê-la, executar `git restore server/src/factory.ts` a partir da raiz do projeto. Não registrar essa alteração em commits futuros.
 
-**Fora da branch:** a `main` ainda mantém `Math.floor(Math.random() * STAGES)` e o sorteio normal entre Campo (0), Laboratório (1) e Refeitório (2). Os mapas e sprites das outras fases não foram apagados.
-
-**Reversão após o ciclo de implementação:** em `server/src/factory.ts`, restaurar o import `STAGES` de `#/constants`, remover `LABORATORY_STAGE` do import de `#/virus` caso não seja usado em outro ponto, e substituir `const stage = LABORATORY_STAGE` por `const stage = Math.floor(Math.random() * STAGES)`. Revisar os testes de regressão dos três cenários e atualizar o GDD quando o sorteio normal voltar.
-
-**Validação pendente:** executar os testes e `yarn build` no Kali após atualizar a branch. Iniciar o servidor e criar múltiplas salas/partidas para confirmar que todos recebem `stage=1`. Esta alteração sozinha não efetua deploy no site ou no servidor público.
+**Importante:** essa decisão substitui a proposta anterior de fixação temporária do Laboratório na branch remota. Testes em Campo e Refeitório continuam necessários antes de finalizar o PR #14.

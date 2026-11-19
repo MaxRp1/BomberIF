@@ -30,10 +30,13 @@ module.exports = {
       return webpackConfig
     }
   },
-  devServer: {
-    https: {
-      cert: join(homedir(), '.ssl', 'cert.pem'),
-      key: join(homedir(), '.ssl', 'key.pem')
-    }
-  }
+  // Em Docker não há certificados mkcert: DISABLE_HTTPS=1 usa HTTP puro.
+  devServer: process.env.DISABLE_HTTPS === '1'
+    ? {}
+    : {
+        https: {
+          cert: join(homedir(), '.ssl', 'cert.pem'),
+          key: join(homedir(), '.ssl', 'key.pem')
+        }
+      }
 }

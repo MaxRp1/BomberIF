@@ -1,6 +1,7 @@
 import type { Server } from 'socket.io'
 import type { Socket } from '~/extends'
-import type { LobbyWinsUpdateDTO, RoundResultDTO } from '#/dto'
+import type { GameStateDTO, LobbyWinsUpdateDTO, RoundResultDTO } from '#/dto'
+import { IHM_BONUS_ID, LABORATORY_STAGE, chooseIhmVictim } from '#/virus'
 
 // Janela de tolerância para mortes quase simultâneas (rede e quadros distintos).
 const ROUND_FINISH_GRACE_MS = 400
@@ -9,6 +10,7 @@ interface Round {
   alive: Set<string>
   playerCount: number
   scoreEnabled: boolean
+  ihmItems: Map<string, { mutation:'normal'|'buff'|'virus'; x:number; y:number }>
   finishTimer?: ReturnType<typeof setTimeout>
 }
 
@@ -21,18 +23,65 @@ function finishRound(io: Server, roomId: string, result: RoundResultDTO) {
 }
 
 // Cada nova partida usa os IDs dos sockets presentes em seu roomId.
-export function beginRankingRound(roomId: string, playerIds: string[]) {
+export function beginRankingRound(roomId: string, playerIds: string[], state?:GameStateDTO) {
   cancelRankingRound(roomId)
 
   const uniquePlayers = new Set(playerIds)
   if (uniquePlayers.size === 0) return
 
+  // Registra os IHM reais do mapa sorteado: o navegador não decide
+  // se um item tem buff nem escolhe a vítima.
+  const ihmItems:Round['ihmItems'] = new Map()
+  if (state?.stage === LABORATORY_STAGE) {
+    state.blocks.forEach((row, i) => row.forEach((item, j) => {
+      if (item?.b !== IHM_BONUS_ID || item.t !== 'D') return
+      ihmItems.set(`${i},${j}`, {
+        mutation: item.mutation ?? 'normal',
+        x: item.x,
+        y: item.y
+      })
+    }))
+  }
+
   // Mesmo no modo solo registramos a morte, mas não concedemos vitória.
   rounds.set(roomId, {
     alive: uniquePlayers,
     playerCount: uniquePlayers.size,
-    scoreEnabled: uniquePlayers.size >= 2
+    scoreEnabled: uniquePlayers.size >= 2,
+    ihmItems
   })
+}
+
+// Aposta do IHM no Laboratório: só itens válidos da rodada podem matar.
+// O sorteio do buff é uniforme entre os vivos (inclusive quem coletou).
+export function claimIhmPickup(
+  roomId:string,
+  collectorId:string,
+  axes:[number,number],
+  playerX:number,
+  playerY:number,
+  roll:number
+): string|null {
+  const round = rounds.get(roomId)
+  if (!round?.alive.has(collectorId)) return null
+  if (!Array.isArray(axes) || axes.length !== 2 ||
+      !axes.every(Number.isInteger)) return null
+  if (!Number.isFinite(playerX) || !Number.isFinite(playerY)) return null
+  const key = `${axes[0]},${axes[1]}`
+  const item = round.ihmItems.get(key)
+  if (!item) return null
+
+  // Tolerância à latência do movimento; não aceitar pegar itens distantes.
+  if (Math.abs(playerX - item.x) > 32 || Math.abs(playerY - item.y) > 32) return null
+
+  const target = item.mutation === 'buff'
+    ? chooseIhmVictim([...round.alive], roll)
+    : collectorId
+  if (!target) return null
+
+  // Consumo único, mesmo com tentativas simultâneas ou pacotes repetidos.
+  round.ihmItems.delete(key)
+  return target
 }
 
 // Libera temporizador e dados da rodada. É seguro chamar mais de uma vez.

@@ -1,4 +1,4 @@
-import { BlockDTO } from './dto'
+import { BlockDTO, SIDES } from './dto'
 
 // Mutações exclusivas do Laboratório: Função Linear (2) e Troca de Dados (3).
 export const LABORATORY_STAGE = 1 // sprite 1.png: laboratório (0 = campo, 2 = refeitório)
@@ -215,4 +215,22 @@ export function invertGraphDirection(side: 'U'|'D'|'L'|'R', inverted:boolean): '
     case 'L': return 'R'
     case 'R': return 'L'
   }
+}
+
+
+// Resolve comandos físicos sem alterar o mapa de teclas.
+// Tirar uma tecla do conjunto sempre remove sua direção, mesmo que
+// o efeito de inversão tenha começado ou acabado enquanto ela era segurada.
+export function graphHeldMovement(physicalDirections:readonly SIDES[], inverted:boolean): {
+  moving: 0|1
+  side: SIDES|null
+  movingSide: Record<SIDES,boolean>
+} {
+  const movingSide:Record<SIDES,boolean> = { U:false, D:false, L:false, R:false }
+  let side:SIDES|null = null
+  for (const direction of physicalDirections) {
+    side = invertGraphDirection(direction, inverted)
+    movingSide[side] = true
+  }
+  return { moving:side ? 1 : 0, side, movingSide }
 }

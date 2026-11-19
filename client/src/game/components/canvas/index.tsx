@@ -20,7 +20,7 @@ import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
 import VirusHud from './virusHud'
-import { fillMissingLabPowerupMutations, LAB_ONLY_MUTATED_DROPS_FOR_TESTS } from '#/virus'
+import { fillMissingLabPowerupMutations, KICK_VIRUS_STUN_MS, LAB_ONLY_MUTATED_DROPS_FOR_TESTS } from '#/virus'
 
 const RESULT_DISPLAY_MS = 5000
 
@@ -197,7 +197,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
 
   function onKickStun (dto:KickStunDTO) {
     if (!state || dto.p === myself) return // autor já aplicou o stun local
-    state.players.players[dto.p]?.applyStun(1000)
+    state.players.players[dto.p]?.applyStun(KICK_VIRUS_STUN_MS)
   }
 
   function onHoldBomb (dto:HoldBombDTO) {

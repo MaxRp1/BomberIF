@@ -1,6 +1,6 @@
 import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
-import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, reachAfterFling } from '#/virus'
+import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, firewallExplosionImmune, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, reachAfterFling } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
@@ -33,6 +33,8 @@ export interface Player {
   linearNoticeUntil : number
   bombs             : number
   collidable        : boolean
+  firewallMode      : LinearMutation | null
+  firewallUntil     : number
   extraLife         : boolean
   ignoresSlowFloor  : boolean
   hasOverclock      : boolean
@@ -127,6 +129,8 @@ export function PlayerFactory (props:PlayerProps) : Player {
     linearNoticeUntil: 0,
     bombs: 1,
     collidable: true,
+    firewallMode: null,
+    firewallUntil: 0,
     extraLife: props.sprite === FRANK_SPRITE_ID,
     ignoresSlowFloor: props.sprite === 11,
     hasOverclock: props.sprite === 2,
@@ -597,6 +601,10 @@ function consumeExtraLife (this:Player): boolean {
 function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   if (this.removeTime) return
 
+  // Firewall mutado positivo: proteção apenas contra explosões, por 6s.
+  // Não bloqueia outras mortes (IHM, sair da aba, etc.).
+  if (emit && cause === 'bomb' && firewallExplosionImmune(this.firewallMode, this.firewallUntil, Date.now())) return
+
   // Proteção temporária contra a mesma explosão que gastou a vida extra
   if (
     emit &&
@@ -622,6 +630,8 @@ function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   this.invertedUntilDeath = false
   this.invertedUntil = 0
   this.boostedUntil = 0
+  this.firewallMode = null
+  this.firewallUntil = 0
   this.collidable = false
 
   this.tick = () => {

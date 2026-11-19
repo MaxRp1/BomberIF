@@ -12,6 +12,12 @@ export const HOLD_VIRUS_SPEED_MULTIPLIER = 0.4
 
 export type LinearMutation = 'buff' | 'virus'
 
+// No mapa do Laboratório, 50% dos itens com mutação recebem vírus.
+// A versão saudável usa o sprite original; apenas o vírus recebe efeito visual.
+export function isInfectedBonus(mutation: LinearMutation | undefined): boolean {
+  return mutation === 'virus'
+}
+
 export interface LinearVirusState {
   baseReach: number
   virusUntil: number

@@ -51,6 +51,8 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
   if (!player || stage !== LABORATORY_STAGE || !player.active) return null
 
   const firewallMode = now < player.firewallUntil ? player.firewallMode : null
+  const signalMode = player.signalMotion.mode
+  const signalActive = signalMode === 'buff' || signalMode === 'virus'
   const showFirewall = firewallMode === 'buff' || firewallMode === 'virus'
   const infected = now < player.linearVirusUntil
   const linearNotice = now < player.linearNoticeUntil ? player.linearNotice : null
@@ -60,21 +62,41 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
     ? 'virus'
     : now < player.boostedUntil ? 'buff'
     : now < player.graphNoticeUntil ? player.graphNotice : null
-  const showKick = !showFirewall && !!kickNotice
-  const showHold = !showFirewall && !showKick && !infected && !!holdNotice &&
+  // O aviso do Sinal Ruim prevalece por 2,5 s após a coleta. Depois,
+  // exibe a rampa continuamente apenas se não houver outro aviso ativo.
+  const showSignal = signalActive && (
+    now < player.signalNoticeUntil ||
+    (!showFirewall && !kickNotice && !linearNotice && !holdNotice && !graphMode)
+  )
+  const showKick = !showSignal && !showFirewall && !!kickNotice
+  const showHold = !showSignal && !showFirewall && !showKick && !infected && !!holdNotice &&
     (!linearNotice || player.holdNoticeUntil >= player.linearNoticeUntil)
-  const showGraph = !showFirewall && !showKick && !infected && !linearNotice && !holdNotice && !!graphMode
-  if (!showFirewall && !infected && !linearNotice && !holdNotice && !graphMode && !kickNotice) return null
+  const showGraph = !showSignal && !showFirewall && !showKick && !infected && !linearNotice && !holdNotice && !!graphMode
+  if (!showSignal && !showFirewall && !infected && !linearNotice && !holdNotice && !graphMode && !kickNotice) return null
 
   const seconds = Math.ceil(Math.max(0, player.linearVirusUntil - now) / 1000)
   const graphSeconds = Math.ceil(Math.max(0, player.boostedUntil - now) / 1000)
   const firewallSeconds = Math.ceil(Math.max(0, player.firewallUntil - now) / 1000)
-  const negative = showFirewall ? firewallMode === 'virus' : showKick ? kickNotice === 'virus' : infected ||
+  const signalPercent = Math.round(Math.abs(player.signalMotion.multiplier - 1) * 100)
+  const signalRested = signalMode === 'virus' &&
+    player.signalMotion.stoppedSince !== null &&
+    now - player.signalMotion.stoppedSince >= 1000
+  const negative = showSignal ? signalMode === 'virus'
+    : showFirewall ? firewallMode === 'virus' : showKick ? kickNotice === 'virus' : infected ||
     (showGraph ? graphMode === 'virus'
       : showHold ? holdNotice === 'virus' : linearNotice === 'virus')
   return (
     <Panel $negative={negative}>
-      {showFirewall
+      {showSignal
+        ? <>
+            <strong>{signalMode === 'buff' ? 'DOWNLOAD TURBO: +70%!' : 'DOWNLOAD LIMITADO: VÍRUS!'}</strong>
+            <span>{signalMode === 'buff'
+              ? `Velocidade +${signalPercent}% · acelera enquanto anda; parar reinicia`
+              : signalRested
+              ? '1s parado: velocidade natural recuperada até voltar a andar'
+              : `Velocidade -${signalPercent}% · até -40%; 1s parado restaura`}</span>
+          </>
+        : showFirewall
         ? <>
             <strong>{firewallMode === 'buff' ? 'FIREWALL: IMUNE A EXPLOSÕES!' : 'FIREWALL: VÍRUS!'}</strong>
             <span>{firewallMode === 'buff'

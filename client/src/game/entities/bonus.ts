@@ -1,5 +1,5 @@
 import { MAX_SPEED, SPEED, TILE_SIZE } from '#/constants'
-import { LinearMutation, isMutatedBonus } from '#/virus'
+import { LinearMutation, firewallPickupMode, isMutatedBonus } from '#/virus'
 import { applyLinearPickup, holdPickupMutation, LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS } from '#/virus'
 import { PassFactory } from '~/game/entities/pass'
 import { GameState } from '~/game/entities/state'
@@ -238,7 +238,7 @@ function PassBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, pass, () => {
-        state.entities.add(PassFactory({state}))
+        state.entities.add(PassFactory({state, mode:firewallPickupMode(state.stage.name, props.mutation)}))
       })
     },
     render: (context:CanvasRenderingContext2D) => {

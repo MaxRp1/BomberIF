@@ -1,5 +1,5 @@
 import { MAX_SPEED, SPEED, TILE_SIZE } from '#/constants'
-import { LinearMutation } from '#/virus'
+import { LinearMutation, isInfectedBonus } from '#/virus'
 import { applyLinearPickup, holdPickupMutation, LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS } from '#/virus'
 import { PassFactory } from '~/game/entities/pass'
 import { GameState } from '~/game/entities/state'
@@ -133,7 +133,7 @@ function BlastBonus (props:BonusProps) : Bonus {
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 0, TILE_SIZE, TILE_SIZE, blast.x, blast.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 0)
     }
   }
   return blast
@@ -158,7 +158,7 @@ function HoldBonus (props:BonusProps) : Bonus {
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 16, TILE_SIZE, TILE_SIZE, hold.x, hold.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 16)
     }
   }
   return hold
@@ -177,7 +177,7 @@ function KickBonus (props:BonusProps) : Bonus {
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 32, TILE_SIZE, TILE_SIZE, kick.x, kick.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 32)
     }
   }
   return kick
@@ -196,7 +196,7 @@ function SpeedBonus (props:BonusProps) : Bonus {
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 48, TILE_SIZE, TILE_SIZE, speed.x, speed.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 48)
     }
   }
   return speed
@@ -215,7 +215,7 @@ function SlowBonus (props:BonusProps) : Bonus {
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 64, TILE_SIZE, TILE_SIZE, slow.x, slow.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 64)
     }
   }
   return slow
@@ -234,7 +234,7 @@ function PassBonus (props:BonusProps) : Bonus {
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 80, TILE_SIZE, TILE_SIZE, pass.x, pass.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 80)
     }
   }
   return pass
@@ -260,7 +260,7 @@ function InvertBonus (props:BonusProps) : Bonus {
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 96, TILE_SIZE, TILE_SIZE, invert.x, invert.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 96)
     }
   }
   return invert
@@ -279,10 +279,41 @@ function KillBonus (props:BonusProps) : Bonus {
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 112, TILE_SIZE, TILE_SIZE, kill.x, kill.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 112)
     }
   }
   return kill
+}
+
+// Reaproveita os spritesheets originais (16x16) e muda APENAS a aparência
+// dos power-ups infectados. O resultado é igual em todos os clientes, porque
+// a mutação do item vem do servidor no mapa da rodada.
+function renderBonusSprite (
+  context:CanvasRenderingContext2D,
+  props:BonusProps,
+  spriteY:number
+) {
+  const { x, y, mutation } = props
+
+  if (!isInfectedBonus(mutation)) {
+    context.drawImage(Assets.bonusSprite, 0, spriteY, TILE_SIZE, TILE_SIZE, x, y, TILE_SIZE, TILE_SIZE)
+    return
+  }
+
+  context.save()
+  // Descoloração e tom roxo: mantém a silhueta e os pixels do sprite original.
+  context.filter = 'grayscale(1) sepia(1) hue-rotate(225deg) saturate(5) contrast(1.4)'
+  context.drawImage(Assets.bonusSprite, 0, spriteY, TILE_SIZE, TILE_SIZE, x, y, TILE_SIZE, TILE_SIZE)
+  context.filter = 'none'
+
+  // Glitches em pixels para diferenciar o vírus até em sprites claros.
+  context.fillStyle = '#fc39bb'
+  context.fillRect(x, y, 4, 2)
+  context.fillRect(x + TILE_SIZE - 3, y + 7, 3, 2)
+  context.fillStyle = '#9bff59'
+  context.fillRect(x + TILE_SIZE - 4, y, 4, 2)
+  context.fillRect(x, y + TILE_SIZE - 3, 3, 2)
+  context.restore()
 }
 
 function collided (state:GameState, bonus:Bonus, callback:()=>void) {

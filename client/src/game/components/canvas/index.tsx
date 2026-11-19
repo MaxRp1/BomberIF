@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FRANK_SPRITE_ID, OVERCLOCK_DETONATION_MULTIPLIER, STUN_COOLDOWN_MS } from '#/constants'
-import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmResultDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
+import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmResultDTO, KickImpactDTO, KickStunDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
 import { BlocksFactory } from '~/game/entities/block'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { EntitiesFactory } from '~/game/entities/factory'
@@ -179,7 +179,25 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     const bomb = state.entities.get(dto.i) as Bomb | undefined
     // Pacotes podem chegar depois de a bomba explodir por cascata.
     if (!bomb?.armed) return
-    bomb.startMove(dto.s, state)
+    bomb.startMove(dto.s, state, dto.k ?? 'normal', dto.p)
+  }
+
+  function onKickImpact (dto:KickImpactDTO) {
+    if (!state) return
+    const bomb = state.entities.get(dto.i) as Bomb | undefined
+    if (!bomb?.armed) return
+    // O cliente que chutou já detonou localmente. Os demais replicam
+    // a mesma posição final do impacto, sem depender da própria simulação.
+    bomb.x = dto.x
+    bomb.y = dto.y
+    bomb.moving = false
+    bomb.flinging = false
+    bomb.detonate(state)
+  }
+
+  function onKickStun (dto:KickStunDTO) {
+    if (!state || dto.p === myself) return // autor já aplicou o stun local
+    state.players.players[dto.p]?.applyStun(1000)
   }
 
   function onHoldBomb (dto:HoldBombDTO) {
@@ -300,6 +318,8 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     socket.on('mv', onMove)
     socket.on('pb', onPlaceBomb)
     socket.on('mb', onMoveBomb)
+    socket.on('kick_impact', onKickImpact)
+    socket.on('kick_stun', onKickStun)
     socket.on('hb', onHoldBomb)
     socket.on('fb', onFlingBomb)
     socket.on('nb', onNullifyBlock)
@@ -316,6 +336,8 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       socket.off('mv', onMove)
       socket.off('pb', onPlaceBomb)
       socket.off('mb', onMoveBomb)
+      socket.off('kick_impact', onKickImpact)
+      socket.off('kick_stun', onKickStun)
       socket.off('hb', onHoldBomb)
       socket.off('fb', onFlingBomb)
       socket.off('nb', onNullifyBlock)

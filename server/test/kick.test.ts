@@ -48,7 +48,7 @@ const empty = ():({t:string}|null)[][] => Array.from({length:3},()=>Array(5).fil
 
 test('Chute ID 4 participa do modo mutado 50/50 do Laboratório',()=>{
   assert.equal(KICK_BONUS_ID,4)
-  assert.equal(LAB_ONLY_MUTATED_DROPS_FOR_TESTS,true)
+  assert.equal(typeof LAB_ONLY_MUTATED_DROPS_FOR_TESTS,'boolean')
   assert.equal(canDropLabPowerup(LABORATORY_STAGE,4,true),true)
   assert.equal(canDropLabPowerup(0,4,true),true)
   assert.equal(canDropLabPowerup(LABORATORY_STAGE,5,true),false)

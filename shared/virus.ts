@@ -1,7 +1,7 @@
 import { BlockDTO, SIDES } from './dto'
 
 // Power-ups com mutação implementada no Laboratório: Função Linear,
-// Troca de Dados, Chute, Grafo e IHM.
+// Troca de Dados, Chute, Firewall, Grafo e IHM.
 export const LABORATORY_STAGE = 1 // sprite 1.png: laboratório (0 = campo, 2 = refeitório)
 export const LINEAR_BUFF_AMOUNT = 3
 export const LINEAR_VIRUS_DURATION_MS = 10000
@@ -9,19 +9,21 @@ export const LINEAR_NOTICE_DURATION_MS = 2500
 export const HOLD_BONUS_ID = 3
 export const KICK_BONUS_ID = 4
 export const KICK_VIRUS_STUN_MS = 1000
+export const FIREWALL_BONUS_ID = 7
+export const FIREWALL_EFFECT_DURATION_MS = 6000
 export const GRAPH_BONUS_ID = 8
 export const IHM_BONUS_ID = 9
 
 // MODO TEMPORÁRIO DE TESTES DESTA BRANCH.
-// true: o Lab dropa SOMENTE os cinco power-ups já mutáveis,
+// true: o Lab dropa SOMENTE os seis power-ups já mutáveis,
 //       todos com sprite misterioso e chance 50/50 de buff ou vírus.
 // false: restaura TODO o pool de itens e a distribuição original
-//        de 50% normal, 25% buff e 25% vírus nos cinco itens.
+//        de 50% normal, 25% buff e 25% vírus nos seis itens.
 export const LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true
 
 export function isLabMutatablePowerup(id:number): boolean {
   return id === 2 || id === HOLD_BONUS_ID || id === KICK_BONUS_ID ||
-    id === GRAPH_BONUS_ID || id === IHM_BONUS_ID
+    id === FIREWALL_BONUS_ID || id === GRAPH_BONUS_ID || id === IHM_BONUS_ID
 }
 
 export function canDropLabPowerup(
@@ -38,6 +40,28 @@ export const HOLD_BUFF_SPEED_MULTIPLIER = 1.2
 export const HOLD_VIRUS_SPEED_MULTIPLIER = 0.4
 
 export type LinearMutation = 'normal' | 'buff' | 'virus'
+
+// Firewall normal mantém a travessia geral original de 6 segundos.
+// Buff acrescenta imunidade a explosões; vírus atravessa apenas
+// blocos destrutíveis, sem atravessar paredes sólidas, bombas ou bordas.
+export function firewallPickupMode(
+  stage:number,
+  mutation:LinearMutation|undefined
+):LinearMutation {
+  return stage === LABORATORY_STAGE ? (mutation ?? 'normal') : 'normal'
+}
+
+export function firewallExplosionImmune(
+  mode:LinearMutation|null, until:number, now:number
+):boolean {
+  return mode === 'buff' && now < until
+}
+
+export function firewallPassesDestructible(
+  mode:LinearMutation|null, until:number, now:number
+):boolean {
+  return mode === 'virus' && now < until
+}
 
 // O sprite modificado indica somente que existe uma mutação;
 // a aparência não revela se o resultado oculto será buff ou debuff.

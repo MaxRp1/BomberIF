@@ -1,6 +1,7 @@
 import { Server } from 'socket.io'
 import { FRANK_SPRITE_ID } from '#/constants'
-import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmPickupDTO, IhmResultDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO } from '#/dto'
+import { KICK_VIRUS_STUN_MS } from '#/virus'
+import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmPickupDTO, IhmResultDTO, KickImpactDTO, KickStunDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO } from '#/dto'
 import { Socket } from '~/extends'
 import { claimIhmPickup, registerDefeat } from '~/ranking'
 
@@ -26,8 +27,47 @@ export function onPlaceBomb (io:Server, socket:Socket, dto:PlaceBombDTO) {
 }
 
 export function onMoveBomb (io:Server, socket:Socket, dto:MoveBombDTO) {
-  dto.p = socket.data.index
-  io.to(socket.data.roomId).emit('mb', dto)
+  const roomId = socket.data.roomId
+  if (!dto || typeof dto.i !== 'string' || !dto.i || !['U','D','L','R'].includes(dto.s)) return
+  if (!roomId || !socket.connected || !socket.rooms.has(roomId)) return
+  if (socket.data.alive !== true || isStunned(socket)) return
+
+  const mode = dto.k === 'buff' || dto.k === 'virus' ? dto.k : undefined
+  // Quem chuta pode não ser o dono original da bomba. O servidor
+  // sempre atribui o índice correto ao evento, ignorando dto.p.
+  const move:MoveBombDTO = {i:dto.i, p:socket.data.index, s:dto.s, k:mode}
+  if (mode === 'buff') {
+    if (!socket.data.pendingKickImpacts) socket.data.pendingKickImpacts = new Set<string>()
+    socket.data.pendingKickImpacts.add(dto.i)
+  }
+  io.to(roomId).emit('mb', move)
+
+  if (mode === 'virus') {
+    // Registra o stun também no servidor: movimento/bombas ficam bloqueados
+    // por 1 segundo, e a mesma indicação é enviada a todas as telas.
+    socket.data.stunnedUntil = Math.max(
+      socket.data.stunnedUntil ?? 0,
+      Date.now() + KICK_VIRUS_STUN_MS
+    )
+    const stun:KickStunDTO = {p:socket.data.index}
+    io.to(roomId).emit('kick_stun', stun)
+  }
+}
+
+// Apenas quem iniciou um chute buff pode anunciar o impacto da bomba.
+// A autorização é de uso único e expira no início da próxima rodada.
+export function onKickImpact (io:Server, socket:Socket, dto:KickImpactDTO) {
+  const roomId = socket.data.roomId
+  if (!dto || typeof dto.i !== 'string' || !dto.i) return
+  if (!roomId || !socket.connected || !socket.rooms.has(roomId)) return
+  const pending: Set<string>|undefined = socket.data.pendingKickImpacts
+  if (!pending?.has(dto.i)) return
+  if (!Number.isFinite(dto.x) || !Number.isFinite(dto.y) ||
+      dto.x < 16 || dto.x > 208 || dto.y < 16 || dto.y > 176 ||
+      dto.x % 16 !== 0 || dto.y % 16 !== 0) return
+
+  pending.delete(dto.i)
+  io.to(roomId).emit('kick_impact', {i:dto.i, x:dto.x, y:dto.y} as KickImpactDTO)
 }
 
 export function onHoldBomb (io:Server, socket:Socket, dto:HoldBombDTO) {

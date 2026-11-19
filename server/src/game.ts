@@ -48,7 +48,7 @@ export function onNullifyBlock (io:Server, socket:Socket, dto:NullifyBlockDTO) {
 
 // A variante do IHM e o alvo da morte são decididos exclusivamente
 // pelo servidor; o cliente transmite apenas a posição do item coletado.
-export function onIhmPickup(io:Server, socket:Socket, dto:IhmPickupDTO) {
+export function onIhmPickup(io:Server, socket:Socket, dto:IhmPickupDTO, random:()=>number = Math.random) {
   const roomId = socket.data.roomId
   if (typeof roomId !== 'string' || !roomId) return
   if (!socket.connected || !socket.rooms.has(roomId)) return
@@ -58,7 +58,7 @@ export function onIhmPickup(io:Server, socket:Socket, dto:IhmPickupDTO) {
   const targetId = claimIhmPickup(
     roomId, socket.id, dto.a,
     socket.data.playerX, socket.data.playerY,
-    Math.random()
+    random()
   )
   if (!targetId) return
 

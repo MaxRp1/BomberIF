@@ -1,5 +1,5 @@
 import { Server } from 'socket.io'
-import { assignLabPowerupMutations, LABORATORY_STAGE } from '#/virus'
+import { assignLabPowerupMutations, canDropLabPowerup, LABORATORY_STAGE, LAB_ONLY_MUTATED_DROPS_FOR_TESTS } from '#/virus'
 import { BLASTS, BOMBS, BONUS, BONUSES, INITIAL_POSITION, SPRITES } from '#/constants'
 import {
   BlockDTO,
@@ -138,19 +138,22 @@ function slowFloorsFactory (
 
 // estabelece o estado inicial do jogo
 function stateFactory () : GameStateDTO {
-  const blocks = bonusFactory(blocksFactory())
-
-  const blast = Math.floor(Math.random() * BLASTS)
-  const bomb = Math.floor(Math.random() * BOMBS)
-  const bonus = Math.floor(Math.random() * BONUS)
   // Configuração temporária DESTA BRANCH de desenvolvimento:
   // manter apenas o Laboratório durante a implementação/testes.
   // A branch main continua com sorteio aleatório dos três cenários.
   const stage: number = LABORATORY_STAGE
 
-  // O laboratório sorteia as mutações de Função Linear, Troca de Dados,
-  // Grafo e IHM uma única vez e compartilha o resultado com toda a sala.
-  assignLabPowerupMutations(blocks, stage)
+  // No modo de testes, SOMENTE itens com mutações implementadas são
+  // distribuídos pelo mapa. Fora desse modo, todo o pool original volta.
+  const blocks = bonusFactory(blocksFactory(), stage)
+
+  const blast = Math.floor(Math.random() * BLASTS)
+  const bomb = Math.floor(Math.random() * BOMBS)
+  const bonus = Math.floor(Math.random() * BONUS)
+
+  // Modo de testes: 100% dos itens elegíveis são mutados, metade buff
+  // e metade vírus. O valor false devolve 50% normal / 25% / 25%.
+  assignLabPowerupMutations(blocks, stage, Math.random, LAB_ONLY_MUTATED_DROPS_FOR_TESTS)
 
   const slowFloors =
     stage === CAFETERIA_STAGE
@@ -199,12 +202,18 @@ function blocksFactory () : (BlockDTO|null)[][] {
   return blocks
 }
 // distribui (ao menos tenta) os bônus aleatoriamente entre os blocos destrutíveis
-function bonusFactory (blocks:(BlockDTO|null)[][]) : (BlockDTO|null)[][] {
+function bonusFactory (
+  blocks:(BlockDTO|null)[][],
+  stage:number
+) : (BlockDTO|null)[][] {
   const positions:number[][] = []
   blocks.forEach((row,i) => row.forEach((block,j) => {
     if (block && block.t === 'D') positions.push([i, j])
   }))
   for (let bonus = 1; bonus < BONUSES.length; bonus++) {
+    // Exclusivamente para facilitar testes no Lab: não gerar itens
+    // sem mutação implementada. Desligar a flag restaura o pool normal.
+    if (!canDropLabPowerup(stage, bonus)) continue
     for (let quantity = BONUSES[bonus]; quantity > 0; quantity--) {
       const where = Math.floor(Math.random() * positions.length)
       blocks[positions[where][0]][positions[where][1]]!.b = bonus as BlockDTO['b']

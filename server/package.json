@@ -18,7 +18,8 @@
     "test:ihm": "ts-node --transpile-only -r tsconfig-paths/register test/ihm.test.ts",
     "test:kick": "ts-node --transpile-only -r tsconfig-paths/register test/kick.test.ts",
     "test:firewall": "ts-node --transpile-only -r tsconfig-paths/register test/firewall.test.ts",
-    "typecheck": "tsc --noEmit --project tsconfig.json"
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test:signal": "ts-node --transpile-only -r tsconfig-paths/register test/signal.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

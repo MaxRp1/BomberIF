@@ -1,10 +1,14 @@
 import { BlockDTO } from './dto'
 
-// Laboratório: mutações exclusivas do power-up Função Linear (bônus 2).
+// Mutações exclusivas do Laboratório: Função Linear (2) e Troca de Dados (3).
 export const LABORATORY_STAGE = 1 // sprite 1.png: laboratório (0 = campo, 2 = refeitório)
 export const LINEAR_BUFF_AMOUNT = 3
 export const LINEAR_VIRUS_DURATION_MS = 10000
 export const LINEAR_NOTICE_DURATION_MS = 2500
+export const HOLD_BONUS_ID = 3
+export const INITIAL_BOMB_REACH = 2
+export const HOLD_BUFF_SPEED_MULTIPLIER = 1.2
+export const HOLD_VIRUS_SPEED_MULTIPLIER = 0.4
 
 export type LinearMutation = 'buff' | 'virus'
 
@@ -27,7 +31,9 @@ export function assignLabLinearMutations(
 
   for (const row of blocks) {
     for (const block of row) {
-      if (block?.b === 2) block.mutation = chooseLinearMutation(random())
+      if (block?.b === 2 || block?.b === HOLD_BONUS_ID) {
+        block.mutation = chooseLinearMutation(random())
+      }
     }
   }
 }
@@ -68,7 +74,7 @@ export function fillMissingLabLinearMutations(
   for (let row = 0; row < blocks.length; row++) {
     for (let column = 0; column < blocks[row].length; column++) {
       const block = blocks[row][column]
-      if (block?.b !== 2) continue
+      if (block?.b !== 2 && block?.b !== HOLD_BONUS_ID) continue
       if (block.mutation === 'buff' || block.mutation === 'virus') continue
       block.mutation = fallbackLinearMutation(roomId, row, column)
       repaired++
@@ -76,6 +82,43 @@ export function fillMissingLabLinearMutations(
   }
   return repaired
 }
+
+// A última Troca de Dados coletada define o modo de carregamento na rodada.
+export function holdPickupMutation(
+  stage: number,
+  mutation: LinearMutation | undefined
+): LinearMutation | null {
+  if (stage !== LABORATORY_STAGE) return null
+  return mutation === 'virus' ? 'virus' : 'buff'
+}
+
+export function carrySpeedMultiplier(
+  mutation: LinearMutation | null,
+  holding: boolean
+): number {
+  if (!holding) return 1
+  if (mutation === 'buff') return HOLD_BUFF_SPEED_MULTIPLIER
+  if (mutation === 'virus') return HOLD_VIRUS_SPEED_MULTIPLIER
+  return 1
+}
+
+export function canPickUpBomb(
+  mutation: LinearMutation | null,
+  holderIndex: number,
+  ownerIndex: number
+): boolean {
+  return mutation === 'buff' || holderIndex === ownerIndex
+}
+
+export function reachAfterFling(
+  mutation: LinearMutation | null,
+  originalReach: number
+): number {
+  return mutation === 'virus' ? INITIAL_BOMB_REACH : originalReach
+}
+
+export const assignLabPowerupMutations = assignLabLinearMutations
+export const fillMissingLabPowerupMutations = fillMissingLabLinearMutations
 
 // O alcance base acumula bônus; a supressão é apenas uma sobreposição
 // temporária. Pegar +3 durante o vírus não elimina nem perde o bônus.

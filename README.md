@@ -48,7 +48,29 @@ Continuidade e desenvolvimento atual
 
 Responsável pela manutenção e continuidade deste fork, incluindo a implementação de novas funcionalidades, correções, recursos visuais e documentação técnica.
 
-Como rodar localmente
+Como rodar com Docker (recomendado)
+
+Na raiz do repositório, basta executar:
+
+docker compose up --build 
+
+Depois acesse:
+
+http://localhost:3000/BomberIF 
+
+O backend fica disponível em http://localhost:4000. Para acompanhar os logs:
+
+docker compose logs -f 
+
+Para derrubar os containers:
+
+docker compose down 
+
+O Compose sobe dois serviços: client (CRA/CRACO na porta 3000) e server (bundle Node na porta 4000). O build usa o diretório `shared/` de ambos, e o cliente aponta para o backend através de `REACT_APP_SERVER_URL`. Dentro do Docker o HTTPS do dev server é desativado (`DISABLE_HTTPS=1`), então não é necessário gerar certificados com mkcert.
+
+Se alguma porta já estiver ocupada, crie um arquivo `.env` na raiz com `CLIENT_PORT=3001` e/ou `SERVER_PORT=4001` e rode `docker compose up --build` novamente (o CORS já aceita qualquer origem quando `DOCKER=1`). Para acessar de outra máquina, ajuste `REACT_APP_SERVER_URL` no `docker-compose.yml` para o IP/host onde o backend está exposto.
+
+Como rodar localmente (sem Docker)
 
 Preparativos
 

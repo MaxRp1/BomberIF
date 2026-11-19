@@ -1,0 +1,9 @@
+**/node_modules
+**/build
+**/.cache
+.git
+.gitignore
+.vscode
+doc
+site
+*.md

@@ -8,6 +8,9 @@ export const PAGES = {
   HELP: '/help'
 }
 
-export const SERVER_URL = ONDEV
-  ? 'https://localhost:4000'
-  : 'https://bomberif-azij.onrender.com'
+// REACT_APP_SERVER_URL permite apontar o cliente para outro backend
+// (ex.: http://localhost:4000 quando rodando via Docker Compose).
+export const SERVER_URL = process.env.REACT_APP_SERVER_URL ||
+  (ONDEV
+    ? 'https://localhost:4000'
+    : 'https://bomberif-azij.onrender.com')

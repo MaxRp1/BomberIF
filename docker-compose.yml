@@ -1,0 +1,33 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: bomberif-server
+    environment:
+      PORT: 4000
+      DOCKER: "1"
+    ports:
+      # Sobrescreva com SERVER_PORT no .env se a porta 4000 estiver ocupada
+      - "${SERVER_PORT:-4000}:4000"
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: bomberif-client
+    environment:
+      # CRA/CRACO: desliga o HTTPS do dev server (evita depender de mkcert)
+      DISABLE_HTTPS: "1"
+      HOST: 0.0.0.0
+      PORT: 3000
+      BROWSER: "none"
+      # URL do backend vista pelo navegador (porta publicada no host)
+      REACT_APP_SERVER_URL: http://localhost:${SERVER_PORT:-4000}
+    ports:
+      # Sobrescreva com CLIENT_PORT no .env se a porta 3000 estiver ocupada
+      - "${CLIENT_PORT:-3000}:3000"
+    depends_on:
+      - server
+    restart: unless-stopped

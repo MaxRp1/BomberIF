@@ -18,6 +18,8 @@ export const CORS = {
     origin: string | undefined,
     callback: (err: Error | null, allow?: boolean) => void
   ) => {
+    // Em Docker o cliente pode vir de outra porta/host (ex.: CLIENT_PORT customizado)
+    if (process.env.DOCKER === '1') return callback(null, true)
     if (!origin) return callback(null, true)
 
     console.log('ORIGIN RECEBIDA:', origin)

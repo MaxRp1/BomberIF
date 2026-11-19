@@ -1,4 +1,4 @@
-import { MAX_SPEED, SPEED, TILE_SIZE } from '#/constants'
+import { MAX_SPEED, TILE_SIZE } from '#/constants'
 import { LinearMutation, firewallPickupMode, isMutatedBonus } from '#/virus'
 import { applyLinearPickup, holdPickupMutation, kickPickupMutation, LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS } from '#/virus'
 import { PassFactory } from '~/game/entities/pass'
@@ -155,6 +155,9 @@ function HoldBonus (props:BonusProps) : Bonus {
       collided(state, hold, () => {
         const player = state.players.myself!
         player.hold = true
+        // Uma nova coleta de Troca de Dados restabelece seu próprio buff
+        // de velocidade caso o vírus Download Limitado o tenha apagado.
+        player.holdSpeedBuffSuppressed = false
         player.holdMutation = holdPickupMutation(state.stage.name, props.mutation)
         if (player.holdMutation === 'buff' || player.holdMutation === 'virus') {
           player.holdNotice = player.holdMutation
@@ -226,7 +229,7 @@ function SlowBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, slow, () => {
-        state.players.myself!.speed = SPEED - 0.1
+        state.players.myself!.applySignalBonus(state.stage.name, props.mutation)
       })
     },
     render: (context:CanvasRenderingContext2D) => {

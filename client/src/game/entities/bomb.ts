@@ -119,6 +119,11 @@ function detonate (this:Bomb, state:GameState) {
   if (!this.armed) return
   this.armed = false
   this.detonated = true
+  // Uma bomba pode explodir pelo timer enquanto ainda desliza.
+  // Não continuar movendo a animação nem recolocar uma bomba já detonada
+  // no mapa depois da explosão (especialmente no chute com vírus).
+  this.moving = false
+  this.flinging = false
   this.removeTime = Date.now() + 500
   // O retorno da bomba ao arsenal do dono não depende mais do timer.
   if (this.player) this.player.bombs++

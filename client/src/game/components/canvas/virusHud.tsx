@@ -53,15 +53,29 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
   const infected = now < player.linearVirusUntil
   const linearNotice = now < player.linearNoticeUntil ? player.linearNotice : null
   const holdNotice = now < player.holdNoticeUntil ? player.holdNotice : null
+  const graphMode = player.invertedUntilDeath
+    ? 'virus'
+    : now < player.boostedUntil ? 'buff'
+    : now < player.graphNoticeUntil ? player.graphNotice : null
   const showHold = !infected && !!holdNotice &&
     (!linearNotice || player.holdNoticeUntil >= player.linearNoticeUntil)
-  if (!infected && !linearNotice && !holdNotice) return null
+  const showGraph = !infected && !linearNotice && !holdNotice && !!graphMode
+  if (!infected && !linearNotice && !holdNotice && !graphMode) return null
 
   const seconds = Math.ceil(Math.max(0, player.linearVirusUntil - now) / 1000)
-  const negative = infected || (showHold ? holdNotice === 'virus' : linearNotice === 'virus')
+  const graphSeconds = Math.ceil(Math.max(0, player.boostedUntil - now) / 1000)
+  const negative = infected || (showGraph ? graphMode === 'virus'
+    : showHold ? holdNotice === 'virus' : linearNotice === 'virus')
   return (
     <Panel $negative={negative}>
-      {showHold
+      {showGraph
+        ? <>
+            <strong>{graphMode === 'buff' ? 'GRAFO: +50% VELOCIDADE!' : 'GRAFO: VÍRUS!'}</strong>
+            <span>{graphMode === 'buff'
+              ? `Controles invertidos · ${graphSeconds}s restantes`
+              : 'Controles invertidos até morrer'}</span>
+          </>
+        : showHold
         ? <>
             <strong>{holdNotice === 'buff' ? 'TROCA DE DADOS: BUFF!' : 'TROCA DE DADOS: VÍRUS!'}</strong>
             <span>{holdNotice === 'buff'

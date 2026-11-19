@@ -1,6 +1,6 @@
 import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
-import { LinearMutation, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, graphControlsInverted, graphSpeedMultiplier, invertGraphDirection, reachAfterFling } from '#/virus'
+import { LinearMutation, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, reachAfterFling } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
@@ -318,12 +318,10 @@ function refreshMovement (this:Player) {
     if (this.gamepadDirection) inputs.push(this.gamepadDirection)
   }
 
-  this.movingSide = { U:false, D:false, L:false, R:false }
-  for (const input of inputs) {
-    this.movingSide[invertGraphDirection(input, inverted)] = true
-  }
-  this.moving = inputs.length ? 1 : 0
-  if (inputs.length) this.side = invertGraphDirection(inputs[inputs.length - 1], inverted)
+  const movement = graphHeldMovement(inputs, inverted)
+  this.movingSide = movement.movingSide
+  this.moving = movement.moving
+  if (movement.side) this.side = movement.side
 
   if (this.myself && previousMoving && !this.moving) {
     emitMove({ h:this.holding, m:0, p:this.index, s:this.side, x:this.x, y:this.y, v:this.speedMultiplier })

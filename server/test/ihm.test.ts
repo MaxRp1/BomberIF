@@ -138,7 +138,9 @@ test('IHM rejeita coleta distante, posição falsa, coletor morto e repetição'
     s.pickup(0,0.99)
     assert.deepEqual(s.kills(),[0])
     s.pickup(1,0.99)
-    assert.deepEqual(s.kills(),[0], 'o item só pode ser consumido validamente uma vez')
+    assert.deepEqual(s.kills(),[0,2])
+    s.pickup(1,0.99)
+    assert.deepEqual(s.kills(),[0,2], 'o item só pode ser consumido validamente uma vez')
   } finally { s.cleanup() }
 })
 

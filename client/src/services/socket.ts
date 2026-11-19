@@ -1,5 +1,5 @@
 import io from 'socket.io-client'
-import { CallAnswerDTO, CallOfferDTO, CharacterSelectionDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, IhmPickupDTO, JoinRoomDTO, KillDTO, LobbyReadyDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
+import { CallAnswerDTO, CallOfferDTO, CharacterSelectionDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, IhmPickupDTO, JoinRoomDTO, KickImpactDTO, KillDTO, LobbyReadyDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
 import { SERVER_URL } from '~/constants'
 
 export const socket = io(SERVER_URL)
@@ -70,6 +70,11 @@ export function emitKill (dto:KillDTO) {
 
 export function emitMove (dto:MoveDTO) {
   socket.emit('mv', dto)
+}
+
+// O impacto só é anunciado por quem iniciou o chute buff.
+export function emitKickImpact (dto:KickImpactDTO) {
+  socket.emit('kick_impact', dto)
 }
 
 export function emitMoveBomb (dto:MoveBombDTO) {

@@ -53,22 +53,32 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
   const infected = now < player.linearVirusUntil
   const linearNotice = now < player.linearNoticeUntil ? player.linearNotice : null
   const holdNotice = now < player.holdNoticeUntil ? player.holdNotice : null
+  const kickNotice = now < player.kickNoticeUntil ? player.kickNotice : null
   const graphMode = player.invertedUntilDeath
     ? 'virus'
     : now < player.boostedUntil ? 'buff'
     : now < player.graphNoticeUntil ? player.graphNotice : null
-  const showHold = !infected && !!holdNotice &&
+  const showKick = !!kickNotice
+  const showHold = !showKick && !infected && !!holdNotice &&
     (!linearNotice || player.holdNoticeUntil >= player.linearNoticeUntil)
-  const showGraph = !infected && !linearNotice && !holdNotice && !!graphMode
-  if (!infected && !linearNotice && !holdNotice && !graphMode) return null
+  const showGraph = !showKick && !infected && !linearNotice && !holdNotice && !!graphMode
+  if (!infected && !linearNotice && !holdNotice && !graphMode && !kickNotice) return null
 
   const seconds = Math.ceil(Math.max(0, player.linearVirusUntil - now) / 1000)
   const graphSeconds = Math.ceil(Math.max(0, player.boostedUntil - now) / 1000)
-  const negative = infected || (showGraph ? graphMode === 'virus'
-    : showHold ? holdNotice === 'virus' : linearNotice === 'virus')
+  const negative = showKick ? kickNotice === 'virus' : infected ||
+    (showGraph ? graphMode === 'virus'
+      : showHold ? holdNotice === 'virus' : linearNotice === 'virus')
   return (
     <Panel $negative={negative}>
-      {showGraph
+      {showKick
+        ? <>
+            <strong>{kickNotice === 'buff' ? 'CHUTE: IMPACTO EXPLOSIVO!' : 'CHUTE: VÍRUS!'}</strong>
+            <span>{kickNotice === 'buff'
+              ? 'Bomba avança até um limite e explode ao chegar'
+              : 'Chute normal · timer não reinicia · stun de 1 segundo'}</span>
+          </>
+        : showGraph
         ? <>
             <strong>{graphMode === 'buff' ? 'GRAFO: +50% VELOCIDADE!' : 'GRAFO: VÍRUS!'}</strong>
             <span>{graphMode === 'buff'

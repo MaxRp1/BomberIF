@@ -10443,3 +10443,22 @@ yarn build
 **Arquivos:** `shared/virus.ts` (ID e helper de sorteio), `shared/dto.ts` (ID 9 e mensagens), `server/src/factory.ts` (estado de mapa no ranking), `server/src/ranking.ts` (itens consumíveis e conjunto de sobreviventes), `server/src/game.ts` + `server/src/ioListener.ts` (validação, morte e eventos), `client/src/game/entities/bonus.ts` (coleta), `client/src/game/components/canvas/index.tsx` (vítima local), `client/src/services/socket.ts` (envio), `server/test/ihm.test.ts` (regressão), `server/package.json` (comando `yarn test:ihm`), tabela e descrição do Laboratório no GDD. A tabela geral do GDD permanece com o IHM original.
 
 **Testes obrigatórios no Kali:** `cd server && yarn test:ihm && yarn test:virus && yarn test:ranking && yarn build`; `cd ../client && yarn build`. Em jogo, verificar IHM normal, buff e debuff; com 1, 2 e 3+ sobreviventes, confirmar possibilidade de eliminar o coletor, nenhum alvo já morto, resultado igual para todos, sem mortes duplas com cliques/rede, vitória e ranking correto, e comportamento clássico fora do Laboratório. As configurações atuais da branch forçam apenas o Laboratório; restaurar os três mapas antes do merge.
+
+
+### MODO TEMPORÁRIO DE TESTES — APENAS POWER-UPS MUTADOS NO LABORATÓRIO — 19/11/2026
+
+**Escopo:** **somente a branch `feat/lab-data-transfer-virus-2026-11-18`**, PR #14 em rascunho e **sem merge/deploy**. A `main` não foi alterada e mantém as regras existentes. Esta é uma configuração temporária de teste do Laboratório, **não** uma alteração do design final do GDD.
+
+**Interruptor único:** `shared/virus.ts` → `export const LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true`. Esta flag controla simultaneamente a seleção dos itens distribuídos no mapa, o sorteio do servidor e o fallback determinístico de clientes com dados incompletos. **Para restaurar a distribuição original**, mudar somente para `false`; não é preciso voltar commits ou reescrever os mutadores. Antes de mesclar a branch, restaurar também a escolha aleatória das três arenas em `server/src/factory.ts` (atualmente estágio 1 forçado).
+
+**Configuração com a flag `true` (atual para testes):**
+- No Laboratório, `server/src/factory.ts` passa a gerar **apenas os power-ups com mutações implementadas**: **Função Linear (2), Troca de Dados (3), Grafo (8) e IHM (9)**. Os demais IDs não aparecem no mapa temporariamente.
+- Cada instância dos quatro itens tem **100% de chance de receber mutação**, com **50% buff / 50% vírus**. Não há item `normal` desses tipos enquanto o modo está ligado; portanto, todos têm o **mesmo sprite misterioso** que oculta a polaridade da mutação.
+- Os efeitos já definidos dos buffs e debuffs **não mudam**. O backend é a autoridade do sorteio, inclusive para as mutações do IHM.
+- Os cenários Campo e Refeitório continuam fora desse filtro. A branch de testes está forçando somente o Laboratório, mas o filtro foi explicitamente limitado ao `LABORATORY_STAGE`.
+
+**Configuração com a flag `false` (restauração):** volta o pool inteiro dos nove tipos de power-up, preservando a quantidade definida em `shared/constants.ts` → `BONUSES`. Os quatro itens que admitem mutações voltam à regra pretendida: **50% normal / 25% buff / 25% vírus**; os demais seguem tradicionais. O sprite original continua exclusivo das versões normais.
+
+**Implementação:** `shared/virus.ts` declara a flag, `isLabMutatablePowerup`, `canDropLabPowerup`, `chooseLinearMutation(roll, onlyMutated)` e os parâmetros opcionais de modo em `assignLabPowerupMutations`, `fallbackLinearMutation` e `fillMissingLabPowerupMutations`. `server/src/factory.ts` escolhe o estágio **antes** de distribuir os itens, aplica o filtro e passa a flag ao sorteio do servidor. `client/src/game/components/canvas/index.tsx` passa a mesma flag ao fallback, garantindo que clientes desatualizados não inventem um item saudável em modo de teste. `server/test/virus.test.ts` cobre ambos os modos e a reversibilidade.
+
+**Validar no Kali:** `cd server && yarn test:virus && yarn test:ihm && yarn test:ranking && yarn build`; depois `cd ../client && yarn build`. Conferir em partida que **nenhum** power-up sem mutação (IDs 1,4,5,6,7) apareça no Laboratório, que os quatro IDs elegíveis sempre tenham sprite misterioso e que os resultados ocorram em ambas as polaridades. Executar testes novamente após desligar a flag. **Os testes e builds deste novo modo ainda não foram executados no Kali.**

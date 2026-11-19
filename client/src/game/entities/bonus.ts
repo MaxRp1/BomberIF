@@ -6,7 +6,7 @@ import { GameState } from '~/game/entities/state'
 import { playBonusSound } from '~/game/sound/bonus'
 import { Assets } from '~/game/util/assets'
 import { isCollidingForced } from '~/game/util/collision'
-import { emitNullifyBlock } from '~/services/socket'
+import { emitIhmPickup, emitNullifyBlock } from '~/services/socket'
 
 interface BonusProps {
   axes  : [number, number]
@@ -279,7 +279,14 @@ function KillBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, kill, () => {
-        state.players.myself!.kill(true)
+        if (state.stage.name === LABORATORY_STAGE) {
+          // O cliente não decide a vítima: pode ser o coletor ou
+          // qualquer participante ainda vivo, conforme o sorteio do servidor.
+          emitIhmPickup({a:props.axes})
+        } else {
+          // Campo e Refeitório mantêm a morte imediata original.
+          state.players.myself!.kill(true)
+        }
       })
     },
     render: (context:CanvasRenderingContext2D) => {

@@ -1,6 +1,6 @@
 import { Server } from 'socket.io'
-import { assignLabPowerupMutations, LABORATORY_STAGE } from '#/virus'
-import { BLASTS, BOMBS, BONUS, BONUSES, INITIAL_POSITION, SPRITES } from '#/constants'
+import { assignLabPowerupMutations } from '#/virus'
+import { BLASTS, BOMBS, BONUS, BONUSES, INITIAL_POSITION, SPRITES, STAGES } from '#/constants'
 import {
   BlockDTO,
   GameStateDTO,
@@ -143,10 +143,9 @@ function stateFactory () : GameStateDTO {
   const blast = Math.floor(Math.random() * BLASTS)
   const bomb = Math.floor(Math.random() * BOMBS)
   const bonus = Math.floor(Math.random() * BONUS)
-  // Temporariamente, todas as rodadas usam o Laboratório enquanto
-  // implementamos e testamos as mutações dos power-ups e os personagens.
-  // Restaurar o sorteio de cenários após a conclusão dessa etapa.
-  const stage = LABORATORY_STAGE
+  // A seleção de cenário continua aleatória no repositório.
+  // Quem quiser fixar o Laboratório deve fazê-lo apenas no arquivo local da VM.
+  const stage = Math.floor(Math.random() * STAGES)
 
   // O laboratório define as mutações de Função Linear e Troca de Dados
   // uma única vez e compartilha os mesmos resultados com toda a sala.

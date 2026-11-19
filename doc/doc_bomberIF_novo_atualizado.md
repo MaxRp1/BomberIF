@@ -10424,3 +10424,22 @@ yarn build
 **Documentação relevante:** `shared/virus.ts`, `shared/dto.ts`, `server/src/factory.ts`, `client/src/game/entities/player.ts`, `client/src/game/entities/gamepad.ts`, `client/src/game/entities/bonus.ts`, `client/src/game/components/canvas/virusHud.tsx`, `server/test/virus.test.ts` e seção Laboratório do GDD. A tabela geral do GDD continua descrevendo o efeito normal da inversão por 10 segundos.
 
 **Validação necessária:** `cd server && yarn test:virus && yarn test:stun && yarn build`, `cd ../client && yarn build`; teste multiplayer com dois navegadores e controle físico, conferindo que as versões misteriosas mantêm o mesmo sprite e que os movimentos nunca ficam presos. A branch continua forçando apenas o Laboratório; restaurar o sorteio normal antes de mesclar na main.
+
+
+### IHM — SORTEIO DE ALVO ENTRE JOGADORES VIVOS (LABORATÓRIO) — 19/11/2026
+
+**Estado:** implementado exclusivamente na branch `feat/lab-data-transfer-virus-2026-11-18` do PR #14, ainda rascunho e **sem merge nem deploy**. Build e validação em partidas reais no Kali são pendências. O Laboratório segue temporariamente fixo apenas nessa branch.
+
+**Power-up:** IHM (ID **9**; função `KillBonus`). No Campo e Refeitório, continua com o efeito tradicional de morte do coletor. No Laboratório, participa do sorteio de três estados: `normal` com **50%** (sprite original), `buff` com **25%** e `virus` com **25%** (as duas variantes mutadas compartilham o mesmo sprite misterioso, sem identificar o resultado antes da coleta).
+
+- **Normal (50%):** morte de quem coleta, sem alterar a regra clássica do IHM.
+- **Buff mutado (25%):** o servidor sorteia **uniformemente um jogador entre todos os que estão vivos na rodada, incluindo quem coletou o IHM**, e elimina exatamente esse alvo. Com dois vivos, o coletor tem 50% de chance de morrer e o adversário tem 50% de chance de morrer **condicionados ao item ser o buff**. Com três vivos, cada um tem 1/3, etc. Jogadores mortos, desconectados ou já fora do ranking de vivos não participam.
+- **Debuff mutado (25%):** mesma morte imediata do coletor, sem efeitos adicionais.
+
+**Autoridade e multiplayer:** para coletar o IHM no Laboratório, o cliente transmite somente `IhmPickupDTO.a` (`[linha,coluna]`) via evento `ihm_pickup`. O servidor registra as posições e as mutações reais dos IHM no início da rodada, após o mapa ser montado. `claimIhmPickup` confere se a partida está ativa, o coletor está vivo e a posição coincide com um IHM não consumido do mapa; também compara as coordenadas do coletor com o item (tolerância para latência). A tentativa consome o item **uma única vez**. Para item normal ou vírus o servidor escolhe o coletor; para buff escolhe um participante do conjunto atual de sobreviventes com `chooseIhmVictim`. O cliente não decide o alvo nem altera o sorteio.
+
+**Eliminação e ranking:** `onIhmPickup` chama `registerDefeat(io, socketDaVitima)` no servidor; a vítima é marcada como não viva e o servidor emite `ihm_result` e `kl` para sincronização. O cliente da própria vítima usa `kill(false)` para reproduzir sua animação sem emitir uma segunda morte. Os demais espectadores recebem `kl` e a rodada termina pelo fluxo existente de vitória/empate e placar. Isso funciona mesmo que o buff elimine o coletor ou que haja apenas um sobrevivente. Fora do Laboratório, a coleta ainda chama `kill(true)` local, como antes.
+
+**Arquivos:** `shared/virus.ts` (ID e helper de sorteio), `shared/dto.ts` (ID 9 e mensagens), `server/src/factory.ts` (estado de mapa no ranking), `server/src/ranking.ts` (itens consumíveis e conjunto de sobreviventes), `server/src/game.ts` + `server/src/ioListener.ts` (validação, morte e eventos), `client/src/game/entities/bonus.ts` (coleta), `client/src/game/components/canvas/index.tsx` (vítima local), `client/src/services/socket.ts` (envio), `server/test/ihm.test.ts` (regressão), `server/package.json` (comando `yarn test:ihm`), tabela e descrição do Laboratório no GDD. A tabela geral do GDD permanece com o IHM original.
+
+**Testes obrigatórios no Kali:** `cd server && yarn test:ihm && yarn test:virus && yarn test:ranking && yarn build`; `cd ../client && yarn build`. Em jogo, verificar IHM normal, buff e debuff; com 1, 2 e 3+ sobreviventes, confirmar possibilidade de eliminar o coletor, nenhum alvo já morto, resultado igual para todos, sem mortes duplas com cliques/rede, vitória e ranking correto, e comportamento clássico fora do Laboratório. As configurações atuais da branch forçam apenas o Laboratório; restaurar os três mapas antes do merge.

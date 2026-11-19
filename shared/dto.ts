@@ -2,7 +2,7 @@ export type SIDES = 'U'|'L'|'D'|'R' // player side: up, left, down, right
 
 export interface BlockDTO {
   b ?: 1|2|3|4|5|6|7|8 // bonus item id
-  mutation ?: 'buff'|'virus' // Itens 2 e 3 no Laboratório; sorteio do servidor
+  mutation ?: 'normal'|'buff'|'virus' // IDs 2/3 no Lab: normal 50%, buff 25%, virus 25%
   t  : 'D'|'I'         // block type: destructible or indestructible
   x  : number          // block x position
   y  : number          // block y position

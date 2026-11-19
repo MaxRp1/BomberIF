@@ -1,6 +1,6 @@
 import { MAX_SPEED, SPEED, TILE_SIZE } from '#/constants'
 import { LinearMutation, isMutatedBonus } from '#/virus'
-import { applyLinearPickup, holdPickupMutation, LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS } from '#/virus'
+import { applyLinearPickup, holdPickupMutation, kickPickupMutation, LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS } from '#/virus'
 import { PassFactory } from '~/game/entities/pass'
 import { GameState } from '~/game/entities/state'
 import { playBonusSound } from '~/game/sound/bonus'
@@ -181,7 +181,14 @@ function KickBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, kick, () => {
-        state.players.myself!.kick = true
+        const player = state.players.myself!
+        player.kick = true
+        player.kickMutation = kickPickupMutation(state.stage.name, props.mutation)
+        player.kickNotice = isMutatedBonus(player.kickMutation)
+          ? (player.kickMutation === 'buff' ? 'buff' : 'virus')
+          : null
+        player.kickNoticeUntil = player.kickNotice
+          ? Date.now() + LINEAR_NOTICE_DURATION_MS : 0
       })
     },
     render: (context:CanvasRenderingContext2D) => {

@@ -39,6 +39,7 @@ export interface Bomb {
   moving        : boolean
   player       ?: Player
   playerIndex   : number
+  ownerIndex    : number // Dono original, mesmo após outro jogador segurar
   reach         : number
   removeTime    : number
   detonationMultiplier: number
@@ -67,6 +68,7 @@ export function BombFactory (props : BombProps) : Bomb {
     bomb.y = (props.axes[0] + 1) * TILE_SIZE || TILE_SIZE
   }
   bomb.anim = {frameCurrent:0, lastRender:0, sum:true}
+  bomb.ownerIndex = props.playerIndex
   bomb.armed = true
   bomb.detonated = false
   bomb.detonationMultiplier = props.detonationMultiplier ??
@@ -382,7 +384,12 @@ function moveLeft (this:Bomb, state:GameState) {
 }
 
 function setHolding (this:Bomb, playerIndex:number, state:GameState) {
-  state.blocks.destroyBlock(this.getAxes())
+  // Bombas remotas não têm necessariamente marcador local no tabuleiro.
+  const axes = this.getAxes()
+  const block = state.blocks.getBlock(axes)
+  if (block?.t === 'O' && block.id === this.id) {
+    state.blocks.destroyBlock(axes)
+  }
   this.playerIndex = playerIndex
   this.collidable = false
   this.holding = true
@@ -484,6 +491,10 @@ function tick (this:Bomb, state:GameState) {
   if (this.armed) {
     if (this.collidable) {
       if (isColliding(state.players.myself!, this)) {
+        const localPlayer = state.players.myself!
+        // Buff: segurar Espaço ao esbarrar em bomba adversária no chão.
+        if (localPlayer.isSpaceHeld && localPlayer.holdMutation === 'buff' &&
+            localPlayer.takeBomb(this, state)) return
         if (state.players.myself!.kick) {
           emitMoveBomb({i:this.id,p:this.playerIndex,s:state.players.myself!.side})
           this.startMove(state.players.myself!.side, state)

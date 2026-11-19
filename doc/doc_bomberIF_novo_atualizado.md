@@ -10396,3 +10396,31 @@ yarn build
 **Rede:** `server/src/factory.ts` faz o sorteio para cada bloco elegível; `shared/dto.ts` aceita os três estados. `fillMissingLabPowerupMutations` preserva inclusive `'normal'`, e, somente para pacotes antigos sem campo, `fallbackLinearMutation` deriva deterministamente os três estados (50/25/25) da sala + coordenada para todos os clientes. `client/src/game/entities/block.ts` propaga o estado à entidade do power-up. Em outras fases, todos os itens têm efeitos e visuais clássicos.
 
 **Escopo e testes:** não sortear mutações para os outros IDs enquanto os efeitos não existirem; mantê-los normais. Verificar os limiares do sorteio, efeitos clássicos, equivalência visual do buff/vírus, sincronização multiplayer, compatibilidade com HUD e alcance zero, builds do cliente/servidor e repetição com diferentes spritesheets. Arquivos alterados: `shared/virus.ts`, `shared/dto.ts`, `client/src/game/entities/bonus.ts`, `client/src/game/entities/player.ts`, `server/test/virus.test.ts`, GDD e este documento. Não integrar à `main` sem validar e restaurar o sorteio normal dos mapas na branch.
+
+
+### GRAFO — CORREÇÃO DE MOVIMENTO PRESO — 19/11/2026
+
+**Estado:** implementado na branch `feat/lab-data-transfer-virus-2026-11-18` (PR #14 em rascunho), sem merge/deploy. Validação de build e controle físico no Kali ainda pendente.
+
+**Problema anterior:** `Player.invertControls()` alterava o mapeamento das teclas a cada coleta e tentava desfazê-lo por `setTimeout`, mas não restaurava corretamente as setas nem todas as direções de WASD. A liberação da tecla depois de uma inversão podia usar uma direção diferente da que havia sido registrada no pressionamento, deixando `movingSide` com estados inconsistentes e dando a impressão de que o jogador andava sozinho. Além disso, o gamepad chamava `startMove/stopMove` repetidamente, inclusive com analógico neutro, podendo interferir no teclado.
+
+**Correção:** as teclas físicas pressionadas são guardadas em `Player.heldMoveKeys`, enquanto o analógico/D-pad mantém `gamepadDirection` separado. `graphHeldMovement()` deriva as direções reais a partir do estado atual de inversão, sem modificar `moveKeys`. Ao soltar a tecla, perder o foco da janela, sofrer stun ou desconectar o controle, o estado de entrada é limpo/recalculado, e a movimentação só permanece ativa se existir uma entrada física. O efeito do Grafo agora é definido por prazos (`invertedUntil`, `boostedUntil`) e pelo marcador `invertedUntilDeath`, sem temporizadores que façam toggles acumulados ou atrasados. O servidor recebe a movimentação como antes; `MoveDTO.v` opcional comunica o multiplicador de velocidade para melhorar a simulação visual remota.
+
+**Regressões:** testar WASD e setas pressionadas durante ativação/expiração do Grafo, soltar uma tecla enquanto outra permanece pressionada, alternar para o gamepad e desconectá-lo, perda de foco, stun do Mamedes, colisões em paredes, morte e novo início de partida. Testes de regras puras e movimentação em `server/test/virus.test.ts`.
+
+### GRAFO — MUTACÕES EXPERIMENTAIS DO LABORATÓRIO — 19/11/2026
+
+**Estado:** implementado na mesma branch, ainda não mesclado, aguardando builds e validação de gameplay. Sorteio do Laboratório permanece em **50% normal / 25% buff / 25% debuff**, com desenho de mutação misteriosa **igual** para os dois resultados modificados.
+
+**Identificação:** Grafo = bônus ID **8** (`BonusFactory` usa `InvertBonus`). Incluído em `shared/virus.ts` nas funções `assignLabPowerupMutations` e `fillMissingLabPowerupMutations`; os outros cenários mantêm seu efeito original.
+
+- **Normal (50%):** sprite comum; inverte controles durante **10 segundos**, sem bônus de velocidade.
+- **Buff mutado (25%):** sprite misterioso; mantém a inversão de controles durante **10 segundos** e multiplica a velocidade de movimento por **1,5 (+50%)** enquanto o efeito estiver ativo, retornando ao normal no prazo.
+- **Debuff mutado (25%):** mesmo sprite misterioso; mantém os controles invertidos **até o personagem morrer**, sem prazo automático de recuperação.
+- **Acúmulo/novas coletas:** coletar um Grafo com inversão temporária reinicia o prazo de 10 segundos; buffs de velocidade não acumulam multiplicadores, apenas renovam o próprio prazo. Uma inversão permanente não pode ser removida por coletar Grafo normal ou buff. Em caso de outro efeito de velocidade (Troca de Dados, piso lento), os fatores são multiplicativos. Um boost temporário que já estava ativo pode terminar normalmente mesmo sob uma inversão permanente.
+- **Morte/rodada seguinte:** o estado de inversão, boost e controles pressionados é limpo, e a próxima rodada constrói um `Player` com estado inicial sem Grafo.
+- **Informação visual:** após a coleta, o HUD informa +50% de velocidade e duração ou a inversão até morrer. O ícone do power-up mutado não indica previamente se será positivo ou negativo.
+
+**Documentação relevante:** `shared/virus.ts`, `shared/dto.ts`, `server/src/factory.ts`, `client/src/game/entities/player.ts`, `client/src/game/entities/gamepad.ts`, `client/src/game/entities/bonus.ts`, `client/src/game/components/canvas/virusHud.tsx`, `server/test/virus.test.ts` e seção Laboratório do GDD. A tabela geral do GDD continua descrevendo o efeito normal da inversão por 10 segundos.
+
+**Validação necessária:** `cd server && yarn test:virus && yarn test:stun && yarn build`, `cd ../client && yarn build`; teste multiplayer com dois navegadores e controle físico, conferindo que as versões misteriosas mantêm o mesmo sprite e que os movimentos nunca ficam presos. A branch continua forçando apenas o Laboratório; restaurar o sorteio normal antes de mesclar na main.

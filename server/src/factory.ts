@@ -148,8 +148,8 @@ function stateFactory () : GameStateDTO {
   // A branch main continua com sorteio aleatório dos três cenários.
   const stage: number = LABORATORY_STAGE
 
-  // O laboratório define as mutações de Função Linear e Troca de Dados
-  // uma única vez e compartilha os mesmos resultados com toda a sala.
+  // O laboratório sorteia as mutações de Função Linear, Troca de Dados
+  // e Grafo uma única vez e compartilha os mesmos resultados com toda a sala.
   assignLabPowerupMutations(blocks, stage)
 
   const slowFloors =

@@ -37515,6 +37515,20 @@ function onKill(io3, socket, dto) {
   io3.to(socket.data.roomId).emit("kl", { p: dto.p });
 }
 
+// ../shared/virus.ts
+var LABORATORY_STAGE = 1;
+function chooseLinearMutation(roll) {
+  return roll < 0.5 ? "buff" : "virus";
+}
+function assignLabLinearMutations(blocks, stage, random = Math.random) {
+  if (stage !== LABORATORY_STAGE) return;
+  for (const row of blocks) {
+    for (const block of row) {
+      if (block?.b === 2) block.mutation = chooseLinearMutation(random());
+    }
+  }
+}
+
 // src/factory.ts
 var CAFETERIA_STAGE = 2;
 var SLOW_FLOOR_COUNT = 12;
@@ -37615,6 +37629,7 @@ function stateFactory() {
   const bomb = Math.floor(Math.random() * BOMBS);
   const bonus = Math.floor(Math.random() * BONUS);
   const stage = Math.floor(Math.random() * STAGES);
+  assignLabLinearMutations(blocks, stage);
   const slowFloors = stage === CAFETERIA_STAGE ? slowFloorsFactory(blocks) : [];
   console.log("STAGE:", stage);
   console.log("SLOW FLOORS:", slowFloors);

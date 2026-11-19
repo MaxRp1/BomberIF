@@ -1,8 +1,8 @@
 import { Server } from 'socket.io'
 import { FRANK_SPRITE_ID } from '#/constants'
-import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO } from '#/dto'
+import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmPickupDTO, IhmResultDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO } from '#/dto'
 import { Socket } from '~/extends'
-import { registerDefeat } from '~/ranking'
+import { claimIhmPickup, registerDefeat } from '~/ranking'
 
 function isStunned(socket: Socket) {
   return socket.data.stunnedUntil > Date.now()
@@ -44,6 +44,35 @@ export function onFlingBomb (io:Server, socket:Socket, dto:FlingBombDTO) {
 
 export function onNullifyBlock (io:Server, socket:Socket, dto:NullifyBlockDTO) {
   io.to(socket.data.roomId).emit('nb', dto)
+}
+
+// A variante do IHM e o alvo da morte são decididos exclusivamente
+// pelo servidor; o cliente transmite apenas a posição do item coletado.
+export function onIhmPickup(io:Server, socket:Socket, dto:IhmPickupDTO) {
+  const roomId = socket.data.roomId
+  if (typeof roomId !== 'string' || !roomId) return
+  if (!socket.connected || !socket.rooms.has(roomId)) return
+  if (socket.data.alive !== true || isStunned(socket)) return
+  if (!dto || !Array.isArray(dto.a) || dto.a.length !== 2) return
+
+  const targetId = claimIhmPickup(
+    roomId, socket.id, dto.a,
+    socket.data.playerX, socket.data.playerY,
+    Math.random()
+  )
+  if (!targetId) return
+
+  const target = io.sockets.sockets.get(targetId) as Socket | undefined
+  if (!target || !target.connected || !target.rooms.has(roomId) ||
+      target.data.roomId !== roomId || target.data.alive !== true) return
+
+  if (!registerDefeat(io, target)) return
+  target.data.alive = false
+
+  const result:IhmResultDTO = { p:target.data.index }
+  // A vítima recebe confirmação direta inclusive se foi quem coletou.
+  io.to(roomId).emit('ihm_result', result)
+  io.to(roomId).emit('kl', { p:result.p })
 }
 
 // O navegador do Frank é responsável por detectar a colisão com a bomba,

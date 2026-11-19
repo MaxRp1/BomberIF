@@ -42,21 +42,21 @@ test('sorteio 50/50 define +3 ou vírus no servidor, incluindo o limite', () => 
   assert.equal(chooseLinearMutation(0.99), 'virus')
 })
 
-test('somente Função Linear do laboratório recebe mutação no mapa enviado', () => {
+test('Função Linear e Troca de Dados são os únicos itens com mutação no laboratório', () => {
   const map: (BlockDTO|null)[][] = [
     [block(2), block(1), null],
     [block(2), block(3), block(2)]
   ]
-  const rolls = [0.1, 0.6, 0.4]
+  const rolls = [0.1, 0.6, 0.2, 0.4]
   let count = 0
   assignLabLinearMutations(map, LABORATORY_STAGE, () => rolls[count++])
 
-  assert.equal(count, 3)
+  assert.equal(count, 4)
   assert.equal(map[0][0]?.mutation, 'buff')
   assert.equal(map[1][0]?.mutation, 'virus')
   assert.equal(map[1][2]?.mutation, 'buff')
   assert.equal(map[0][1]?.mutation, undefined)
-  assert.equal(map[1][1]?.mutation, undefined)
+  assert.equal(map[1][1]?.mutation, 'buff')
 
   // Dados de blocos são serializados e enviados no StartGameDTO para todos.
   assert.equal(JSON.parse(JSON.stringify(map))[1][0].mutation, 'virus')
@@ -124,8 +124,8 @@ test('servidor antigo sem campo mutation ganha resultado compartilhado, não +1'
   const client1 = JSON.parse(JSON.stringify(serverMap)) as (BlockDTO|null)[][]
   const client2 = JSON.parse(JSON.stringify(serverMap)) as (BlockDTO|null)[][]
 
-  assert.equal(fillMissingLabLinearMutations(client1, LABORATORY_STAGE, 'sala-ABCD'), 3)
-  assert.equal(fillMissingLabLinearMutations(client2, LABORATORY_STAGE, 'sala-ABCD'), 3)
+  assert.equal(fillMissingLabLinearMutations(client1, LABORATORY_STAGE, 'sala-ABCD'), 4)
+  assert.equal(fillMissingLabLinearMutations(client2, LABORATORY_STAGE, 'sala-ABCD'), 4)
   assert.deepEqual(client1, client2, 'ambos os navegadores devem sortear identicamente')
   assert.equal(fillMissingLabLinearMutations(client1, LABORATORY_STAGE, 'sala-ABCD'), 0,
     'reconstruir a sala não pode alterar as mutações já definidas')

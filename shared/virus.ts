@@ -6,6 +6,9 @@ export const LINEAR_BUFF_AMOUNT = 3
 export const LINEAR_VIRUS_DURATION_MS = 10000
 export const LINEAR_NOTICE_DURATION_MS = 2500
 export const HOLD_BONUS_ID = 3
+export const GRAPH_BONUS_ID = 8
+export const GRAPH_EFFECT_DURATION_MS = 10000
+export const GRAPH_BUFF_SPEED_MULTIPLIER = 1.5
 export const INITIAL_BOMB_REACH = 2
 export const HOLD_BUFF_SPEED_MULTIPLIER = 1.2
 export const HOLD_VIRUS_SPEED_MULTIPLIER = 0.4
@@ -39,7 +42,7 @@ export function assignLabLinearMutations(
 
   for (const row of blocks) {
     for (const block of row) {
-      if (block?.b === 2 || block?.b === HOLD_BONUS_ID) {
+      if (block?.b === 2 || block?.b === HOLD_BONUS_ID || block?.b === GRAPH_BONUS_ID) {
         block.mutation = chooseLinearMutation(random())
       }
     }
@@ -83,7 +86,7 @@ export function fillMissingLabLinearMutations(
   for (let row = 0; row < blocks.length; row++) {
     for (let column = 0; column < blocks[row].length; column++) {
       const block = blocks[row][column]
-      if (block?.b !== 2 && block?.b !== HOLD_BONUS_ID) continue
+      if (block?.b !== 2 && block?.b !== HOLD_BONUS_ID && block?.b !== GRAPH_BONUS_ID) continue
       if (block.mutation === 'normal' || block.mutation === 'buff' || block.mutation === 'virus') continue
       block.mutation = fallbackLinearMutation(roomId, row, column)
       repaired++
@@ -167,4 +170,49 @@ export function effectiveBombReach(
   now: number
 ): number {
   return now < current.virusUntil ? 0 : Math.max(0, current.baseReach)
+}
+
+
+// Grafo: o comportamento comum inverte controles por 10 segundos.
+// Apenas no Laboratório há mutações. O buff também aumenta a velocidade,
+// enquanto o vírus mantém a inversão até o personagem morrer.
+export interface GraphEffectState {
+  invertedUntil: number
+  boostedUntil: number
+  invertedUntilDeath: boolean
+}
+
+export function applyGraphPickup(
+  current: GraphEffectState,
+  stage: number,
+  mutation: LinearMutation | undefined,
+  now: number
+): GraphEffectState {
+  const mode = stage === LABORATORY_STAGE ? (mutation ?? 'normal') : 'normal'
+  if (mode === 'virus') {
+    return { ...current, invertedUntilDeath: true }
+  }
+  return {
+    ...current,
+    invertedUntil: now + GRAPH_EFFECT_DURATION_MS,
+    boostedUntil: mode === 'buff' ? now + GRAPH_EFFECT_DURATION_MS : current.boostedUntil
+  }
+}
+
+export function graphControlsInverted(state:GraphEffectState, now:number): boolean {
+  return state.invertedUntilDeath || now < state.invertedUntil
+}
+
+export function graphSpeedMultiplier(state:GraphEffectState, now:number): number {
+  return now < state.boostedUntil ? GRAPH_BUFF_SPEED_MULTIPLIER : 1
+}
+
+export function invertGraphDirection(side: 'U'|'D'|'L'|'R', inverted:boolean): 'U'|'D'|'L'|'R' {
+  if (!inverted) return side
+  switch (side) {
+    case 'U': return 'D'
+    case 'D': return 'U'
+    case 'L': return 'R'
+    case 'R': return 'L'
+  }
 }

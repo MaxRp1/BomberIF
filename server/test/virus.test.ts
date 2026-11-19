@@ -16,6 +16,11 @@ import {
   fallbackLinearMutation,
   fillMissingLabLinearMutations,
   HOLD_BONUS_ID,
+  FIREWALL_BONUS_ID,
+  FIREWALL_EFFECT_DURATION_MS,
+  firewallPickupMode,
+  firewallExplosionImmune,
+  firewallPassesDestructible,
   GRAPH_BONUS_ID,
   GRAPH_EFFECT_DURATION_MS,
   GRAPH_BUFF_SPEED_MULTIPLIER,
@@ -61,8 +66,8 @@ test('sorteio em duas etapas: 50% normal, 25% buff, 25% debuff', () => {
   assert.deepEqual(totals, {normal:5000, buff:2500, virus:2500})
 })
 
-test('modo de testes do Lab só distribui os quatro power-ups já mutáveis', () => {
-  const eligible = [2,3,8,9]
+test('modo de testes do Lab só distribui os cinco power-ups já mutáveis', () => {
+  const eligible = [2,3,7,8,9]
   for (let bonus = 1; bonus <= 9; bonus++) {
     assert.equal(isLabMutatablePowerup(bonus), eligible.includes(bonus))
     assert.equal(canDropLabPowerup(LABORATORY_STAGE, bonus, true), eligible.includes(bonus))
@@ -79,12 +84,12 @@ test('com modo temporário ligado, todo power-up elegível é mutado: 50% buff e
   assert.equal(chooseLinearMutation(0.49, true), 'buff')
   assert.equal(chooseLinearMutation(0.5, true), 'virus')
   assert.equal(chooseLinearMutation(0.99, true), 'virus')
-  const map:(BlockDTO|null)[][] = [[block(1), block(2), block(3), block(8), block(9)]]
+  const map:(BlockDTO|null)[][] = [[block(1), block(2), block(3), block(7), block(8), block(9)]]
   let i = 0
-  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0,0.49,0.5,0.99][i++], true)
-  assert.equal(i, 4)
+  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0,0.49,0.1,0.5,0.99][i++], true)
+  assert.equal(i, 5)
   assert.deepEqual(map[0].map(item => item?.mutation),
-    [undefined, 'buff', 'buff', 'virus', 'virus'])
+    [undefined, 'buff', 'buff', 'buff', 'virus', 'virus'])
   assert.ok(map[0].slice(1).every(item => isMutatedBonus(item?.mutation)))
 })
 
@@ -437,4 +442,48 @@ test('movimento do controle e teclado compartilha a inversão sem duplo toggle',
   const keyboardOnly = graphHeldMovement(['D'], true)
   assert.equal(keyboardOnly.side, 'U')
   assert.equal(graphHeldMovement([], false).moving, 0)
+})
+
+test('Firewall recebe mutação somente no laboratório e mantém o efeito básico nos outros mapas', () => {
+  assert.equal(FIREWALL_BONUS_ID, 7)
+  assert.equal(FIREWALL_EFFECT_DURATION_MS, 6000)
+  const map:(BlockDTO|null)[][] = [[block(7), block(7), block(7), block(4)]]
+  let calls = 0
+  assignLabLinearMutations(map, 0, () => { calls++; return 0.7 })
+  assert.equal(calls, 0)
+  assignLabLinearMutations(map, 1, () => [0.1, 0.6, 0.9][calls++])
+  assert.equal(calls, 3)
+  assert.deepEqual(map[0].map(item => item?.mutation), ['normal','buff','virus',undefined])
+  assert.equal(firewallPickupMode(0, 'buff'), 'normal')
+  assert.equal(firewallPickupMode(2, 'virus'), 'normal')
+  assert.equal(firewallPickupMode(1, 'buff'), 'buff')
+  assert.equal(firewallPickupMode(1, 'virus'), 'virus')
+  assert.equal(firewallPickupMode(1, undefined), 'normal')
+})
+
+test('Firewall buff bloqueia dano de explosão somente enquanto ativo', () => {
+  assert.equal(firewallExplosionImmune('buff', 7000, 1000), true)
+  assert.equal(firewallExplosionImmune('buff', 7000, 6999), true)
+  assert.equal(firewallExplosionImmune('buff', 7000, 7000), false)
+  assert.equal(firewallExplosionImmune('virus', 7000, 1000), false)
+  assert.equal(firewallExplosionImmune('normal', 7000, 1000), false)
+  assert.equal(firewallExplosionImmune(null, 7000, 1000), false)
+})
+
+test('Firewall vírus libera somente blocos destrutíveis durante 6 segundos', () => {
+  assert.equal(firewallPassesDestructible('virus', 7000, 1000), true)
+  assert.equal(firewallPassesDestructible('virus', 7000, 6999), true)
+  assert.equal(firewallPassesDestructible('virus', 7000, 7000), false)
+  assert.equal(firewallPassesDestructible('buff', 7000, 1000), false)
+  assert.equal(firewallPassesDestructible('normal', 7000, 1000), false)
+  assert.equal(firewallPassesDestructible(null, 7000, 1000), false)
+})
+
+test('Firewall sem mutação recebida usa fallback sincronizado entre clientes', () => {
+  const a:(BlockDTO|null)[][] = [[block(7), block(7)]]
+  const b = JSON.parse(JSON.stringify(a)) as (BlockDTO|null)[][]
+  assert.equal(fillMissingLabLinearMutations(a, 1, 'sala-firewall', true), 2)
+  assert.equal(fillMissingLabLinearMutations(b, 1, 'sala-firewall', true), 2)
+  assert.deepEqual(a,b)
+  assert.ok(a[0].every(item => isMutatedBonus(item?.mutation)))
 })

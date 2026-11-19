@@ -17,7 +17,8 @@
     "test:virus": "ts-node --transpile-only -r tsconfig-paths/register test/virus.test.ts",
     "test:ihm": "ts-node --transpile-only -r tsconfig-paths/register test/ihm.test.ts",
     "test:kick": "ts-node --transpile-only -r tsconfig-paths/register test/kick.test.ts",
-    "test:firewall": "ts-node --transpile-only -r tsconfig-paths/register test/firewall.test.ts"
+    "test:firewall": "ts-node --transpile-only -r tsconfig-paths/register test/firewall.test.ts",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -1,6 +1,6 @@
-import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
+import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, SPEED, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
-import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, firewallExplosionImmune, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, reachAfterFling } from '#/virus'
+import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, SignalMotion, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, firewallExplosionImmune, initialSignalMotion, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, reachAfterFling, signalPickupMode, updateSignalMotion } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
@@ -51,6 +51,7 @@ export interface Player {
   holdMutation      : Exclude<LinearMutation, 'normal'> | null
   holdNotice        : LinearMutation | null
   holdNoticeUntil   : number
+  holdSpeedBuffSuppressed: boolean
   invertedUntil : number
   boostedUntil  : number
   invertedUntilDeath : boolean
@@ -74,8 +75,12 @@ export interface Player {
   removeTime : number
   side       : SIDES
   sprite     : HTMLImageElement
-  speed      : number
-  speedMultiplier : number
+  baseSpeed          : number
+  speed              : number
+  speedMultiplier    : number
+  signalMotion       : SignalMotion
+  signalNotice       : 'buff'|'virus'|null
+  signalNoticeUntil  : number
   x          : number
   y          : number
   setMyself            : () => void
@@ -96,6 +101,7 @@ export interface Player {
   refreshMovement      : () => void
   invertControls       : () => void
   applyGraphBonus      : (stage:number, mutation:LinearMutation|undefined) => void
+  applySignalBonus     : (stage:number, mutation:LinearMutation|undefined) => void
   handleBomb           : (state:GameState) => void
   useStunSkill        : () => void
   applyStun           : (durationMs?:number) => void
@@ -150,6 +156,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
     holdMutation: null,
     holdNotice: null,
     holdNoticeUntil: 0,
+    holdSpeedBuffSuppressed: false,
     invertedUntil: 0,
     boostedUntil: 0,
     invertedUntilDeath: false,
@@ -179,8 +186,12 @@ export function PlayerFactory (props:PlayerProps) : Player {
     myself: false,
     nick: props.nick,
     side: 'D',
+    baseSpeed: props.sprite === 11 ? props.speed * 1.5 : props.speed,
     speed: props.sprite === 11 ? props.speed * 1.5 : props.speed,
     speedMultiplier: 1,
+    signalMotion: initialSignalMotion('normal'),
+    signalNotice: null,
+    signalNoticeUntil: 0,
     x: props.x,
     y: props.y,
     sprite: new Image()
@@ -199,6 +210,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
   player.refreshMovement = refreshMovement.bind(player)
   player.invertControls = invertControls.bind(player)
   player.applyGraphBonus = applyGraphBonus.bind(player)
+  player.applySignalBonus = applySignalBonus.bind(player)
   player.handleBomb = handleBomb.bind(player)
   player.useStunSkill = useStunSkill.bind(player)
   player.applyStun = applyStun.bind(player)
@@ -354,20 +366,29 @@ function moveTick (
   this:Player,
   state:GameState
 ) {
-
+  const now = Date.now()
   // Mudanças de inversão não alteram mais o mapeamento das teclas.
-  // Ao vencer o prazo, recalculamos a direção das teclas ainda pressionadas.
-  if (this.myself && graphControlsInverted(this, Date.now()) !== this.lastGraphInverted) {
+  if (this.myself && graphControlsInverted(this, now) !== this.lastGraphInverted) {
     this.refreshMovement()
   }
-  if (!this.moving || Date.now() < this.stunnedUntil) return
+
+  // Avaliar o repouso em TODOS os quadros, inclusive quando o jogador
+  // não anda ou está atordoado, para os 1000 ms do debuff funcionarem.
+  const actuallyMoving = this.active && this.moving !== 0 && now >= this.stunnedUntil
+  if (this.myself) {
+    this.signalMotion = updateSignalMotion(this.signalMotion, actuallyMoving, now)
+  }
+  if (!actuallyMoving) return
 
   if (this.myself) {
     const onSlowFloor = state.slowFloors.isPlayerOnFloor(this)
+    const carryMutation = this.holdSpeedBuffSuppressed && this.holdMutation === 'buff'
+      ? 'normal' : this.holdMutation
     this.speedMultiplier =
       (onSlowFloor && !this.ignoresSlowFloor ? 0.3 : 1) *
-      carrySpeedMultiplier(this.holdMutation, this.holding === 1) *
-      graphSpeedMultiplier(this, Date.now())
+      carrySpeedMultiplier(carryMutation, this.holding === 1) *
+      graphSpeedMultiplier(this, now) *
+      this.signalMotion.multiplier
   }
 
   this.moves[this.side]()
@@ -471,6 +492,32 @@ function applyGraphBonus (this:Player, stage:number, mutation:LinearMutation|und
   this.graphNotice = mode === 'buff' || mode === 'virus' ? mode : null
   this.graphNoticeUntil = this.graphNotice ? now + LINEAR_NOTICE_DURATION_MS : 0
   this.refreshMovement()
+}
+
+// O Sinal Ruim altera a velocidade por movimento contínuo.
+// O vírus zera melhorias de velocidade já coletadas, mas nunca apaga
+// a velocidade inata do personagem nem outras habilidades dos itens.
+function applySignalBonus (
+  this:Player,
+  stage:number,
+  mutation:LinearMutation|undefined
+) {
+  const mode = signalPickupMode(stage, mutation)
+  this.signalMotion = initialSignalMotion(mode)
+  this.signalNotice = mode === 'buff' || mode === 'virus' ? mode : null
+  this.signalNoticeUntil = this.signalNotice
+    ? Date.now() + LINEAR_NOTICE_DURATION_MS : 0
+
+  if (mode === 'normal') {
+    // Preserva o antigo Sinal Ruim nos outros mapas.
+    this.speed = SPEED - 0.1
+  } else if (mode === 'virus') {
+    // Remove bônus permanentes do Sinal Bom e bônus de velocidade
+    // temporários do Grafo e da Troca de Dados já coletados.
+    this.speed = this.baseSpeed
+    this.boostedUntil = 0
+    this.holdSpeedBuffSuppressed = true
+  }
 }
 
 function handleBomb (this:Player, state:GameState) {
@@ -639,6 +686,10 @@ function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   this.boostedUntil = 0
   this.firewallMode = null
   this.firewallUntil = 0
+  this.signalMotion = initialSignalMotion('normal')
+  this.signalNotice = null
+  this.signalNoticeUntil = 0
+  this.holdSpeedBuffSuppressed = false
   this.collidable = false
 
   this.tick = () => {

@@ -10,12 +10,12 @@ export const INITIAL_BOMB_REACH = 2
 export const HOLD_BUFF_SPEED_MULTIPLIER = 1.2
 export const HOLD_VIRUS_SPEED_MULTIPLIER = 0.4
 
-export type LinearMutation = 'buff' | 'virus'
+export type LinearMutation = 'normal' | 'buff' | 'virus'
 
-// No mapa do Laboratório, 50% dos itens com mutação recebem vírus.
-// A versão saudável usa o sprite original; apenas o vírus recebe efeito visual.
-export function isInfectedBonus(mutation: LinearMutation | undefined): boolean {
-  return mutation === 'virus'
+// O sprite modificado indica somente que existe uma mutação;
+// a aparência não revela se o resultado oculto será buff ou debuff.
+export function isMutatedBonus(mutation: LinearMutation | undefined): boolean {
+  return mutation === 'buff' || mutation === 'virus'
 }
 
 export interface LinearVirusState {
@@ -23,9 +23,11 @@ export interface LinearVirusState {
   virusUntil: number
 }
 
-// O sorteio é realizado no servidor, antes de entregar o mapa aos clientes.
+// Sorteio único do servidor, equivalente a duas etapas independentes:
+// 50% efeito normal; nos outros 50%, 50% buff e 50% debuff.
 export function chooseLinearMutation(roll: number): LinearMutation {
-  return roll < 0.5 ? 'buff' : 'virus'
+  if (roll < 0.5) return 'normal'
+  return roll < 0.75 ? 'buff' : 'virus'
 }
 
 export function assignLabLinearMutations(
@@ -48,7 +50,8 @@ export function assignLabLinearMutations(
 // 'mutation', todos os clientes derivam o MESMO resultado a partir
 // da sala e das coordenadas do power-up, sem sorteio independente.
 // O servidor atualizado continua sendo a fonte de verdade quando enviar
-// 'mutation'. A distribuição do hash é aproximadamente 50/50.
+// 'mutation'. O hash reproduz aproximadamente 50% normal,
+// 25% buff e 25% debuff, sem mudar após reiniciar o navegador.
 export function fallbackLinearMutation(
   roomId: string,
   row: number,
@@ -66,7 +69,7 @@ export function fallbackLinearMutation(
   hash ^= hash >>> 15
   hash = Math.imul(hash, 0x846ca68b)
   hash ^= hash >>> 16
-  return (hash & 1) === 0 ? 'buff' : 'virus'
+  return chooseLinearMutation((hash >>> 0) / 0x100000000)
 }
 
 export function fillMissingLabLinearMutations(
@@ -81,7 +84,7 @@ export function fillMissingLabLinearMutations(
     for (let column = 0; column < blocks[row].length; column++) {
       const block = blocks[row][column]
       if (block?.b !== 2 && block?.b !== HOLD_BONUS_ID) continue
-      if (block.mutation === 'buff' || block.mutation === 'virus') continue
+      if (block.mutation === 'normal' || block.mutation === 'buff' || block.mutation === 'virus') continue
       block.mutation = fallbackLinearMutation(roomId, row, column)
       repaired++
     }
@@ -95,7 +98,8 @@ export function holdPickupMutation(
   mutation: LinearMutation | undefined
 ): LinearMutation | null {
   if (stage !== LABORATORY_STAGE) return null
-  return mutation === 'virus' ? 'virus' : 'buff'
+  if (mutation === 'buff' || mutation === 'virus') return mutation
+  return null
 }
 
 export function carrySpeedMultiplier(
@@ -142,10 +146,13 @@ export function applyLinearPickup(
     return { ...current, baseReach: current.baseReach + 1 }
   }
 
-  // Caso alguma coleta chegue sem o campo (por atualização parcial),
-  // não aplicar silenciosamente o +1 tradicional no laboratório.
-  // O fallback determinístico do startGame deve preencher esse campo.
-  if (mutation !== 'virus') {
+  // Sem mutação: o mesmo efeito básico das outras arenas (+1).
+  // Um cliente compatível recebe 'normal', 'buff' ou 'virus' no início da rodada.
+  if (mutation === 'normal' || mutation === undefined) {
+    return { ...current, baseReach: current.baseReach + 1 }
+  }
+
+  if (mutation === 'buff') {
     return { ...current, baseReach: current.baseReach + LINEAR_BUFF_AMOUNT }
   }
 

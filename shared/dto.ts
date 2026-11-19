@@ -1,8 +1,8 @@
 export type SIDES = 'U'|'L'|'D'|'R' // player side: up, left, down, right
 
 export interface BlockDTO {
-  b ?: 1|2|3|4|5|6|7|8 // bonus item id
-  mutation ?: 'normal'|'buff'|'virus' // IDs 2/3/8 no Lab: normal 50%, buff 25%, virus 25%
+  b ?: 1|2|3|4|5|6|7|8|9 // bonus item id (IHM = 9)
+  mutation ?: 'normal'|'buff'|'virus' // IDs 2/3/8/9 no Lab: normal 50%, buff 25%, virus 25%
   t  : 'D'|'I'         // block type: destructible or indestructible
   x  : number          // block x position
   y  : number          // block y position
@@ -75,6 +75,17 @@ export interface HoldBombDTO {
   i : string // bomb id
   p : number // player index
   mutation ?: 'buff'|'virus' // Modificador de velocidade do carregador
+}
+
+// Cliente comunica somente a posição do IHM: o servidor valida o item,
+// escolhe o alvo entre os vivos e registra a eliminação.
+export interface IhmPickupDTO {
+  a : [number, number]
+}
+
+// Morte confirmada pelo servidor; evita depender do cliente sorteado.
+export interface IhmResultDTO {
+  p : number
 }
 
 export interface IceCandidateDTO {

@@ -96,7 +96,7 @@ export function fillMissingLabLinearMutations(
 export function holdPickupMutation(
   stage: number,
   mutation: LinearMutation | undefined
-): LinearMutation | null {
+): Exclude<LinearMutation, 'normal'> | null {
   if (stage !== LABORATORY_STAGE) return null
   if (mutation === 'buff' || mutation === 'virus') return mutation
   return null

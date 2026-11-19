@@ -60,6 +60,9 @@ export interface Player {
   onWindowBlur       : () => void
   index              : number
   kick               : boolean
+  kickMutation       : LinearMutation
+  kickNotice         : 'buff'|'virus'|null
+  kickNoticeUntil    : number
   lastPress  : LastPress
   moveKeys   : {[key:string]:SIDES}
   moving     : 0|1
@@ -93,7 +96,7 @@ export interface Player {
   applyGraphBonus      : (stage:number, mutation:LinearMutation|undefined) => void
   handleBomb           : (state:GameState) => void
   useStunSkill        : () => void
-  applyStun           : () => void
+  applyStun           : (durationMs?:number) => void
   placeBomb            : (state:GameState) => void
   holdBomb             : (state:GameState) => void
   takeBomb             : (bomb:Bomb, state:GameState) => boolean
@@ -153,6 +156,9 @@ export function PlayerFactory (props:PlayerProps) : Player {
     lastGraphInverted: false,
     index: props.index,
     kick: false,
+    kickMutation: 'normal',
+    kickNotice: null,
+    kickNoticeUntil: 0,
     lastPress: {bomb:0},
     moveKeys: {
       'W': 'U',
@@ -491,10 +497,10 @@ function useStunSkill (this:Player) {
 }
 
 // Todos os clientes recebem o mesmo alvo da confirmação do servidor.
-function applyStun (this:Player) {
+function applyStun (this:Player, durationMs = STUN_DURATION_MS) {
   if (!this.active) return
 
-  this.stunnedUntil = Math.max(this.stunnedUntil, Date.now() + STUN_DURATION_MS)
+  this.stunnedUntil = Math.max(this.stunnedUntil, Date.now() + durationMs)
   const wasMoving = this.moving !== 0
   this.moving = 0
   this.movingSide = { U: false, D: false, L: false, R: false }

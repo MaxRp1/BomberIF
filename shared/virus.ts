@@ -114,7 +114,11 @@ export function reachAfterFling(
   mutation: LinearMutation | null,
   originalReach: number
 ): number {
-  return mutation === 'virus' ? INITIAL_BOMB_REACH : originalReach
+  // O debuff não pode transformar uma bomba de raio 0 (vírus linear)
+  // em raio 2 e cancelar acidentalmente a infecção anterior.
+  return mutation === 'virus'
+    ? Math.min(Math.max(0, originalReach), INITIAL_BOMB_REACH)
+    : originalReach
 }
 
 export const assignLabPowerupMutations = assignLabLinearMutations

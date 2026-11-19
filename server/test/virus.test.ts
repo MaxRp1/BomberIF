@@ -10,7 +10,15 @@ import {
   chooseLinearMutation,
   effectiveBombReach,
   fallbackLinearMutation,
-  fillMissingLabLinearMutations
+  fillMissingLabLinearMutations,
+  HOLD_BONUS_ID,
+  INITIAL_BOMB_REACH,
+  HOLD_BUFF_SPEED_MULTIPLIER,
+  HOLD_VIRUS_SPEED_MULTIPLIER,
+  canPickUpBomb,
+  carrySpeedMultiplier,
+  holdPickupMutation,
+  reachAfterFling
 } from '../../shared/virus'
 import { blastHitsTile } from '../../shared/chainReaction'
 
@@ -169,4 +177,60 @@ test('hash de fallback depende da sala e casa e produz ambos os efeitos', () => 
 test('se uma coleta do laboratório ainda vier sem mutação, nunca volta silenciosamente a +1', () => {
   const result = applyLinearPickup({baseReach:2, virusUntil:0}, LABORATORY_STAGE, undefined, 0)
   assert.deepEqual(result, {baseReach:5, virusUntil:0})
+})
+
+test('Troca de Dados (ID 3) só recebe mutação no laboratório', () => {
+  assert.equal(HOLD_BONUS_ID, 3)
+  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(4)]]
+  let rolls = 0
+  assignLabLinearMutations(map, 0, () => { rolls++; return 0.7 })
+  assert.equal(rolls, 0)
+  assert.equal(map[0][1]?.mutation, undefined)
+  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0.9, 0.1][rolls++])
+  assert.equal(map[0][0]?.mutation, 'virus')
+  assert.equal(map[0][1]?.mutation, 'buff')
+  assert.equal(map[0][2]?.mutation, undefined)
+})
+
+test('Troca de Dados sem campo mutation tem fallback igual para ambos os clientes', () => {
+  const a:(BlockDTO|null)[][] = [[block(3), block(2)]]
+  const b = JSON.parse(JSON.stringify(a)) as (BlockDTO|null)[][]
+  assert.equal(fillMissingLabLinearMutations(a, 1, 'sala-T'), 2)
+  assert.equal(fillMissingLabLinearMutations(b, 1, 'sala-T'), 2)
+  assert.deepEqual(a, b)
+  assert.ok(a[0][0]?.mutation === 'buff' || a[0][0]?.mutation === 'virus')
+})
+
+test('Troca de Dados usa a última mutação e modo comum fora do laboratório', () => {
+  assert.equal(holdPickupMutation(0, 'buff'), null)
+  assert.equal(holdPickupMutation(2, 'virus'), null)
+  assert.equal(holdPickupMutation(1, 'buff'), 'buff')
+  assert.equal(holdPickupMutation(1, 'virus'), 'virus')
+  assert.equal(holdPickupMutation(1, undefined), 'buff')
+})
+
+test('buff permite pegar bombas rivais; demais modos não', () => {
+  assert.equal(canPickUpBomb('buff', 0, 1), true)
+  assert.equal(canPickUpBomb('virus', 0, 1), false)
+  assert.equal(canPickUpBomb(null, 0, 1), false)
+  assert.equal(canPickUpBomb('virus', 0, 0), true)
+})
+
+test('modificadores de velocidade valem só enquanto segura bomba', () => {
+  assert.equal(HOLD_BUFF_SPEED_MULTIPLIER, 1.2)
+  assert.equal(HOLD_VIRUS_SPEED_MULTIPLIER, 0.4)
+  for (const mode of ['buff','virus',null] as const) {
+    assert.equal(carrySpeedMultiplier(mode, false), 1)
+  }
+  assert.equal(carrySpeedMultiplier('buff', true), 1.2)
+  assert.equal(carrySpeedMultiplier('virus', true), 0.4)
+  assert.equal(carrySpeedMultiplier(null, true), 1)
+})
+
+test('vírus redefine apenas o raio da bomba arremessada para o inicial', () => {
+  assert.equal(INITIAL_BOMB_REACH, 2)
+  assert.equal(reachAfterFling('virus', 12), 2)
+  assert.equal(reachAfterFling('virus', 0), 2)
+  assert.equal(reachAfterFling('buff', 12), 12)
+  assert.equal(reachAfterFling(null, 5), 5)
 })

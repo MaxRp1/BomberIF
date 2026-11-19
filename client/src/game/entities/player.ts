@@ -1,6 +1,6 @@
 import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
-import { LinearMutation, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, reachAfterFling } from '#/virus'
+import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, reachAfterFling } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
@@ -457,9 +457,9 @@ function applyGraphBonus (this:Player, stage:number, mutation:LinearMutation|und
   this.boostedUntil = next.boostedUntil
   this.invertedUntilDeath = next.invertedUntilDeath
 
-  const mode = stage === 1 ? (mutation ?? 'normal') : 'normal'
+  const mode = stage === LABORATORY_STAGE ? (mutation ?? 'normal') : 'normal'
   this.graphNotice = mode === 'buff' || mode === 'virus' ? mode : null
-  this.graphNoticeUntil = this.graphNotice ? now + 2500 : 0
+  this.graphNoticeUntil = this.graphNotice ? now + LINEAR_NOTICE_DURATION_MS : 0
   this.refreshMovement()
 }
 

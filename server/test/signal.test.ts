@@ -14,9 +14,9 @@ function item(b:BlockDTO['b']):BlockDTO {
   return {t:'D', b, x:16, y:16}
 }
 
-test('Sinal Ruim ID 6 integra os sete power-ups mutáveis do Lab', () => {
+test('Sinal Ruim ID 6 integra os oito power-ups mutáveis do Lab', () => {
   assert.equal(SIGNAL_BAD_BONUS_ID,6)
-  const eligible = [2,3,4,6,7,8,9]
+  const eligible = [2,3,4,5,6,7,8,9]
   for (let id=1;id<=9;id++) {
     assert.equal(isLabMutatablePowerup(id),eligible.includes(id))
     assert.equal(canDropLabPowerup(1,id,true),eligible.includes(id))
@@ -28,7 +28,7 @@ test('Sinal Ruim ID 6 integra os sete power-ups mutáveis do Lab', () => {
 })
 
 test('Sinal Ruim mantém 50% buff e 50% vírus no modo temporário', () => {
-  const blocks:(BlockDTO|null)[][] = [[item(6),item(6),item(6),item(5)]]
+  const blocks:(BlockDTO|null)[][] = [[item(6),item(6),item(6),item(1)]]
   let rolls = 0
   assignLabPowerupMutations(blocks,LABORATORY_STAGE,()=>[0.1,0.49,0.5][rolls++],true)
   assert.equal(rolls,3)
@@ -142,7 +142,7 @@ test('trocar a mutação apaga rampa e temporizador anterior', () => {
 })
 
 test('fallback determinístico compartilha mutação em salas distintas sem sorteios locais', () => {
-  const a:(BlockDTO|null)[][]=[[item(6),item(6),item(5)]]
+  const a:(BlockDTO|null)[][]=[[item(6),item(6),item(1)]]
   const b=JSON.parse(JSON.stringify(a)) as (BlockDTO|null)[][]
   assert.equal(fillMissingLabPowerupMutations(a,1,'signal-room',true),2)
   assert.equal(fillMissingLabPowerupMutations(b,1,'signal-room',true),2)
@@ -152,7 +152,7 @@ test('fallback determinístico compartilha mutação em salas distintas sem sort
 })
 
 test('desligar a flag restaura 50% normal / 25% buff / 25% vírus', () => {
-  const blocks:(BlockDTO|null)[][]=[[item(6),item(6),item(6),item(5)]]
+  const blocks:(BlockDTO|null)[][]=[[item(6),item(6),item(6),item(1)]]
   let count=0
   assignLabPowerupMutations(blocks,1,()=>[0.1,0.6,0.9][count++],false)
   assert.deepEqual(blocks[0].map(x=>x?.mutation),['normal','buff','virus',undefined])

@@ -9,6 +9,21 @@ export const LINEAR_NOTICE_DURATION_MS = 2500
 export const HOLD_BONUS_ID = 3
 export const KICK_BONUS_ID = 4
 export const KICK_VIRUS_STUN_MS = 1000
+
+// Efeito visual do stun: a habilidade do Mamedes mantém o arco-íris,
+// enquanto o chute com debuff ganha estrelinhas de tontura.
+// Se ambos coincidirem, priorizar Mamedes até seu prazo acabar.
+export type StunVisualEffect = 'mamedes'|'dizzy'|null
+
+export function stunVisualAt(
+  now:number,
+  mamedesUntil:number,
+  kickUntil:number
+): StunVisualEffect {
+  if (now < mamedesUntil) return 'mamedes'
+  if (now < kickUntil) return 'dizzy'
+  return null
+}
 export const FIREWALL_BONUS_ID = 7
 export const SIGNAL_BAD_BONUS_ID = 6
 export const FIREWALL_EFFECT_DURATION_MS = 6000

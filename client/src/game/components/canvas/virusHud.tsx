@@ -50,6 +50,12 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
 
   if (!player || stage !== LABORATORY_STAGE || !player.active) return null
 
+  const pingActive = player.pingEffect.pickups > 0 && now < player.pingEffect.activeUntil
+  const pingNotice = now < player.pingNoticeUntil ? player.pingNoticeMode : null
+  const showPing = pingActive || !!pingNotice
+  const pingPercent = pingActive ? player.pingEffect.activePercent : player.pingEffect.storedPercent
+  const pingSigned = pingPercent > 0 ? `+${pingPercent}%` : `${pingPercent}%`
+  const pingSeconds = Math.ceil(Math.max(0, player.pingEffect.activeUntil - now) / 1000)
   const firewallMode = now < player.firewallUntil ? player.firewallMode : null
   const signalMode = player.signalMotion.mode
   const signalActive = signalMode === 'buff' || signalMode === 'virus'
@@ -64,7 +70,7 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
     : now < player.graphNoticeUntil ? player.graphNotice : null
   // O aviso do Sinal Ruim prevalece por 2,5 s após a coleta. Depois,
   // exibe a rampa continuamente apenas se não houver outro aviso ativo.
-  const showSignal = signalActive && (
+  const showSignal = !showPing && signalActive && (
     now < player.signalNoticeUntil ||
     (!showFirewall && !kickNotice && !linearNotice && !holdNotice && !graphMode)
   )
@@ -72,7 +78,7 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
   const showHold = !showSignal && !showFirewall && !showKick && !infected && !!holdNotice &&
     (!linearNotice || player.holdNoticeUntil >= player.linearNoticeUntil)
   const showGraph = !showSignal && !showFirewall && !showKick && !infected && !linearNotice && !holdNotice && !!graphMode
-  if (!showSignal && !showFirewall && !infected && !linearNotice && !holdNotice && !graphMode && !kickNotice) return null
+  if (!showPing && !showSignal && !showFirewall && !infected && !linearNotice && !holdNotice && !graphMode && !kickNotice) return null
 
   const seconds = Math.ceil(Math.max(0, player.linearVirusUntil - now) / 1000)
   const graphSeconds = Math.ceil(Math.max(0, player.boostedUntil - now) / 1000)
@@ -81,13 +87,23 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
   const signalRested = signalMode === 'virus' &&
     player.signalMotion.stoppedSince !== null &&
     now - player.signalMotion.stoppedSince >= 1000
-  const negative = showSignal ? signalMode === 'virus'
+  const negative = showPing ? (pingNotice ? pingNotice === 'virus' : pingPercent < 0)
+    : showSignal ? signalMode === 'virus'
     : showFirewall ? firewallMode === 'virus' : showKick ? kickNotice === 'virus' : infected ||
     (showGraph ? graphMode === 'virus'
       : showHold ? holdNotice === 'virus' : linearNotice === 'virus')
   return (
     <Panel $negative={negative}>
-      {showSignal
+      {showPing
+        ? <>
+            <strong>{pingNotice
+              ? (pingNotice === 'buff' ? 'PING ZERO: BUFF!' : 'PING ALTO: VÍRUS!')
+              : (pingPercent < 0 ? 'PING ALTO ATIVO' : 'PING ZERO ATIVO')}</strong>
+            <span>{pingActive
+              ? `Velocidade ${pingSigned} · ${pingSeconds}s restantes · nova bomba renova`
+              : `Saldo ${pingSigned} · coloque uma bomba para ativar por 3s`}</span>
+          </>
+        : showSignal
         ? <>
             <strong>{signalMode === 'buff' ? 'DOWNLOAD TURBO: +70%!' : 'DOWNLOAD LIMITADO: VÍRUS!'}</strong>
             <span>{signalMode === 'buff'

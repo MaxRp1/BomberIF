@@ -197,7 +197,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
 
   function onKickStun (dto:KickStunDTO) {
     if (!state || dto.p === myself) return // autor já aplicou o stun local
-    state.players.players[dto.p]?.applyStun(KICK_VIRUS_STUN_MS)
+    state.players.players[dto.p]?.applyStun(KICK_VIRUS_STUN_MS, 'dizzy')
   }
 
   function onHoldBomb (dto:HoldBombDTO) {

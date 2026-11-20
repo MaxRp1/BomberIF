@@ -1,6 +1,6 @@
-import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, SPEED, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
+import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, MAX_SPEED, PRESS_INTERVAL, SPEED, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
-import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, SignalMotion, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, firewallExplosionImmune, initialSignalMotion, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, reachAfterFling, signalPickupMode, stunVisualAt, updateSignalMotion } from '#/virus'
+import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, PingEffectState, SignalMotion, activatePingOnBombPlaced, applyGraphPickup, applyPingPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, firewallExplosionImmune, initialPingEffect, initialSignalMotion, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, pingSpeedMultiplier, reachAfterFling, resetPingUpgrades, signalPickupMode, stunVisualAt, updateSignalMotion } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { drawKickDizziness } from '~/game/animations/dizzy'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
@@ -56,6 +56,9 @@ export interface Player {
   holdNotice        : LinearMutation | null
   holdNoticeUntil   : number
   holdSpeedBuffSuppressed: boolean
+  pingEffect         : PingEffectState
+  pingNoticeMode     : 'buff'|'virus'|null
+  pingNoticeUntil    : number
   invertedUntil : number
   boostedUntil  : number
   invertedUntilDeath : boolean
@@ -106,6 +109,7 @@ export interface Player {
   invertControls       : () => void
   applyGraphBonus      : (stage:number, mutation:LinearMutation|undefined) => void
   applySignalBonus     : (stage:number, mutation:LinearMutation|undefined) => void
+  applyPingBonus       : (stage:number, mutation:LinearMutation|undefined) => void
   handleBomb           : (state:GameState) => void
   useStunSkill        : () => void
   applyStun           : (durationMs?:number, effect?:'mamedes'|'dizzy') => void
@@ -164,6 +168,9 @@ export function PlayerFactory (props:PlayerProps) : Player {
     holdNotice: null,
     holdNoticeUntil: 0,
     holdSpeedBuffSuppressed: false,
+    pingEffect: initialPingEffect(),
+    pingNoticeMode: null,
+    pingNoticeUntil: 0,
     invertedUntil: 0,
     boostedUntil: 0,
     invertedUntilDeath: false,
@@ -218,6 +225,7 @@ export function PlayerFactory (props:PlayerProps) : Player {
   player.invertControls = invertControls.bind(player)
   player.applyGraphBonus = applyGraphBonus.bind(player)
   player.applySignalBonus = applySignalBonus.bind(player)
+  player.applyPingBonus = applyPingBonus.bind(player)
   player.handleBomb = handleBomb.bind(player)
   player.useStunSkill = useStunSkill.bind(player)
   player.applyStun = applyStun.bind(player)
@@ -395,7 +403,8 @@ function moveTick (
       (onSlowFloor && !this.ignoresSlowFloor ? 0.3 : 1) *
       carrySpeedMultiplier(carryMutation, this.holding === 1) *
       graphSpeedMultiplier(this, now) *
-      this.signalMotion.multiplier
+      this.signalMotion.multiplier *
+      pingSpeedMultiplier(this.pingEffect, now)
   }
 
   this.moves[this.side]()
@@ -501,6 +510,25 @@ function applyGraphBonus (this:Player, stage:number, mutation:LinearMutation|und
   this.refreshMovement()
 }
 
+// A coleta do Sinal Bom normal continua a somar +0.1 de velocidade.
+// Uma mutação não concede esse aumento fixo: registra percentuais
+// que são ativados apenas quando uma nova bomba é colocada.
+function applyPingBonus (
+  this:Player,
+  stage:number,
+  mutation:LinearMutation|undefined
+) {
+  if (stage !== LABORATORY_STAGE || mutation === 'normal' || mutation === undefined) {
+    if (this.speed < MAX_SPEED) this.speed += 0.1
+    this.pingNoticeMode = null
+    this.pingNoticeUntil = 0
+    return
+  }
+  this.pingEffect = applyPingPickup(this.pingEffect, stage, mutation)
+  this.pingNoticeMode = mutation
+  this.pingNoticeUntil = Date.now() + LINEAR_NOTICE_DURATION_MS
+}
+
 // O Sinal Ruim altera a velocidade por movimento contínuo.
 // O vírus zera melhorias de velocidade já coletadas, mas nunca apaga
 // a velocidade inata do personagem nem outras habilidades dos itens.
@@ -530,6 +558,11 @@ function applySignalBonus (
       this.graphNoticeUntil = 0
     }
     this.holdSpeedBuffSuppressed = true
+    // Download Limitado também elimina os upgrades Ping, inclusive
+    // um efeito de 3s que tenha sido ativado por bomba anteriormente.
+    this.pingEffect = resetPingUpgrades()
+    this.pingNoticeMode = null
+    this.pingNoticeUntil = 0
     // Mantém a possibilidade de apanhar bombas adversárias, mas a
     // mensagem de +20% deixa de aparecer após cancelar a velocidade.
     if (this.holdMutation === 'buff') {
@@ -621,6 +654,9 @@ function placeBomb (this:Player, state:GameState) {
     y: bomb.y
   })
   state.entities.add(bomb)
+  // Só ativa Ping Zero/Alto se a bomba foi realmente colocada.
+  // Tentativas bloqueadas, arremessos e chutes não contam.
+  this.pingEffect = activatePingOnBombPlaced(this.pingEffect, Date.now())
   playBombSound()
 }
 
@@ -726,6 +762,9 @@ function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   this.signalNotice = null
   this.signalNoticeUntil = 0
   this.holdSpeedBuffSuppressed = false
+  this.pingEffect = resetPingUpgrades()
+  this.pingNoticeMode = null
+  this.pingNoticeUntil = 0
   this.collidable = false
 
   this.tick = () => {

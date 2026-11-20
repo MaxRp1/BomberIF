@@ -61,8 +61,8 @@ test('sorteio em duas etapas: 50% normal, 25% buff, 25% debuff', () => {
   assert.deepEqual(totals, {normal:5000, buff:2500, virus:2500})
 })
 
-test('modo de testes do Lab só distribui os sete power-ups já mutáveis', () => {
-  const eligible = [2,3,4,6,7,8,9]
+test('modo de testes do Lab só distribui os oito power-ups já mutáveis', () => {
+  const eligible = [2,3,4,5,6,7,8,9]
   for (let bonus = 1; bonus <= 9; bonus++) {
     assert.equal(isLabMutatablePowerup(bonus), eligible.includes(bonus))
     assert.equal(canDropLabPowerup(LABORATORY_STAGE, bonus, true), eligible.includes(bonus))
@@ -79,23 +79,23 @@ test('com modo temporário ligado, todo power-up elegível é mutado: 50% buff e
   assert.equal(chooseLinearMutation(0.49, true), 'buff')
   assert.equal(chooseLinearMutation(0.5, true), 'virus')
   assert.equal(chooseLinearMutation(0.99, true), 'virus')
-  const map:(BlockDTO|null)[][] = [[block(1), block(2), block(3), block(4), block(6), block(7), block(8), block(9)]]
+  const map:(BlockDTO|null)[][] = [[block(1), block(2), block(3), block(4), block(5), block(6), block(7), block(8), block(9)]]
   let i = 0
-  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0,0.49,0.5,0.25,0.8,0.75,0.99][i++], true)
-  assert.equal(i, 7)
+  assignLabLinearMutations(map, LABORATORY_STAGE, () => [0,0.49,0.5,0.1,0.25,0.8,0.75,0.99][i++], true)
+  assert.equal(i, 8)
   assert.deepEqual(map[0].map(item => item?.mutation),
-    [undefined, 'buff', 'buff', 'virus', 'buff', 'virus', 'virus', 'virus'])
+    [undefined, 'buff', 'buff', 'virus', 'buff', 'buff', 'virus', 'virus', 'virus'])
   assert.ok(map[0].slice(1).every(item => isMutatedBonus(item?.mutation)))
 })
 
 test('desligar modo de testes recupera 50% normal/25% buff/25% vírus e pool completo', () => {
-  const values = [0.1, 0.6, 0.9, 0.5, 0.7, 0.8]
-  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(8), block(4), block(6), block(7), block(5)]]
+  const values = [0.1, 0.6, 0.9, 0.5, 0.7, 0.8, 0.3]
+  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(8), block(4), block(6), block(7), block(5), block(1)]]
   let i = 0
   assignLabLinearMutations(map, LABORATORY_STAGE, () => values[i++], false)
-  assert.equal(i, 6)
+  assert.equal(i, 7)
   assert.deepEqual(map[0].map(item => item?.mutation),
-    ['normal','buff','virus','buff','buff','virus',undefined])
+    ['normal','buff','virus','buff','buff','virus','normal',undefined])
   for (let bonus = 1; bonus <= 9; bonus++) {
     assert.equal(canDropLabPowerup(LABORATORY_STAGE, bonus, false), true)
   }
@@ -116,7 +116,7 @@ test('sprite misterioso é idêntico para buff e debuff, normal permanece origin
 })
 
 test('servidor mantém o segredo visual e o estado sincronizados entre jogadores', () => {
-  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(2), block(5)]]
+  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(2), block(1)]]
   const rolls = [0.49, 0.5, 0.75]
   let index = 0
   assignLabLinearMutations(map, LABORATORY_STAGE, () => rolls[index++])
@@ -277,7 +277,7 @@ test('Função Linear normal no laboratório concede apenas +1 e não altera inf
 
 test('Troca de Dados (ID 3) só recebe mutação no laboratório', () => {
   assert.equal(HOLD_BONUS_ID, 3)
-  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(5)]]
+  const map:(BlockDTO|null)[][] = [[block(2), block(3), block(1)]]
   let rolls = 0
   assignLabLinearMutations(map, 0, () => { rolls++; return 0.7 })
   assert.equal(rolls, 0)

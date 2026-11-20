@@ -22,10 +22,10 @@ const b = (bonus:number, x=16):BlockDTO => ({
   t:'D', x, y:16, b:bonus as BlockDTO['b']
 })
 
-test('Firewall ID 7 é mutável no Laboratório e compõe os sete itens de teste', () => {
+test('Firewall ID 7 é mutável no Laboratório e compõe os oito itens de teste', () => {
   assert.equal(FIREWALL_BONUS_ID, 7)
   assert.equal(FIREWALL_EFFECT_DURATION_MS, 6000)
-  const eligible = [2,3,4,6,7,8,9]
+  const eligible = [2,3,4,5,6,7,8,9]
   for (let id=1; id<=9; id++) {
     assert.equal(isLabMutatablePowerup(id), eligible.includes(id))
     assert.equal(canDropLabPowerup(LABORATORY_STAGE,id,true), eligible.includes(id))
@@ -38,7 +38,7 @@ test('Firewall ID 7 é mutável no Laboratório e compõe os sete itens de teste
 })
 
 test('Firewall tem 50% buff e 50% vírus no modo de testes', () => {
-  const map:(BlockDTO|null)[][] = [[b(7),b(7,32),b(7,48),b(5,64)]]
+  const map:(BlockDTO|null)[][] = [[b(7),b(7,32),b(7,48),b(1,64)]]
   let index=0
   assignLabPowerupMutations(map, LABORATORY_STAGE, () => [0,0.49,0.5][index++],true)
   assert.equal(index,3)

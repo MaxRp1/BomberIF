@@ -1,7 +1,8 @@
 import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, SPEED, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
-import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, SignalMotion, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, firewallExplosionImmune, initialSignalMotion, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, reachAfterFling, signalPickupMode, updateSignalMotion } from '#/virus'
+import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, SignalMotion, applyGraphPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, firewallExplosionImmune, initialSignalMotion, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, reachAfterFling, signalPickupMode, stunVisualAt, updateSignalMotion } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
+import { drawKickDizziness } from '~/game/animations/dizzy'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { GamepadFactory } from '~/game/entities/gamepad'
@@ -43,6 +44,9 @@ export interface Player {
   isMamedes         : boolean
   spriteId          : number
   stunnedUntil      : number
+  mamedesStunUntil  : number
+  kickStunUntil     : number
+  kickStunStartedAt : number
   skillReadyAt      : number
   lastSkillRequestAt: number
   hold              : boolean
@@ -104,7 +108,7 @@ export interface Player {
   applySignalBonus     : (stage:number, mutation:LinearMutation|undefined) => void
   handleBomb           : (state:GameState) => void
   useStunSkill        : () => void
-  applyStun           : (durationMs?:number) => void
+  applyStun           : (durationMs?:number, effect?:'mamedes'|'dizzy') => void
   placeBomb            : (state:GameState) => void
   holdBomb             : (state:GameState) => void
   takeBomb             : (bomb:Bomb, state:GameState) => boolean
@@ -145,6 +149,9 @@ export function PlayerFactory (props:PlayerProps) : Player {
     isMamedes: props.sprite === MAMEDES_SPRITE_ID,
     spriteId: props.sprite,
     stunnedUntil: 0,
+    mamedesStunUntil: 0,
+    kickStunUntil: 0,
+    kickStunStartedAt: 0,
     skillReadyAt: 0,
     lastSkillRequestAt: 0,
     firewallMode: null,
@@ -560,10 +567,24 @@ function useStunSkill (this:Player) {
 }
 
 // Todos os clientes recebem o mesmo alvo da confirmação do servidor.
-function applyStun (this:Player, durationMs = STUN_DURATION_MS) {
+function applyStun (
+  this:Player,
+  durationMs = STUN_DURATION_MS,
+  effect:'mamedes'|'dizzy' = 'mamedes'
+) {
   if (!this.active) return
 
-  this.stunnedUntil = Math.max(this.stunnedUntil, Date.now() + durationMs)
+  const now = Date.now()
+  const until = now + durationMs
+  // O bloqueio dos comandos permanece compartilhado; só o efeito visual
+  // distingue o projétil do Mamedes da tontura do Chute com vírus.
+  this.stunnedUntil = Math.max(this.stunnedUntil, until)
+  if (effect === 'dizzy') {
+    this.kickStunUntil = Math.max(this.kickStunUntil, until)
+    this.kickStunStartedAt = now
+  } else {
+    this.mamedesStunUntil = Math.max(this.mamedesStunUntil, until)
+  }
   const wasMoving = this.moving !== 0
   this.moving = 0
   this.movingSide = { U: false, D: false, L: false, R: false }
@@ -696,6 +717,9 @@ function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   this.invertedUntilDeath = false
   this.invertedUntil = 0
   this.boostedUntil = 0
+  this.mamedesStunUntil = 0
+  this.kickStunUntil = 0
+  this.kickStunStartedAt = 0
   this.firewallMode = null
   this.firewallUntil = 0
   this.signalMotion = initialSignalMotion('normal')
@@ -819,10 +843,15 @@ function render (this:Player, context:CanvasRenderingContext2D) {
     }
   }
 
-  // Animação arco-íris no jogador atordoado, sem trocar o sprite.
-  if (Date.now() < this.stunnedUntil) {
+  // Visuais separados: o Chute desenha estrelinhas orbitando a cabeça
+  // enquanto o Mamedes mantém o arco-íris da habilidade original.
+  const now = Date.now()
+  const stunVisual = stunVisualAt(now, this.mamedesStunUntil, this.kickStunUntil)
+  if (stunVisual === 'dizzy') {
+    drawKickDizziness(context, this.x, this.y, now - this.kickStunStartedAt)
+  } else if (stunVisual === 'mamedes') {
     const pride = ['#e92737', '#ff8f1f', '#fff033', '#30c865', '#357fff', '#923bd0']
-    const phase = Math.floor(Date.now() / 120) % pride.length
+    const phase = Math.floor(now / 120) % pride.length
 
     context.save()
     context.globalAlpha = 0.25

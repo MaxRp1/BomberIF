@@ -14,8 +14,10 @@ import {
   chooseLinearMutation,
   isMutatedBonus,
   kickPickupMutation,
-  shouldResetKickTimer
+  shouldResetKickTimer,
+  stunVisualAt
 } from '../../shared/virus'
+import { drawKickDizziness } from '../../client/src/game/animations/dizzy'
 import { onKickImpact, onMoveBomb } from '../src/game'
 
 interface Emission { room:string; event:string; payload:any }
@@ -168,4 +170,49 @@ test('não aceita chute de jogador eliminado ou fora da sala',()=>{
   onMoveBomb(s.io,s.socket,{i:'O400',p:2,s:'L',k:'virus'})
   assert.equal(s.events('mb').length,0)
   assert.equal(s.events('kick_stun').length,0)
+})
+
+
+test('chute vírus mostra tontura apenas pelos seus 1000 ms, sem arco-íris',()=>{
+  assert.equal(stunVisualAt(0,0,1000),'dizzy')
+  assert.equal(stunVisualAt(999,0,1000),'dizzy')
+  assert.equal(stunVisualAt(1000,0,1000),null)
+  assert.equal(stunVisualAt(1001,0,1000),null)
+})
+
+test('Mamedes preserva animação arco-íris por 2 segundos',()=>{
+  assert.equal(stunVisualAt(0,2000,0),'mamedes')
+  assert.equal(stunVisualAt(1999,2000,0),'mamedes')
+  assert.equal(stunVisualAt(2000,2000,0),null)
+})
+
+test('quando os stuns coincidem, arco-íris prevalece e tontura pode continuar depois',()=>{
+  assert.equal(stunVisualAt(1000,2000,2500),'mamedes')
+  assert.equal(stunVisualAt(1999,2000,2500),'mamedes')
+  assert.equal(stunVisualAt(2000,2000,2500),'dizzy')
+  assert.equal(stunVisualAt(2500,2000,2500),null)
+})
+
+test('animação de tontura desenha estrelas em pixel art e orbita com o tempo',()=>{
+  const rects: Array<[number,number,number,number]> = []
+  let saved=0, restored=0
+  const context={
+    save:()=>{saved++},
+    restore:()=>{restored++},
+    fillRect:(x:number,y:number,w:number,h:number)=>{rects.push([x,y,w,h])},
+    fillStyle:''
+  } as unknown as CanvasRenderingContext2D
+  drawKickDizziness(context,20,30,0)
+  const initial=rects.slice()
+  assert.equal(initial.length,15) // 3 estrelas, cinco retângulos por estrela
+  assert.equal(saved,1)
+  assert.equal(restored,1)
+  assert.ok(initial.every(([x,y,w,h])=>Number.isInteger(x)&&Number.isInteger(y)&&
+    Number.isInteger(w)&&Number.isInteger(h)))
+  rects.length=0
+  drawKickDizziness(context,20,30,175)
+  assert.equal(rects.length,15)
+  assert.notDeepEqual(rects,initial,'as estrelas devem se mover ao longo da animação')
+  assert.equal(saved,2)
+  assert.equal(restored,2)
 })

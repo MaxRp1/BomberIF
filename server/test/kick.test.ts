@@ -53,11 +53,11 @@ test('Chute ID 4 participa do modo mutado 50/50 do Laboratório',()=>{
   assert.equal(typeof LAB_ONLY_MUTATED_DROPS_FOR_TESTS,'boolean')
   assert.equal(canDropLabPowerup(LABORATORY_STAGE,4,true),true)
   assert.equal(canDropLabPowerup(0,4,true),true)
-  assert.equal(canDropLabPowerup(LABORATORY_STAGE,5,true),false)
+  assert.equal(canDropLabPowerup(LABORATORY_STAGE,1,true),false)
   const blocks:(BlockDTO|null)[][]=[[
     {t:'D',x:16,y:16,b:4},
     {t:'D',x:32,y:16,b:4},
-    {t:'D',x:48,y:16,b:5}
+    {t:'D',x:48,y:16,b:1}
   ]]
   let i=0
   assignLabPowerupMutations(blocks,LABORATORY_STAGE,()=>[0.49,0.5][i++],true)

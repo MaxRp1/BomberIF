@@ -589,7 +589,7 @@ function tick (this:Bomb, state:GameState) {
             })
             if (mode === 'virus') {
               // Stun de 1 s imediato; o servidor confirma para todos.
-              localPlayer.applyStun(KICK_VIRUS_STUN_MS)
+              localPlayer.applyStun(KICK_VIRUS_STUN_MS, 'dizzy')
             }
           }
         }

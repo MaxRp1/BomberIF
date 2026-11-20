@@ -1,7 +1,7 @@
 import { BlockDTO, SIDES } from './dto'
 
 // Power-ups com mutação implementada no Laboratório: Função Linear,
-// Troca de Dados, Chute, Sinal Ruim, Firewall, Grafo e IHM.
+// Troca de Dados, Chute, Sinal Bom, Sinal Ruim, Firewall, Grafo e IHM.
 export const LABORATORY_STAGE = 1 // sprite 1.png: laboratório (0 = campo, 2 = refeitório)
 export const LINEAR_BUFF_AMOUNT = 3
 export const LINEAR_VIRUS_DURATION_MS = 10000
@@ -25,21 +25,22 @@ export function stunVisualAt(
   return null
 }
 export const FIREWALL_BONUS_ID = 7
+export const SIGNAL_GOOD_BONUS_ID = 5
 export const SIGNAL_BAD_BONUS_ID = 6
 export const FIREWALL_EFFECT_DURATION_MS = 6000
 export const GRAPH_BONUS_ID = 8
 export const IHM_BONUS_ID = 9
 
 // MODO TEMPORÁRIO DE TESTES DESTA BRANCH.
-// true: o Lab dropa SOMENTE os sete power-ups já mutáveis,
+// true: o Lab dropa SOMENTE os oito power-ups já mutáveis,
 //       todos com sprite misterioso e chance 50/50 de buff ou vírus.
 // false: restaura TODO o pool de itens e a distribuição original
-//        de 50% normal, 25% buff e 25% vírus nos sete itens.
+//        de 50% normal, 25% buff e 25% vírus nos oito itens.
 export const LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true
 
 export function isLabMutatablePowerup(id:number): boolean {
   return id === 2 || id === HOLD_BONUS_ID || id === KICK_BONUS_ID ||
-     id === SIGNAL_BAD_BONUS_ID || id === FIREWALL_BONUS_ID || id === GRAPH_BONUS_ID || id === IHM_BONUS_ID
+     id === SIGNAL_GOOD_BONUS_ID || id === SIGNAL_BAD_BONUS_ID || id === FIREWALL_BONUS_ID || id === GRAPH_BONUS_ID || id === IHM_BONUS_ID
 }
 
 export function canDropLabPowerup(
@@ -56,6 +57,63 @@ export const HOLD_BUFF_SPEED_MULTIPLIER = 1.2
 export const HOLD_VIRUS_SPEED_MULTIPLIER = 0.4
 
 export type LinearMutation = 'normal' | 'buff' | 'virus'
+
+// Sinal Bom (ID 5): ao colocar uma bomba, ativa o saldo acumulado por 3s.
+// Primeira mutação: +40% ou -40%; cada mutação seguinte: +/-20 pontos.
+// O percentual ativo é uma cópia do saldo no instante da bomba: coletar
+// outro item não muda a velocidade enquanto a bomba anterior está ativa.
+// Nunca permitir velocidade zero/negativa depois de muitas infecções.
+export const PING_BONUS_DURATION_MS = 3000
+export const PING_FIRST_PICKUP_PERCENT = 40
+export const PING_NEXT_PICKUP_PERCENT = 20
+export const PING_MIN_MOVEMENT_MULTIPLIER = 0.2
+
+export interface PingEffectState {
+  pickups: number
+  storedPercent: number
+  activePercent: number
+  activeUntil: number
+}
+
+export function initialPingEffect(): PingEffectState {
+  return { pickups:0, storedPercent:0, activePercent:0, activeUntil:0 }
+}
+
+export function applyPingPickup(
+  current:PingEffectState,
+  stage:number,
+  mutation:LinearMutation|undefined
+): PingEffectState {
+  if (stage !== LABORATORY_STAGE || mutation === 'normal' || mutation === undefined) return current
+  const amount = current.pickups === 0 ? PING_FIRST_PICKUP_PERCENT : PING_NEXT_PICKUP_PERCENT
+  const sign = mutation === 'buff' ? 1 : -1
+  return {
+    ...current,
+    pickups: current.pickups + 1,
+    storedPercent: current.storedPercent + sign * amount
+  }
+}
+
+export function activatePingOnBombPlaced(
+  current:PingEffectState,
+  now:number
+): PingEffectState {
+  if (current.pickups === 0) return current
+  return {
+    ...current,
+    activePercent:current.storedPercent,
+    activeUntil:now + PING_BONUS_DURATION_MS
+  }
+}
+
+export function pingSpeedMultiplier(state:PingEffectState, now:number):number {
+  if (now >= state.activeUntil) return 1
+  return Math.max(PING_MIN_MOVEMENT_MULTIPLIER, 1 + state.activePercent / 100)
+}
+
+export function resetPingUpgrades(): PingEffectState {
+  return initialPingEffect()
+}
 
 // Sinal Ruim (ID 6): regras de progressão independentes do FPS.
 // Os quatro segundos de rampa são configuráveis e valem para o

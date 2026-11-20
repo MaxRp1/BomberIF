@@ -1,4 +1,4 @@
-import { MAX_SPEED, TILE_SIZE } from '#/constants'
+import { TILE_SIZE } from '#/constants'
 import { LinearMutation, firewallPickupMode, isMutatedBonus } from '#/virus'
 import { applyLinearPickup, holdPickupMutation, kickPickupMutation, LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS } from '#/virus'
 import { PassFactory } from '~/game/entities/pass'
@@ -210,7 +210,7 @@ function SpeedBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, speed, () => {
-        if (state.players.myself!.speed < MAX_SPEED) state.players.myself!.speed += 0.1
+        state.players.myself!.applyPingBonus(state.stage.name, props.mutation)
       })
     },
     render: (context:CanvasRenderingContext2D) => {

@@ -1,5 +1,5 @@
 import { Server } from 'socket.io'
-import { assignLabLinearMutations } from '#/virus'
+import { assignLabPowerupMutations, canDropLabPowerup, LAB_ONLY_MUTATED_DROPS_FOR_TESTS } from '#/virus'
 import { BLASTS, BOMBS, BONUS, BONUSES, INITIAL_POSITION, SPRITES, STAGES } from '#/constants'
 import {
   BlockDTO,
@@ -58,6 +58,7 @@ export function startGameFactory (
     p.data.frankLifeUsed = false
     p.data.skillReadyAt = 0
     p.data.stunnedUntil = 0
+    p.data.pendingKickImpacts = new Set<string>()
     p.emit('myself', index)
   }
 
@@ -67,7 +68,7 @@ export function startGameFactory (
   const state = stateFactory()
 
   // Inicializa o acompanhamento de vitórias da rodada
-  beginRankingRound(roomId, playerIds)
+  beginRankingRound(roomId, playerIds, state)
 
   return { roomId, players, state }
 }
@@ -138,16 +139,18 @@ function slowFloorsFactory (
 
 // estabelece o estado inicial do jogo
 function stateFactory () : GameStateDTO {
-  const blocks = bonusFactory(blocksFactory())
+  // Sorteia entre Campo (0), Laboratório (1) e Refeitório (2).
+  // As mutações continuam restritas ao Laboratório, quando ele for sorteado.
+  const stage: number = Math.floor(Math.random() * STAGES)
+  const blocks = bonusFactory(blocksFactory(), stage)
 
   const blast = Math.floor(Math.random() * BLASTS)
   const bomb = Math.floor(Math.random() * BOMBS)
   const bonus = Math.floor(Math.random() * BONUS)
-  const stage = Math.floor(Math.random() * STAGES)
 
-  // O laboratório define a mutação de cada Função Linear uma única vez,
-  // e o DTO resultante é compartilhado com todos os jogadores da sala.
-  assignLabLinearMutations(blocks, stage)
+  // Modo normal: 50% dos itens elegíveis permanecem normais,
+  // 25% recebem buff e 25% vírus, somente no Laboratório.
+  assignLabPowerupMutations(blocks, stage, Math.random, LAB_ONLY_MUTATED_DROPS_FOR_TESTS)
 
   const slowFloors =
     stage === CAFETERIA_STAGE
@@ -196,12 +199,18 @@ function blocksFactory () : (BlockDTO|null)[][] {
   return blocks
 }
 // distribui (ao menos tenta) os bônus aleatoriamente entre os blocos destrutíveis
-function bonusFactory (blocks:(BlockDTO|null)[][]) : (BlockDTO|null)[][] {
+function bonusFactory (
+  blocks:(BlockDTO|null)[][],
+  stage:number
+) : (BlockDTO|null)[][] {
   const positions:number[][] = []
   blocks.forEach((row,i) => row.forEach((block,j) => {
     if (block && block.t === 'D') positions.push([i, j])
   }))
   for (let bonus = 1; bonus < BONUSES.length; bonus++) {
+    // Em condições normais todos os itens são distribuídos.
+    // A filtragem do Laboratório só é usada se o modo de testes voltar.
+    if (!canDropLabPowerup(stage, bonus)) continue
     for (let quantity = BONUSES[bonus]; quantity > 0; quantity--) {
       const where = Math.floor(Math.random() * positions.length)
       blocks[positions[where][0]][positions[where][1]]!.b = bonus as BlockDTO['b']

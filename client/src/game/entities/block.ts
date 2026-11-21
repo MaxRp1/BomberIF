@@ -1,5 +1,6 @@
 import { SPEED, TILE_SIZE } from '#/constants'
 import { BlockDTO } from '#/dto'
+import { firewallPassesDestructible } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { BLOCK } from '~/game/animations/block'
 import { Bomb } from '~/game/entities/bomb'
@@ -112,7 +113,9 @@ function putOneBomb (this:Blocks['blocks'], bomb:Bomb) {
 }
 
 function tickD (this:Block, state:GameState) : boolean {
-  const colliding = isColliding(state.players.myself!, this)
+  const player = state.players.myself!
+  if (firewallPassesDestructible(player.firewallMode, player.firewallUntil, Date.now())) return false
+  const colliding = isColliding(player, this)
   if (colliding) stopPlayer(state.players.myself!, this)
   return colliding
 }

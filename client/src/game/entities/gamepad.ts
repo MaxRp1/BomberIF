@@ -17,8 +17,6 @@ interface GamepadHost {
   skillHeld : boolean
   moveKeys  : {[key:number]:SIDES}
   player    : Player
-  invertControls : () => void
-  //revertControls : () => void
   tick           : (state:GameState) => void
   render         : () => void
 }
@@ -38,16 +36,20 @@ export function GamepadFactory (props:GamepadProps) : GamepadHost {
     player: props.player,
     render: () => {}
   } as unknown as GamepadHost
-  host.invertControls = invertControls.bind(host)
-  //host.revertControls = revertControls.bind(host)
   host.tick = tick.bind(host)
   return host
 }
 
 function tick (this:GamepadHost, state:GameState) {
-  if (!this.player.active) return
+  if (!this.player.active) {
+    this.player.setGamepadDirection(null)
+    return
+  }
   const gamepad = navigator.getGamepads()[this.index]
-  if (!gamepad) return
+  if (!gamepad) {
+    this.player.setGamepadDirection(null)
+    return
+  }
 
   // Botão 4 = LB / L1 (borda de pressionamento para não disparar sem parar).
   const skillPressed = !!gamepad.buttons[4]?.pressed
@@ -55,25 +57,27 @@ function tick (this:GamepadHost, state:GameState) {
   this.skillHeld = skillPressed
 
   // Bloqueia movimento, bombas e ações durante o stun.
-  if (Date.now() < this.player.stunnedUntil) return
+  if (Date.now() < this.player.stunnedUntil) {
+    this.player.setGamepadDirection(null)
+    return
+  }
 
-  let useAxes = true
-  for (const key in this.moveKeys) {
-    if (gamepad.buttons[key].pressed) {
-      this.player.startMove(this.moveKeys[key])
-      useAxes = false
-    }
-    else {
-      this.player.stopMove(this.moveKeys[key])
+  // Uma única direção física por frame. O Player aplica a inversão,
+  // de modo que o joystick neutro não interrompa teclas do teclado.
+  let direction:SIDES|null = null
+  for (const key of [12, 13, 14, 15]) {
+    if (gamepad.buttons[key]?.pressed) {
+      direction = this.moveKeys[key]
+      break
     }
   }
-  if (useAxes) {
-    if      (gamepad.axes[1] > 0.3)  this.player.startMove(this.moveKeys[13])
-    else if (gamepad.axes[1] < -0.3) this.player.startMove(this.moveKeys[12])
-    else if (gamepad.axes[0] > 0.2)  this.player.startMove(this.moveKeys[15])
-    else if (gamepad.axes[0] < -0.2) this.player.startMove(this.moveKeys[14])
-    else                             this.player.stopMove(this.player.side)
+  if (!direction) {
+    if      (gamepad.axes[1] > 0.3)   direction = 'D'
+    else if (gamepad.axes[1] < -0.3) direction = 'U'
+    else if (gamepad.axes[0] > 0.2)  direction = 'R'
+    else if (gamepad.axes[0] < -0.2) direction = 'L'
   }
+  this.player.setGamepadDirection(direction)
   for (const key in this.bombKeys) {
     if (gamepad.buttons[key].pressed) {
       if (Date.now() > this.lastPress.bomb) {
@@ -84,17 +88,3 @@ function tick (this:GamepadHost, state:GameState) {
   }
 }
 
-function invertControls (this:GamepadHost) {
-  this.moveKeys[12] = 'D' 
-  this.moveKeys[13] = 'U'
-  this.moveKeys[14] = 'R'
-  this.moveKeys[15] = 'L'
-}
-
-/*reverter os controles 
-function revertControls(this: GamepadHost){
-  this.moveKeys[12] = 'U'
-  this.moveKeys[13] = 'D'
-  this.moveKeys[14] = 'L'
-  this.moveKeys[15] = 'R'
-}*/

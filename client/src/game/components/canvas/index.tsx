@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FRANK_SPRITE_ID, OVERCLOCK_DETONATION_MULTIPLIER, STUN_COOLDOWN_MS } from '#/constants'
-import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
+import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmResultDTO, KickImpactDTO, KickStunDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
 import { BlocksFactory } from '~/game/entities/block'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { EntitiesFactory } from '~/game/entities/factory'
@@ -20,7 +20,8 @@ import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
 import VirusHud from './virusHud'
-import { fillMissingLabLinearMutations } from '#/virus'
+import { getMutationHudPlacement } from './mutationHudLayout'
+import { fillMissingLabPowerupMutations, KICK_VIRUS_STUN_MS, LAB_ONLY_MUTATED_DROPS_FOR_TESTS } from '#/virus'
 
 const RESULT_DISPLAY_MS = 5000
 
@@ -104,7 +105,12 @@ function startGame (dto:StartGameDTO) {
   // Se a versão remota ainda não tiver esse campo, os dois navegadores
   // calculam o mesmo resultado determinístico a partir da sala e posição.
   // Preencher ANTES de criar as entidades de bloco/bonus.
-  fillMissingLabLinearMutations(dto.state.blocks, dto.state.stage, dto.roomId)
+  fillMissingLabPowerupMutations(
+    dto.state.blocks,
+    dto.state.stage,
+    dto.roomId,
+    LAB_ONLY_MUTATED_DROPS_FOR_TESTS
+  )
 
   setState({
     ...dto.state,
@@ -174,7 +180,25 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     const bomb = state.entities.get(dto.i) as Bomb | undefined
     // Pacotes podem chegar depois de a bomba explodir por cascata.
     if (!bomb?.armed) return
-    bomb.startMove(dto.s, state)
+    bomb.startMove(dto.s, state, dto.k ?? 'normal', dto.p)
+  }
+
+  function onKickImpact (dto:KickImpactDTO) {
+    if (!state) return
+    const bomb = state.entities.get(dto.i) as Bomb | undefined
+    if (!bomb?.armed) return
+    // O cliente que chutou já detonou localmente. Os demais replicam
+    // a mesma posição final do impacto, sem depender da própria simulação.
+    bomb.x = dto.x
+    bomb.y = dto.y
+    bomb.moving = false
+    bomb.flinging = false
+    bomb.detonate(state)
+  }
+
+  function onKickStun (dto:KickStunDTO) {
+    if (!state || dto.p === myself) return // autor já aplicou o stun local
+    state.players.players[dto.p]?.applyStun(KICK_VIRUS_STUN_MS, 'dizzy')
   }
 
   function onHoldBomb (dto:HoldBombDTO) {
@@ -184,6 +208,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     if (!bomb?.armed || !holder) return
     holder.holding = 1
     holder.bombId = dto.i
+    holder.holdMutation = dto.mutation ?? null
     bomb.setHolding(dto.p, state)
   }
 
@@ -198,6 +223,9 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     if (!bomb?.armed) return
     bomb.x = dto.x
     bomb.y = dto.y
+    if (typeof dto.r === 'number' && Number.isFinite(dto.r) && dto.r >= 0) {
+      bomb.reach = dto.r
+    }
     bomb.startFling(dto.s)
   }
 
@@ -236,6 +264,12 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     const frank = state.players.players[dto.p]
     if (frank?.spriteId !== FRANK_SPRITE_ID) return
     frank.consumeExtraLife()
+  }
+
+  function onIhmResult (dto:IhmResultDTO) {
+    // Para IHM do Laboratório, a morte já foi validada pelo servidor.
+    // Quando a vítima é o próprio navegador, o antigo onKill a ignoraria.
+    if (dto.p === myself) state?.players.myself?.kill(false)
   }
 
   function onKill (dto:KillDTO) {
@@ -285,10 +319,13 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     socket.on('mv', onMove)
     socket.on('pb', onPlaceBomb)
     socket.on('mb', onMoveBomb)
+    socket.on('kick_impact', onKickImpact)
+    socket.on('kick_stun', onKickStun)
     socket.on('hb', onHoldBomb)
     socket.on('fb', onFlingBomb)
     socket.on('nb', onNullifyBlock)
     socket.on('kl', onKill)
+    socket.on('ihm_result', onIhmResult)
     socket.on('frank_life_used', onFrankLifeUsed)
     socket.on('round_result', onRoundResult)
     socket.on('wins_update', onWinsUpdate)
@@ -300,10 +337,13 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       socket.off('mv', onMove)
       socket.off('pb', onPlaceBomb)
       socket.off('mb', onMoveBomb)
+      socket.off('kick_impact', onKickImpact)
+      socket.off('kick_stun', onKickStun)
       socket.off('hb', onHoldBomb)
       socket.off('fb', onFlingBomb)
       socket.off('nb', onNullifyBlock)
       socket.off('kl', onKill)
+      socket.off('ihm_result', onIhmResult)
       socket.off('frank_life_used', onFrankLifeUsed)
       socket.off('round_result', onRoundResult)
       socket.off('wins_update', onWinsUpdate)
@@ -393,6 +433,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
 
   const localPlayer = typeof myself === 'number' ? state?.players.players[myself] : undefined
   const compactRanking = rankingWidth < 215
+  const mutationHudPlacement = getMutationHudPlacement()
 
   const ranking = (state?.players.players ?? [])
   .map((player, index) => ({
@@ -500,7 +541,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
         <span>{stunRemaining > 0 ? 'ATORDOADO' : skillRemaining > 0 ? `${skillRemaining}s` : 'E · LB/L1'}</span>
       </SkillButton>
     )}
-    <VirusHud player={localPlayer} stage={state?.stage.name} />
+    <VirusHud player={localPlayer} stage={state?.stage.name} placement={mutationHudPlacement} />
     <Timer id='timer' />
     <canvas ref={canvasRef} width={240} height={208} style={style} />
     {roundResult && <RoundResult result={roundResult} myself={myself} />}

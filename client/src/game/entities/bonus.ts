@@ -1,12 +1,12 @@
-import { MAX_SPEED, SPEED, TILE_SIZE } from '#/constants'
-import { LinearMutation } from '#/virus'
-import { applyLinearPickup, LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS } from '#/virus'
+import { TILE_SIZE } from '#/constants'
+import { LinearMutation, firewallPickupMode, isMutatedBonus } from '#/virus'
+import { applyLinearPickup, holdPickupMutation, kickPickupMutation, LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS } from '#/virus'
 import { PassFactory } from '~/game/entities/pass'
 import { GameState } from '~/game/entities/state'
 import { playBonusSound } from '~/game/sound/bonus'
 import { Assets } from '~/game/util/assets'
 import { isCollidingForced } from '~/game/util/collision'
-import { emitNullifyBlock } from '~/services/socket'
+import { emitIhmPickup, emitNullifyBlock } from '~/services/socket'
 
 interface BonusProps {
   axes  : [number, number]
@@ -126,14 +126,19 @@ function BlastBonus (props:BonusProps) : Bonus {
         player.bombReach = next.baseReach
         player.linearVirusUntil = next.virusUntil
 
-        if (state.stage.name === LABORATORY_STAGE && props.mutation) {
-          player.linearNotice = props.mutation
+        // O item normal dá apenas +1, sem acionar aviso de mutação.
+        // O sorteio da polaridade de um item mutado só aparece após a coleta.
+        if (state.stage.name === LABORATORY_STAGE && isMutatedBonus(props.mutation)) {
+          player.linearNotice = props.mutation === 'buff' ? 'buff' : 'virus'
           player.linearNoticeUntil = now + LINEAR_NOTICE_DURATION_MS
+        } else {
+          player.linearNotice = null
+          player.linearNoticeUntil = 0
         }
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 0, TILE_SIZE, TILE_SIZE, blast.x, blast.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 0)
     }
   }
   return blast
@@ -148,11 +153,23 @@ function HoldBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, hold, () => {
-        state.players.myself!.hold = true
+        const player = state.players.myself!
+        player.hold = true
+        // Uma nova coleta de Troca de Dados restabelece seu próprio buff
+        // de velocidade caso o vírus Download Limitado o tenha apagado.
+        player.holdSpeedBuffSuppressed = false
+        player.holdMutation = holdPickupMutation(state.stage.name, props.mutation)
+        if (player.holdMutation === 'buff' || player.holdMutation === 'virus') {
+          player.holdNotice = player.holdMutation
+          player.holdNoticeUntil = Date.now() + LINEAR_NOTICE_DURATION_MS
+        } else {
+          player.holdNotice = null
+          player.holdNoticeUntil = 0
+        }
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 16, TILE_SIZE, TILE_SIZE, hold.x, hold.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 16)
     }
   }
   return hold
@@ -167,11 +184,18 @@ function KickBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, kick, () => {
-        state.players.myself!.kick = true
+        const player = state.players.myself!
+        player.kick = true
+        player.kickMutation = kickPickupMutation(state.stage.name, props.mutation)
+        player.kickNotice = isMutatedBonus(player.kickMutation)
+          ? (player.kickMutation === 'buff' ? 'buff' : 'virus')
+          : null
+        player.kickNoticeUntil = player.kickNotice
+          ? Date.now() + LINEAR_NOTICE_DURATION_MS : 0
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 32, TILE_SIZE, TILE_SIZE, kick.x, kick.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 32)
     }
   }
   return kick
@@ -186,11 +210,11 @@ function SpeedBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, speed, () => {
-        if (state.players.myself!.speed < MAX_SPEED) state.players.myself!.speed += 0.1
+        state.players.myself!.applyPingBonus(state.stage.name, props.mutation)
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 48, TILE_SIZE, TILE_SIZE, speed.x, speed.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 48)
     }
   }
   return speed
@@ -205,11 +229,11 @@ function SlowBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, slow, () => {
-        state.players.myself!.speed = SPEED - 0.1
+        state.players.myself!.applySignalBonus(state.stage.name, props.mutation)
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 64, TILE_SIZE, TILE_SIZE, slow.x, slow.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 64)
     }
   }
   return slow
@@ -224,11 +248,14 @@ function PassBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, pass, () => {
-        state.entities.add(PassFactory({state}))
+        state.entities.add(PassFactory({
+          state,
+          mode: firewallPickupMode(state.stage.name, props.mutation)
+        }))
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 80, TILE_SIZE, TILE_SIZE, pass.x, pass.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 80)
     }
   }
   return pass
@@ -243,18 +270,14 @@ function InvertBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, invert, () => {
-        state.players.myself!.invertControls()
-        state.entities.entities.forEach(e => {
-          e['invertControls'] && e['invertControls']()
-        })
-        //adicionado um tempo na função de inverter os controles ft Moreira
-        setTimeout(() => {
-          state.players.myself!.invertControls()
-        }, 10000)
+        // Normal: inversão por 10s.
+        // Buff: inversão por 10s +50% de velocidade.
+        // Vírus: inversão permanente até morrer.
+        state.players.myself!.applyGraphBonus(state.stage.name, props.mutation)
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 96, TILE_SIZE, TILE_SIZE, invert.x, invert.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 96)
     }
   }
   return invert
@@ -269,14 +292,52 @@ function KillBonus (props:BonusProps) : Bonus {
     y    : props.y,
     tick: (state:GameState) => {
       collided(state, kill, () => {
-        state.players.myself!.kill(true)
+        if (state.stage.name === LABORATORY_STAGE) {
+          // O cliente não decide a vítima: pode ser o coletor ou
+          // qualquer participante ainda vivo, conforme o sorteio do servidor.
+          emitIhmPickup({a:props.axes})
+        } else {
+          // Campo e Refeitório mantêm a morte imediata original.
+          state.players.myself!.kill(true)
+        }
       })
     },
     render: (context:CanvasRenderingContext2D) => {
-      context.drawImage(Assets.bonusSprite, 0, 112, TILE_SIZE, TILE_SIZE, kill.x, kill.y, TILE_SIZE, TILE_SIZE)
+      renderBonusSprite(context, props, 112)
     }
   }
   return kill
+}
+
+// O sprite alterado indica um item MUTADO, sem revelar buff ou debuff.
+// Os dois resultados usam o MESMO desenho roxo com glitch; a polaridade
+// permanece desconhecida até a coleta. Itens normais mantêm o sprite original.
+function renderBonusSprite (
+  context:CanvasRenderingContext2D,
+  props:BonusProps,
+  spriteY:number
+) {
+  const { x, y, mutation } = props
+
+  if (!isMutatedBonus(mutation)) {
+    context.drawImage(Assets.bonusSprite, 0, spriteY, TILE_SIZE, TILE_SIZE, x, y, TILE_SIZE, TILE_SIZE)
+    return
+  }
+
+  context.save()
+  // Descoloração e tom roxo: mantém a silhueta e os pixels do sprite original.
+  context.filter = 'grayscale(1) sepia(1) hue-rotate(225deg) saturate(5) contrast(1.4)'
+  context.drawImage(Assets.bonusSprite, 0, spriteY, TILE_SIZE, TILE_SIZE, x, y, TILE_SIZE, TILE_SIZE)
+  context.filter = 'none'
+
+  // Glitches em pixels para diferenciar o vírus até em sprites claros.
+  context.fillStyle = '#fc39bb'
+  context.fillRect(x, y, 4, 2)
+  context.fillRect(x + TILE_SIZE - 3, y + 7, 3, 2)
+  context.fillStyle = '#9bff59'
+  context.fillRect(x + TILE_SIZE - 4, y, 4, 2)
+  context.fillRect(x, y + TILE_SIZE - 3, 3, 2)
+  context.restore()
 }
 
 function collided (state:GameState, bonus:Bonus, callback:()=>void) {

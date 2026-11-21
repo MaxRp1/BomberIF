@@ -10581,3 +10581,31 @@ Depois da coleta negativa, a velocidade evolui linearmente de **1,0× a 0,6× em
 **Modo temporário de testes:** `LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true` agora distribui exclusivamente **oito** tipos mutáveis, IDs **2,3,4,5,6,7,8,9**, no Lab forçado. Cada exemplar tem sprite misterioso e chance 50%/50% buff/vírus. Com a flag `false`, retorna o pool completo e a distribuição prevista 50% normal, 25% buff e 25% debuff para esses oito IDs. Campo e Refeitório não sofrem mutação.
 
 **Validação pendente:** atualizar a branch no Kali e executar `cd server && yarn typecheck && yarn test:ping && yarn test:virus && yarn test:kick && yarn test:signal && yarn test:firewall && yarn test:ihm && yarn test:ranking && yarn test:stun && yarn build`, depois `cd ../client && yarn build`. Testar primeiro buff/debuff 3s, segundo Sinal Bom de mesma polaridade, coletas mistas, renovações por colocação real de bomba, ausência de gatilho ao chutar/segurar/arremessar, preservação da velocidade natural, reset pelo Download Limitado e funcionamento de itens normais fora do Laboratório. **O teste de gameplay e os builds não foram executados pelo assistente.**
+
+
+### HUD DAS MUTAÇÕES — FEEDBACK DE BUFF/VÍRUS E REPOSICIONAMENTO — 20/11/2026
+
+**Motivação:** o aviso antigo do Laboratório era exibido no topo central da janela e praticamente não diferenciava buff e debuff além do texto. A solicitação de UX é distinguir imediatamente a recompensa de uma infecção e evitar que a notificação se sobreponha à arena.
+
+**Redesign visual (somente no cliente):**
+- **Buff / recompensa:** painel retrô com fundo marrom-oliva escuro e detalhes **dourados claros** (#e9c779 / #ffe7a0), moldura pixelada estável, iluminação discreta, marcador `[+]` e identificação **RECOMPENSA // SINAL ESTAVEL**. O objetivo é comunicar alívio/resultado positivo sem contrastes agressivos.
+- **Vírus / falha:** painel escuro vinho/roxo (#301a2a / #180f20), borda vermelha-coral (#f26864), detalhes magenta, marcador `[!]` e identificação **ALERTA // SISTEMA CORROMPIDO**. Uma linha curta de interferência percorre uma região do fundo com animação CSS `mutation-glitch` de baixa intensidade, sem deslocar o painel inteiro nem fazer o texto tremer.
+- Os dois preservam os nomes, descrições e temporizadores de cada mutação (Função Linear, Troca de Dados, Chute, Sinal Bom, Sinal Ruim, Firewall, Grafo e IHM). O mesmo **sprite misterioso** do item permanece inalterado antes da coleta: as cores do feedback só revelam a polaridade **após** coletar.
+- O efeito CSS respeita `prefers-reduced-motion: reduce`, removendo a animação de interferência. O layout evita interação com clique/toque por `pointer-events: none` e utiliza dimensão compacta, com quebra de palavras e tipografia legível.
+
+**Reposicionamento associado ao ranking da rodada:**
+- No layout desktop, `RankingPanel` está fixado no **canto superior esquerdo**; seu tamanho muda conforme a largura lateral disponível ao mapa. `client/src/game/components/canvas/index.tsx` adiciona `rankingRef` e medições com `getBoundingClientRect().bottom`, atualizadas por `ResizeObserver`, resize, fullscreen e alterações na composição do ranking. A posição é determinada **pelo limite real inferior do placar**, não por um `top` fixo arbitrário.
+- A função pura `getMutationHudPlacement` em `client/src/game/components/canvas/mutationHudLayout.ts` usa `rankingWidth`, `rankingBottom` e `viewportHeight`. Se o ranking não está compacto (largura >= 215 px) e há pelo menos 160 px livres abaixo, o HUD aparece **à esquerda, 10 px abaixo do placar**, com a mesma largura, até 280 px.
+- Quando o ranking está **compacto/expansível**, a medição ainda não existe ou falta espaço vertical abaixo dele, o HUD alterna para o **canto superior direito** (topo 56 px; largura até 246 px), evitando competir com o botão do placar à esquerda. Uma media query para telas de até 600 px coloca a notificação a 7 px da direita, mantendo largura máxima de 220 px.
+- O novo desenho e posicionamento não alteram o motor do jogo, o canvas, os bônus, os tempos, o estado multiplayer, a aleatoriedade do Laboratório nem o servidor.
+
+**Arquivos:**
+- `client/src/game/components/canvas/virusHud.tsx` — duas identidades de feedback; estilos 8-bit, scanline/glitch leve, redução de movimento, dimensões/posicionamento responsivo, marcador positivo/negativo.
+- `client/src/game/components/canvas/mutationHudLayout.ts` — nova função pura para decidir entre posição abaixo do ranking e canto oposto em telas compactas/baixas.
+- `client/src/game/components/canvas/index.tsx` — `ref` do ranking, medição real de sua dimensão e envio de `placement` ao HUD.
+- `server/test/mutationHud.test.ts` — sete testes escritos para posição desktop, ranking estreito, breakpoint compacto, tela baixa, limite de espaço, largura máxima e fallback sem medidas; `server/package.json` inclui `yarn test:hud`.
+- `GDD_BomberIF_Final` (Google Docs) — parágrafos **Peculiaridades: o Laboratório** e **Tipografia e legibilidade** atualizados.
+
+**Testes pendentes no Kali:** `cd server && yarn typecheck && yarn test:hud && yarn test:ping && yarn test:virus && yarn test:signal && yarn test:kick && yarn test:firewall && yarn build`, depois `cd ../client && yarn build`. Validar visualmente duas polaridades, medição com ranking de um a quatro jogadores, popup mobile aberto/fechado, tela reduzida e fullscreen, painel longo, contraste e conforto dos efeitos, incluindo `prefers-reduced-motion`. A suíte escrita não substitui esses testes de renderização e acessibilidade.
+
+**Publicação:** código apenas na branch `feat/lab-data-transfer-virus-2026-11-18`, PR #14 **draft e sem merge/deploy**, `main` intacta.

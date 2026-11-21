@@ -16,7 +16,6 @@ interface VirusHudProps {
 // sistema retrô, com pequenas interferências visuais só nos detalhes.
 const Panel = styled.aside<{
   $negative: boolean
-  $side: 'left'|'right'
   $top: number
   $width: number
 }>`
@@ -28,8 +27,8 @@ const Panel = styled.aside<{
   position: fixed;
   z-index: 36;
   top: ${p => p.$top}px;
-  left: ${p => p.$side === 'left' ? '14px' : 'auto'};
-  right: ${p => p.$side === 'right' ? '12px' : 'auto'};
+  left: auto;
+  right: 12px;
   width: ${p => p.$width}px;
   max-width: calc(100vw - 24px);
   max-height: ${p => `calc(100svh - ${p.$top + 10}px)`};
@@ -137,11 +136,11 @@ const Panel = styled.aside<{
   }
 
   @media (max-width: 600px) {
-    top: 56px;
+    top: 82px;
     left: auto;
     right: 7px;
     width: min(220px, calc(100vw - 14px));
-    max-height: calc(100svh - 66px);
+    max-height: calc(100svh - 92px);
     padding: 9px 10px 10px;
 
     .mutation-status { font-size: 6px; }
@@ -211,7 +210,6 @@ export default function VirusHud({ player, stage, placement }: VirusHudProps) {
   return (
     <Panel
       $negative={negative}
-      $side={placement.side}
       $top={placement.top}
       $width={placement.width}
       data-mutation-tone={negative ? 'virus' : 'buff'}

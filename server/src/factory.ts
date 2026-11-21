@@ -1,6 +1,6 @@
 import { Server } from 'socket.io'
-import { assignLabPowerupMutations, canDropLabPowerup, LABORATORY_STAGE, LAB_ONLY_MUTATED_DROPS_FOR_TESTS } from '#/virus'
-import { BLASTS, BOMBS, BONUS, BONUSES, INITIAL_POSITION, SPRITES } from '#/constants'
+import { assignLabPowerupMutations, canDropLabPowerup, LAB_ONLY_MUTATED_DROPS_FOR_TESTS } from '#/virus'
+import { BLASTS, BOMBS, BONUS, BONUSES, INITIAL_POSITION, SPRITES, STAGES } from '#/constants'
 import {
   BlockDTO,
   GameStateDTO,
@@ -139,21 +139,17 @@ function slowFloorsFactory (
 
 // estabelece o estado inicial do jogo
 function stateFactory () : GameStateDTO {
-  // Configuração temporária DESTA BRANCH de desenvolvimento:
-  // manter apenas o Laboratório durante a implementação/testes.
-  // A branch main continua com sorteio aleatório dos três cenários.
-  const stage: number = LABORATORY_STAGE
-
-  // No modo de testes, SOMENTE itens com mutações implementadas são
-  // distribuídos pelo mapa. Fora desse modo, todo o pool original volta.
+  // Sorteia entre Campo (0), Laboratório (1) e Refeitório (2).
+  // As mutações continuam restritas ao Laboratório, quando ele for sorteado.
+  const stage: number = Math.floor(Math.random() * STAGES)
   const blocks = bonusFactory(blocksFactory(), stage)
 
   const blast = Math.floor(Math.random() * BLASTS)
   const bomb = Math.floor(Math.random() * BOMBS)
   const bonus = Math.floor(Math.random() * BONUS)
 
-  // Modo de testes: 100% dos itens elegíveis são mutados, metade buff
-  // e metade vírus. O valor false devolve 50% normal / 25% / 25%.
+  // Modo normal: 50% dos itens elegíveis permanecem normais,
+  // 25% recebem buff e 25% vírus, somente no Laboratório.
   assignLabPowerupMutations(blocks, stage, Math.random, LAB_ONLY_MUTATED_DROPS_FOR_TESTS)
 
   const slowFloors =
@@ -212,8 +208,8 @@ function bonusFactory (
     if (block && block.t === 'D') positions.push([i, j])
   }))
   for (let bonus = 1; bonus < BONUSES.length; bonus++) {
-    // Exclusivamente para facilitar testes no Lab: não gerar itens
-    // sem mutação implementada. Desligar a flag restaura o pool normal.
+    // Em condições normais todos os itens são distribuídos.
+    // A filtragem do Laboratório só é usada se o modo de testes voltar.
     if (!canDropLabPowerup(stage, bonus)) continue
     for (let quantity = BONUSES[bonus]; quantity > 0; quantity--) {
       const where = Math.floor(Math.random() * positions.length)

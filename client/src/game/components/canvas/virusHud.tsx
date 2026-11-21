@@ -3,43 +3,154 @@ import styled from 'styled-components'
 import { LABORATORY_STAGE } from '#/virus'
 import { Player } from '~/game/entities/player'
 import { pixelFont } from '~/site/theme/retro'
+import { MutationHudPlacement } from './mutationHudLayout'
 
 interface VirusHudProps {
   player?: Player
   stage?: number
+  placement: MutationHudPlacement
 }
 
-const Panel = styled.div<{ $negative: boolean }>`
+// Layout independente do canvas: evita cobrir bombas/jogadores no centro.
+// Variante positiva lembra uma recompensa; a negativa lembra um erro de
+// sistema retrô, com pequenas interferências visuais só nos detalhes.
+const Panel = styled.aside<{
+  $negative: boolean
+  $side: 'left'|'right'
+  $top: number
+  $width: number
+}>`
+  --edge: ${p => p.$negative ? '#f26864' : '#e9c779'};
+  --accent: ${p => p.$negative ? '#ffb0a0' : '#ffe7a0'};
+  --ink: ${p => p.$negative ? '#ffe7df' : '#fff7de'};
+  --shadow: ${p => p.$negative ? '#621b39' : '#76502b'};
+
   position: fixed;
   z-index: 36;
-  top: 70px;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: 88vw;
-  padding: 9px 12px;
-  border: 3px solid ${props => props.$negative ? '#e98874' : '#89de97'};
-  background: ${props => props.$negative ? '#392125' : '#193328'};
-  box-shadow: 3px 3px 0 #121014;
-  color: #fff4d7;
+  top: ${p => p.$top}px;
+  left: ${p => p.$side === 'left' ? '14px' : 'auto'};
+  right: ${p => p.$side === 'right' ? '12px' : 'auto'};
+  width: ${p => p.$width}px;
+  max-width: calc(100vw - 24px);
+  max-height: ${p => `calc(100svh - ${p.$top + 10}px)`};
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 11px 12px 12px;
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  background: ${p => p.$negative
+    ? 'linear-gradient(135deg, #301a2a, #180f20 70%)'
+    : 'linear-gradient(135deg, #3e3825, #222821 80%)'};
+  box-shadow:
+    inset 0 3px 0 ${p => p.$negative ? '#9c3750' : '#806b41'},
+    inset 3px 0 0 ${p => p.$negative ? '#55243c' : '#5b5637'},
+    4px 4px 0 var(--shadow),
+    7px 7px 0 #100e16;
+  color: var(--ink);
   font-family: ${pixelFont};
   font-size: 9px;
-  line-height: 1.7;
-  text-align: center;
+  line-height: 1.6;
+  text-align: left;
   pointer-events: none;
+  isolation: isolate;
 
-  strong { display: block; color: ${props => props.$negative ? '#ffb4a7' : '#aaf8b5'}; }
-  span { display: block; font-family: Arial, sans-serif; font-size: 12px; }
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: ${p => p.$negative
+      ? 'repeating-linear-gradient(90deg, #fa655c 0 18px, #7e294f 18px 23px, #fcb078 23px 26px)'
+      : 'repeating-linear-gradient(90deg, #ffe3a2 0 24px, #b99553 24px 28px)'};
+  }
+
+  /* Duas linhas de interferência: o painel não treme inteiro. */
+  &::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: -5px;
+    right: 8px;
+    top: 42%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #ff626b 38%, #ed4db9 67%, transparent);
+    opacity: ${p => p.$negative ? 0.65 : 0};
+    animation: ${p => p.$negative ? 'mutation-glitch 2.4s steps(3, end) infinite' : 'none'};
+  }
+
+  @keyframes mutation-glitch {
+    0%, 72%, 100% { transform: translateX(0); opacity: 0; }
+    73%, 76% { transform: translateX(4px); opacity: .65; }
+    77%, 80% { transform: translateX(-3px); opacity: .4; }
+    81% { opacity: 0; }
+  }
+
+  .mutation-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 8px;
+    padding-bottom: 7px;
+    border-bottom: 1px dashed ${p => p.$negative ? '#924055' : '#9a8252'};
+    color: var(--accent);
+    font-family: ${pixelFont};
+    font-size: 7px;
+    letter-spacing: .3px;
+  }
+
+  .mutation-symbol {
+    flex: 0 0 auto;
+    padding: 3px 4px 2px;
+    background: ${p => p.$negative ? '#762a3e' : '#74623b'};
+    color: var(--ink);
+  }
+
+  .mutation-copy {
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+
+  .mutation-copy strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--accent);
+    font-family: ${pixelFont};
+    font-size: 9px;
+    line-height: 1.65;
+    text-shadow: 1px 1px 0 #120f16;
+  }
+
+  .mutation-copy span {
+    display: block;
+    color: var(--ink);
+    font-family: 'Trebuchet MS', Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 600;
+  }
 
   @media (max-width: 600px) {
-    top: 54px;
-    padding: 6px 8px;
-    font-size: 8px;
-    span { font-size: 10px; }
+    top: 56px;
+    left: auto;
+    right: 7px;
+    width: min(220px, calc(100vw - 14px));
+    max-height: calc(100svh - 66px);
+    padding: 9px 10px 10px;
+
+    .mutation-status { font-size: 6px; }
+    .mutation-copy strong { font-size: 8px; }
+    .mutation-copy span { font-size: 11px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &::after { animation: none; opacity: 0; }
   }
 `
 
 // Lê o estado do jogador sem reiniciar o loop do canvas a cada segundo.
-export default function VirusHud({ player, stage }: VirusHudProps) {
+export default function VirusHud({ player, stage, placement }: VirusHudProps) {
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
@@ -93,7 +204,18 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
     (showGraph ? graphMode === 'virus'
       : showHold ? holdNotice === 'virus' : linearNotice === 'virus')
   return (
-    <Panel $negative={negative}>
+    <Panel
+      $negative={negative}
+      $side={placement.side}
+      $top={placement.top}
+      $width={placement.width}
+      data-mutation-tone={negative ? 'virus' : 'buff'}
+    >
+      <div className="mutation-status">
+        <span className="mutation-symbol" aria-hidden="true">{negative ? '[!]' : '[+]'}</span>
+        <span>{negative ? 'ALERTA // SISTEMA CORROMPIDO' : 'RECOMPENSA // SINAL ESTAVEL'}</span>
+      </div>
+      <div className="mutation-copy">
       {showPing
         ? <>
             <strong>{pingNotice
@@ -147,6 +269,7 @@ export default function VirusHud({ player, stage }: VirusHudProps) {
               ? <span>RAIO 0 · {seconds}s restantes</span>
               : <span>Alcance acumulado: {player.bombReach}</span>}
           </>}
+      </div>
     </Panel>
   )
 }

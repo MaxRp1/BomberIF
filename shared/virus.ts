@@ -31,12 +31,11 @@ export const FIREWALL_EFFECT_DURATION_MS = 6000
 export const GRAPH_BONUS_ID = 8
 export const IHM_BONUS_ID = 9
 
-// MODO TEMPORÁRIO DE TESTES DESTA BRANCH.
-// true: o Lab dropa SOMENTE os oito power-ups já mutáveis,
-//       todos com sprite misterioso e chance 50/50 de buff ou vírus.
-// false: restaura TODO o pool de itens e a distribuição original
-//        de 50% normal, 25% buff e 25% vírus nos oito itens.
-export const LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true
+// Modo de testes desativado: todos os power-ups voltam ao pool original.
+// No Laboratório, os oito itens mutáveis têm 50% de efeito normal,
+// 25% de buff e 25% de vírus; nos demais cenários não há mutações.
+// A flag pode ser reativada em novos testes sem alterar as mecânicas.
+export const LAB_ONLY_MUTATED_DROPS_FOR_TESTS = false
 
 export function isLabMutatablePowerup(id:number): boolean {
   return id === 2 || id === HOLD_BONUS_ID || id === KICK_BONUS_ID ||

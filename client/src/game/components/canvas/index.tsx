@@ -36,7 +36,6 @@ interface CanvasProps {
 export default function Canvas ({myself, style, setShowGame, touchEnabled, touchPortrait}:CanvasProps) {
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const rankingRef = useRef<HTMLElement>(null)
   const readyRef = useRef(0)
   const roomIdRef = useRef('')
   const finishedRef = useRef(false)
@@ -47,8 +46,6 @@ export default function Canvas ({myself, style, setShowGame, touchEnabled, touch
   const [victories, setVictories] = useState<number[]>([])
   const [rankingWidth, setRankingWidth] = useState(0)
   const [rankingOpen, setRankingOpen] = useState(false)
-  const [rankingBottom, setRankingBottom] = useState(0)
-  const [viewportHeight, setViewportHeight] = useState(0)
   const [skillRemaining, setSkillRemaining] = useState(0)
   const [stunRemaining, setStunRemaining] = useState(0)
   const [skillActive, setSkillActive] = useState(false)
@@ -415,35 +412,6 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     }
   }, [])
 
-  // Segue o tamanho REAL do placar para fixar o aviso imediatamente
-  // abaixo dele, fora da arena. O modo compacto usa a borda oposta.
-  useEffect(() => {
-    const panel = rankingRef.current
-    if (!panel) return
-
-    function updateMutationPosition() {
-      const nextBottom = panel!.getBoundingClientRect().bottom
-      setRankingBottom(previous => previous === nextBottom ? previous : nextBottom)
-      setViewportHeight(previous => previous === window.innerHeight ? previous : window.innerHeight)
-    }
-
-    updateMutationPosition()
-
-    const observer = typeof ResizeObserver === 'undefined'
-      ? null
-      : new ResizeObserver(updateMutationPosition)
-
-    observer?.observe(panel)
-    window.addEventListener('resize', updateMutationPosition)
-    document.addEventListener('fullscreenchange', updateMutationPosition)
-
-    return () => {
-      observer?.disconnect()
-      window.removeEventListener('resize', updateMutationPosition)
-      document.removeEventListener('fullscreenchange', updateMutationPosition)
-    }
-  }, [rankingWidth, rankingOpen, victories, state])
-
   // HUD de recarga apenas para o Mamedes controlado localmente.
   useEffect(() => {
     if (typeof myself !== 'number' || !state) return
@@ -465,7 +433,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
 
   const localPlayer = typeof myself === 'number' ? state?.players.players[myself] : undefined
   const compactRanking = rankingWidth < 215
-  const mutationHudPlacement = getMutationHudPlacement(rankingWidth, rankingBottom, viewportHeight)
+  const mutationHudPlacement = getMutationHudPlacement()
 
   const ranking = (state?.players.players ?? [])
   .map((player, index) => ({
@@ -493,7 +461,6 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     )}
 
 <RankingPanel
-  ref={rankingRef}
   className={compactRanking ? (rankingOpen ? 'ranking-popup' : 'ranking-hidden') : ''}
   style={compactRanking ? undefined : { width: rankingWidth }}
 >

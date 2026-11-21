@@ -70,7 +70,8 @@ const Panel = styled.aside<{
   &::after {
     content: '';
     position: absolute;
-    z-index: -1;
+    z-index: 0;
+    pointer-events: none;
     left: -5px;
     right: 8px;
     top: 42%;
@@ -88,6 +89,8 @@ const Panel = styled.aside<{
   }
 
   .mutation-status {
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -108,6 +111,8 @@ const Panel = styled.aside<{
   }
 
   .mutation-copy {
+    position: relative;
+    z-index: 1;
     overflow-wrap: anywhere;
     min-width: 0;
   }

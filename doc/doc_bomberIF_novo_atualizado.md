@@ -27,7 +27,7 @@ O estado `merged` e o commit na `main` foram confirmados no GitHub. **Nenhum che
 ---
 
 
-> **Revisão consolidada em 11/11/2026**, a partir do código disponível na branch `main` do repositório `MaxRp1/BomberIF`. O conteúdo anterior permanece preservado para estudo histórico; sempre que um trecho antigo divergir da subseção **Atualização 11/11/2026** ou do código atual, prevalecem estes últimos.
+> **Revisão histórica consolidada em 11/11/2026**, a partir do código então disponível na branch `main` do repositório `MaxRp1/BomberIF`. O conteúdo antigo permanece preservado para estudo histórico; em caso de divergência, prevalecem o **Estado vigente — integração do PR #14 (23/11/2026)** no início deste arquivo e, sobretudo, o código atual da `main`.
 
 > **Escopo e integridade:** esta é a documentação da continuidade e evolução do projeto. A versão original de referência, `doc/doc_bomberIF_completo_recuperado.md`, não foi editada. Não confundir a documentação original recuperada com este arquivo de manutenção.
 

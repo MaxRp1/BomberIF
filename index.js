@@ -37370,6 +37370,45 @@ var STUN_PROJECTILE_LIFETIME_MS = 1400;
 var SPRITES = 12;
 var STAGES = 3;
 
+// ../shared/virus.ts
+var LABORATORY_STAGE = 1;
+var HOLD_BONUS_ID = 3;
+var KICK_BONUS_ID = 4;
+var KICK_VIRUS_STUN_MS = 1e3;
+var FIREWALL_BONUS_ID = 7;
+var SIGNAL_GOOD_BONUS_ID = 5;
+var SIGNAL_BAD_BONUS_ID = 6;
+var GRAPH_BONUS_ID = 8;
+var IHM_BONUS_ID = 9;
+var LAB_ONLY_MUTATED_DROPS_FOR_TESTS = false;
+function isLabMutatablePowerup(id) {
+  return id === 2 || id === HOLD_BONUS_ID || id === KICK_BONUS_ID || id === SIGNAL_GOOD_BONUS_ID || id === SIGNAL_BAD_BONUS_ID || id === FIREWALL_BONUS_ID || id === GRAPH_BONUS_ID || id === IHM_BONUS_ID;
+}
+function canDropLabPowerup(stage, id, onlyMutated = LAB_ONLY_MUTATED_DROPS_FOR_TESTS) {
+  return stage !== LABORATORY_STAGE || !onlyMutated || isLabMutatablePowerup(id);
+}
+function chooseLinearMutation(roll, onlyMutated = false) {
+  if (onlyMutated) return roll < 0.5 ? "buff" : "virus";
+  if (roll < 0.5) return "normal";
+  return roll < 0.75 ? "buff" : "virus";
+}
+function assignLabLinearMutations(blocks, stage, random = Math.random, onlyMutated = false) {
+  if (stage !== LABORATORY_STAGE) return;
+  for (const row of blocks) {
+    for (const block of row) {
+      if (block?.b !== void 0 && isLabMutatablePowerup(block.b)) {
+        block.mutation = chooseLinearMutation(random(), onlyMutated);
+      }
+    }
+  }
+}
+var assignLabPowerupMutations = assignLabLinearMutations;
+function chooseIhmVictim(alive, roll) {
+  if (alive.length === 0) return void 0;
+  const normalized = Number.isFinite(roll) ? Math.min(1 - Number.EPSILON, Math.max(0, roll)) : 0;
+  return alive[Math.floor(normalized * alive.length)];
+}
+
 // src/ranking.ts
 var ROUND_FINISH_GRACE_MS = 400;
 var rounds = /* @__PURE__ */ new Map();
@@ -37377,15 +37416,41 @@ function finishRound(io3, roomId, result) {
   io3.to(roomId).emit("round_result", result);
   cancelRankingRound(roomId);
 }
-function beginRankingRound(roomId, playerIds) {
+function beginRankingRound(roomId, playerIds, state) {
   cancelRankingRound(roomId);
   const uniquePlayers = new Set(playerIds);
   if (uniquePlayers.size === 0) return;
+  const ihmItems = /* @__PURE__ */ new Map();
+  if (state?.stage === LABORATORY_STAGE) {
+    state.blocks.forEach((row, i) => row.forEach((item, j) => {
+      if (item?.b !== IHM_BONUS_ID || item.t !== "D") return;
+      ihmItems.set(`${i},${j}`, {
+        mutation: item.mutation ?? "normal",
+        x: item.x,
+        y: item.y
+      });
+    }));
+  }
   rounds.set(roomId, {
     alive: uniquePlayers,
     playerCount: uniquePlayers.size,
-    scoreEnabled: uniquePlayers.size >= 2
+    scoreEnabled: uniquePlayers.size >= 2,
+    ihmItems
   });
+}
+function claimIhmPickup(roomId, collectorId, axes, playerX, playerY, roll) {
+  const round = rounds.get(roomId);
+  if (!round?.alive.has(collectorId)) return null;
+  if (!Array.isArray(axes) || axes.length !== 2 || !axes.every(Number.isInteger)) return null;
+  if (!Number.isFinite(playerX) || !Number.isFinite(playerY)) return null;
+  const key = `${axes[0]},${axes[1]}`;
+  const item = round.ihmItems.get(key);
+  if (!item) return null;
+  if (Math.abs(playerX - item.x) > 32 || Math.abs(playerY - item.y) > 32) return null;
+  const target = item.mutation === "buff" ? chooseIhmVictim([...round.alive], roll) : collectorId;
+  if (!target) return null;
+  round.ihmItems.delete(key);
+  return target;
 }
 function cancelRankingRound(roomId) {
   const round = rounds.get(roomId);
@@ -37481,8 +37546,35 @@ function onPlaceBomb(io3, socket, dto) {
   io3.to(socket.data.roomId).emit("pb", dto);
 }
 function onMoveBomb(io3, socket, dto) {
-  dto.p = socket.data.index;
-  io3.to(socket.data.roomId).emit("mb", dto);
+  const roomId = socket.data.roomId;
+  if (!dto || typeof dto.i !== "string" || !dto.i || !["U", "D", "L", "R"].includes(dto.s)) return;
+  if (!roomId || !socket.connected || !socket.rooms.has(roomId)) return;
+  if (socket.data.alive !== true || isStunned(socket)) return;
+  const mode = dto.k === "buff" || dto.k === "virus" ? dto.k : void 0;
+  const move = { i: dto.i, p: socket.data.index, s: dto.s, k: mode };
+  if (mode === "buff") {
+    if (!socket.data.pendingKickImpacts) socket.data.pendingKickImpacts = /* @__PURE__ */ new Set();
+    socket.data.pendingKickImpacts.add(dto.i);
+  }
+  io3.to(roomId).emit("mb", move);
+  if (mode === "virus") {
+    socket.data.stunnedUntil = Math.max(
+      socket.data.stunnedUntil ?? 0,
+      Date.now() + KICK_VIRUS_STUN_MS
+    );
+    const stun = { p: socket.data.index };
+    io3.to(roomId).emit("kick_stun", stun);
+  }
+}
+function onKickImpact(io3, socket, dto) {
+  const roomId = socket.data.roomId;
+  if (!dto || typeof dto.i !== "string" || !dto.i) return;
+  if (!roomId || !socket.connected || !socket.rooms.has(roomId)) return;
+  const pending = socket.data.pendingKickImpacts;
+  if (!pending?.has(dto.i)) return;
+  if (!Number.isFinite(dto.x) || !Number.isFinite(dto.y) || dto.x < 16 || dto.x > 208 || dto.y < 16 || dto.y > 176 || dto.x % 16 !== 0 || dto.y % 16 !== 0) return;
+  pending.delete(dto.i);
+  io3.to(roomId).emit("kick_impact", { i: dto.i, x: dto.x, y: dto.y });
 }
 function onHoldBomb(io3, socket, dto) {
   if (isStunned(socket)) return;
@@ -37496,6 +37588,29 @@ function onFlingBomb(io3, socket, dto) {
 }
 function onNullifyBlock(io3, socket, dto) {
   io3.to(socket.data.roomId).emit("nb", dto);
+}
+function onIhmPickup(io3, socket, dto, random = Math.random) {
+  const roomId = socket.data.roomId;
+  if (typeof roomId !== "string" || !roomId) return;
+  if (!socket.connected || !socket.rooms.has(roomId)) return;
+  if (socket.data.alive !== true || isStunned(socket)) return;
+  if (!dto || !Array.isArray(dto.a) || dto.a.length !== 2) return;
+  const targetId = claimIhmPickup(
+    roomId,
+    socket.id,
+    dto.a,
+    socket.data.playerX,
+    socket.data.playerY,
+    random()
+  );
+  if (!targetId) return;
+  const target = io3.sockets.sockets.get(targetId);
+  if (!target || !target.connected || !target.rooms.has(roomId) || target.data.roomId !== roomId || target.data.alive !== true) return;
+  if (!registerDefeat(io3, target)) return;
+  target.data.alive = false;
+  const result = { p: target.data.index };
+  io3.to(roomId).emit("ihm_result", result);
+  io3.to(roomId).emit("kl", { p: result.p });
 }
 function onFrankLifeUsed(io3, socket) {
   const roomId = socket.data.roomId;
@@ -37513,20 +37628,6 @@ function onKill(io3, socket, dto) {
   socket.data.alive = false;
   dto.p = socket.data.index;
   io3.to(socket.data.roomId).emit("kl", { p: dto.p });
-}
-
-// ../shared/virus.ts
-var LABORATORY_STAGE = 1;
-function chooseLinearMutation(roll) {
-  return roll < 0.5 ? "buff" : "virus";
-}
-function assignLabLinearMutations(blocks, stage, random = Math.random) {
-  if (stage !== LABORATORY_STAGE) return;
-  for (const row of blocks) {
-    for (const block of row) {
-      if (block?.b === 2) block.mutation = chooseLinearMutation(random());
-    }
-  }
 }
 
 // src/factory.ts
@@ -37557,11 +37658,12 @@ function startGameFactory(io3, roomId) {
     p.data.frankLifeUsed = false;
     p.data.skillReadyAt = 0;
     p.data.stunnedUntil = 0;
+    p.data.pendingKickImpacts = /* @__PURE__ */ new Set();
     p.emit("myself", index);
   }
   if (!players.length) return null;
   const state = stateFactory();
-  beginRankingRound(roomId, playerIds);
+  beginRankingRound(roomId, playerIds, state);
   return { roomId, players, state };
 }
 function updateLobbyFactory(io3, lobbyId) {
@@ -37624,12 +37726,12 @@ function slowFloorsFactory(blocks) {
   return available.slice(0, SLOW_FLOOR_COUNT);
 }
 function stateFactory() {
-  const blocks = bonusFactory(blocksFactory());
+  const stage = Math.floor(Math.random() * STAGES);
+  const blocks = bonusFactory(blocksFactory(), stage);
   const blast = Math.floor(Math.random() * BLASTS);
   const bomb = Math.floor(Math.random() * BOMBS);
   const bonus = Math.floor(Math.random() * BONUS);
-  const stage = Math.floor(Math.random() * STAGES);
-  assignLabLinearMutations(blocks, stage);
+  assignLabPowerupMutations(blocks, stage, Math.random, LAB_ONLY_MUTATED_DROPS_FOR_TESTS);
   const slowFloors = stage === CAFETERIA_STAGE ? slowFloorsFactory(blocks) : [];
   console.log("STAGE:", stage);
   console.log("SLOW FLOORS:", slowFloors);
@@ -37669,12 +37771,13 @@ function blocksFactory() {
   }
   return blocks;
 }
-function bonusFactory(blocks) {
+function bonusFactory(blocks, stage) {
   const positions = [];
   blocks.forEach((row, i) => row.forEach((block, j) => {
     if (block && block.t === "D") positions.push([i, j]);
   }));
   for (let bonus = 1; bonus < BONUSES.length; bonus++) {
+    if (!canDropLabPowerup(stage, bonus)) continue;
     for (let quantity = BONUSES[bonus]; quantity > 0; quantity--) {
       const where = Math.floor(Math.random() * positions.length);
       blocks[positions[where][0]][positions[where][1]].b = bonus;
@@ -38038,11 +38141,13 @@ function ioListener(io3) {
     socket.on("mv", (dto) => onMove(io3, socket, dto));
     socket.on("pb", (dto) => onPlaceBomb(io3, socket, dto));
     socket.on("mb", (dto) => onMoveBomb(io3, socket, dto));
+    socket.on("kick_impact", (dto) => onKickImpact(io3, socket, dto));
     socket.on("hb", (dto) => onHoldBomb(io3, socket, dto));
     socket.on("fb", (dto) => onFlingBomb(io3, socket, dto));
     socket.on("nb", (dto) => onNullifyBlock(io3, socket, dto));
     socket.on("kl", (dto) => onKill(io3, socket, dto));
     socket.on("frank_life_used", () => onFrankLifeUsed(io3, socket));
+    socket.on("ihm_pickup", (dto) => onIhmPickup(io3, socket, dto));
     socket.on("stun_fire", (dto) => onStunFire(io3, socket, dto));
     socket.on("stun_hit", (dto) => onStunHit(io3, socket, dto));
   });

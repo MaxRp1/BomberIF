@@ -1,5 +1,32 @@
 # Estudo Técnico - BomberIF
 
+## Estado vigente — integração do PR #14 (23/11/2026)
+
+**Fonte de verdade para a versão `main` atual:** o PR [#14](https://github.com/MaxRp1/BomberIF/pull/14) foi mesclado à branch principal em 23/11/2026, no commit [`58573384f58b52b54825122d5e1d70e27626bbd3`](https://github.com/MaxRp1/BomberIF/commit/58573384f58b52b54825122d5e1d70e27626bbd3). As referências abaixo sobre PR #14 "em rascunho", "sem merge", "Laboratório fixo" ou "modo de testes ativo" descrevem **etapas históricas do desenvolvimento**, não o comportamento atual.
+
+### Cenários e distribuição de itens
+
+- `shared/constants.ts` mantém `STAGES = 3`. Em `server/src/factory.ts`, `stateFactory()` seleciona o cenário com `Math.floor(Math.random() * STAGES)`. O sorteio é independente a cada rodada: Campo (0), Laboratório (1) e Refeitório (2), cada um com aproximadamente um terço de chance.
+- `shared/virus.ts` define `LAB_ONLY_MUTATED_DROPS_FOR_TESTS = false`. Por isso, `canDropLabPowerup(stage, bonus)` não exclui power-ups da tabela original (`BONUSES`): todos os nove itens de IDs 1 a 9 voltam a ser elegíveis ao sorteio de drops. O ID 1 (Bomba) permanece sem mutações.
+- No **Laboratório (stage 1)**, os oito itens de IDs **2 a 9** — Função Linear, Troca de Dados, Chute, Sinal Bom, Sinal Ruim, Firewall, Grafo e IHM — recebem por exemplar `BlockDTO.mutation` com probabilidades de **50% normal, 25% buff e 25% vírus**. Somente as variantes mutadas recebem o sprite misterioso; o resultado é definido pelo servidor e compartilhado entre clientes.
+- Campo e Refeitório **não aplicam as mutações** do Laboratório; as regras originais dos itens continuam valendo. O piso lento continua exclusivo do Refeitório.
+- A configuração temporária anterior forçava `LABORATORY_STAGE` e usava `LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true`, restringindo drops aos oito itens mutáveis e forçando 50% buff / 50% vírus. **Essa configuração foi encerrada**, mas as funções e a flag foram preservadas para possíveis testes futuros.
+
+### HUD e preservação das funcionalidades
+
+- O painel de notificações de mutação permanece no **canto superior direito**, separado do ranking à esquerda. A função `getMutationHudPlacement()` em `client/src/game/components/canvas/mutationHudLayout.ts` devolve `{top:96,width:246}`; `virusHud.tsx` mantém o posicionamento responsivo e a diferenciação visual entre buff e debuff.
+- Os efeitos de mutação, personagens, sincronização multiplayer, telas de vitória, ranking e a seleção de personagens não foram revertidos ao restaurar o sorteio. O merge incorpora a continuidade dessas alterações ao código da `main`.
+- Os arquivos efetivamente modificados para **encerrar o modo de testes** foram `server/src/factory.ts` e `shared/virus.ts`, antes do merge. A documentação de design correspondente está em `GDD_BomberIF_Final` (Google Drive), seção "Níveis / Mapas", "Mapa 01 - Laboratório" e tabela de mutações.
+
+### Verificação e publicação
+
+O estado `merged` e o commit na `main` foram confirmados no GitHub. **Nenhum check automatizado de CI foi reportado para o último commit** quando a integração foi realizada; testes e builds realizados anteriormente na VM Kali não significam que esta revisão tenha sido reexecutada pela assistência. A integração no GitHub não equivale, por si só, a publicação do cliente no GitHub Pages ou a implantação do backend.
+
+**Regra de manutenção documental:** toda implementação ou correção concluída no BomberIF deve incluir a atualização sincronizada deste arquivo técnico e do GDD; indicar também as seções afetadas e se os testes foram efetivamente executados.
+
+---
+
+
 > **Revisão consolidada em 11/11/2026**, a partir do código disponível na branch `main` do repositório `MaxRp1/BomberIF`. O conteúdo anterior permanece preservado para estudo histórico; sempre que um trecho antigo divergir da subseção **Atualização 11/11/2026** ou do código atual, prevalecem estes últimos.
 
 > **Escopo e integridade:** esta é a documentação da continuidade e evolução do projeto. A versão original de referência, `doc/doc_bomberIF_completo_recuperado.md`, não foi editada. Não confundir a documentação original recuperada com este arquivo de manutenção.

@@ -1,8 +1,8 @@
 export type SIDES = 'U'|'L'|'D'|'R' // player side: up, left, down, right
 
 export interface BlockDTO {
-  b ?: 1|2|3|4|5|6|7|8 // bonus item id
-  mutation ?: 'buff'|'virus' // Função Linear no laboratório; escolhida pelo servidor
+  b ?: 1|2|3|4|5|6|7|8|9 // bonus item id (IHM = 9)
+  mutation ?: 'normal'|'buff'|'virus' // IDs 2/3/4/5/6/7/8/9 no Lab: 50% normal, 25% buff, 25% vírus
   t  : 'D'|'I'         // block type: destructible or indestructible
   x  : number          // block x position
   y  : number          // block y position
@@ -28,6 +28,7 @@ export interface FlingBombDTO {
   s : SIDES  // bomb side
   x : number // player x position
   y : number // player y position
+  r ?: number // Alcance efetivo após o arremesso
 }
 
 // Tecla E, botão LB/L1 ou botão na tela -> servidor.
@@ -73,6 +74,18 @@ export interface GameStateDTO {
 export interface HoldBombDTO {
   i : string // bomb id
   p : number // player index
+  mutation ?: 'buff'|'virus' // Modificador de velocidade do carregador
+}
+
+// Cliente comunica somente a posição do IHM: o servidor valida o item,
+// escolhe o alvo entre os vivos e registra a eliminação.
+export interface IhmPickupDTO {
+  a : [number, number]
+}
+
+// Morte confirmada pelo servidor; evita depender do cliente sorteado.
+export interface IhmResultDTO {
+  p : number
 }
 
 export interface IceCandidateDTO {
@@ -125,8 +138,20 @@ export interface LobbyWinsUpdateDTO {
 
 export interface MoveBombDTO {
   i : string // bomb id
-  p : number // player index
-  s : SIDES  // bomb side
+  p : number // índice de quem CHUTOU (não necessariamente dono da bomba)
+  s : SIDES  // direção do chute
+  k ?: 'buff'|'virus' // modo do chute mutado, quando houver
+}
+
+// A explosão antecipada é emitida só pelo jogador que chutou.
+export interface KickImpactDTO {
+  i : string
+  x : number
+  y : number
+}
+
+export interface KickStunDTO {
+  p : number // jogador que chutou uma bomba com debuff
 }
 
 export interface MoveDTO {
@@ -136,6 +161,7 @@ export interface MoveDTO {
   s : SIDES  // player side
   x : number // player x position
   y : number // player y position
+  v ?: number // modificador total de velocidade, inclusive Grafo, para clientes remotos
 }
 
 export interface NullifyBlockDTO {

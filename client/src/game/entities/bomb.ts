@@ -1,6 +1,7 @@
 import { BOMB_MOVE, BOMB_SPEED, OVERCLOCK_DETONATION_MULTIPLIER, TILE_SIZE } from '#/constants'
 import { ArmedBombPosition, findChainReactionTargets } from '#/chainReaction'
 import { SIDES } from '#/dto'
+import { KICK_VIRUS_STUN_MS, LinearMutation, canBuffKickAdvance, shouldResetKickTimer } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { BOMB } from '~/game/animations/bomb'
 import { Blast, BlastFactory, Directions } from '~/game/entities/blast'
@@ -10,8 +11,8 @@ import { playBlastSound } from '~/game/sound/blast'
 import { playFlingSound } from '~/game/sound/fling'
 import { playKickSound } from '~/game/sound/kick'
 import { Assets } from '~/game/util/assets'
-import { isColliding, stopPlayer } from '~/game/util/collision'
-import { emitMoveBomb } from '~/services/socket'
+import { isColliding, isCollidingForced, stopPlayer } from '~/game/util/collision'
+import { emitKickImpact, emitMoveBomb } from '~/services/socket'
 
 interface BombProps {
   axes: [number, number]
@@ -37,8 +38,12 @@ export interface Bomb {
   holding       : boolean
   id            : string
   moving        : boolean
+  kickMode      : LinearMutation
+  kickInitiator : number
+  kickAuthority : boolean
   player       ?: Player
   playerIndex   : number
+  ownerIndex    : number // Dono original, mesmo após outro jogador segurar
   reach         : number
   removeTime    : number
   detonationMultiplier: number
@@ -51,10 +56,11 @@ export interface Bomb {
   setDetonation        : (multiplier?:number) => void
   detonate             : (state:GameState) => void
   checkPlayerCollision : (state:GameState) => void
-  startMove            : (side:SIDES, state:GameState) => void
+  startMove            : (side:SIDES, state:GameState, mode?:LinearMutation, kicker?:number) => boolean
   stopMove             : (state:GameState) => void
   setHolding           : (playerIndex:number, state:GameState) => void
   startFling           : (side:SIDES) => void
+  moveBuffKick          : (state:GameState) => void
   tick                 : (state:GameState) => void
   render               : (context:CanvasRenderingContext2D) => void
 }
@@ -67,6 +73,7 @@ export function BombFactory (props : BombProps) : Bomb {
     bomb.y = (props.axes[0] + 1) * TILE_SIZE || TILE_SIZE
   }
   bomb.anim = {frameCurrent:0, lastRender:0, sum:true}
+  bomb.ownerIndex = props.playerIndex
   bomb.armed = true
   bomb.detonated = false
   bomb.detonationMultiplier = props.detonationMultiplier ??
@@ -76,6 +83,9 @@ export function BombFactory (props : BombProps) : Bomb {
   bomb.directions = {up:0, right:0, down:0, left:0}
   bomb.holding = false
   bomb.moving = false
+  bomb.kickMode = 'normal'
+  bomb.kickInitiator = -1
+  bomb.kickAuthority = false
   bomb.moves = {'D':moveDown.bind(bomb), 'U':moveUp.bind(bomb), 'R':moveRight.bind(bomb), 'L':moveLeft.bind(bomb)}
   bomb.flings = {'D':flingDown.bind(bomb), 'U':flingUp.bind(bomb), 'R':flingRight.bind(bomb), 'L':flingLeft.bind(bomb)}
   bomb.getAxes = getAxes.bind(bomb)
@@ -83,6 +93,7 @@ export function BombFactory (props : BombProps) : Bomb {
   bomb.detonate = detonate.bind(bomb)
   bomb.checkPlayerCollision = checkPlayerCollision.bind(bomb)
   bomb.startMove = startMove.bind(bomb)
+  bomb.moveBuffKick = moveBuffKick.bind(bomb)
   bomb.stopMove = stopMove.bind(bomb)
   bomb.setHolding = setHolding.bind(bomb)
   bomb.startFling = startFling.bind(bomb)
@@ -108,6 +119,11 @@ function detonate (this:Bomb, state:GameState) {
   if (!this.armed) return
   this.armed = false
   this.detonated = true
+  // Uma bomba pode explodir pelo timer enquanto ainda desliza.
+  // Não continuar movendo a animação nem recolocar uma bomba já detonada
+  // no mapa depois da explosão (especialmente no chute com vírus).
+  this.moving = false
+  this.flinging = false
   this.removeTime = Date.now() + 500
   // O retorno da bomba ao arsenal do dono não depende mais do timer.
   if (this.player) this.player.bombs++
@@ -278,63 +294,132 @@ function checkBombCollision (this:Bomb, state:GameState) {
 }
 */
 
-function startMove (this:Bomb, side:SIDES, state:GameState) {
-  const [ax, ay] = this.getAxes()
-  let move = 0
-  try {
-    if (side === 'D') {
-      for (let i = 1; i < BOMB_MOVE; i++) {
-        const b = state.blocks.getBlock([ax + i, ay])
-        if (b && b.t !== 'B') break
-        move++
-      }
-    }
-    else if (side === 'U') {
-      for (let i = 1; i < BOMB_MOVE; i++) {
-        const b = state.blocks.getBlock([ax - i, ay])
-        if (b && b.t !== 'B') break
-        move++
-      }
-    }
-    else if (side === 'R') {
-      for (let i = 1; i < BOMB_MOVE; i++) {
-        const b = state.blocks.getBlock([ax, ay + i])
-        if (b && b.t !== 'B') break
-        move++
-      }
-    }
-    else if (side === 'L') {
-      for (let i = 1; i < BOMB_MOVE; i++) {
-        const b = state.blocks.getBlock([ax, ay - i])
-        if (b && b.t !== 'B') break
-        move++
-      }
-    }
-  }
-  catch {}
-  if (move) {
-    playKickSound()
-    state.blocks.destroyBlock([ax, ay])
+function startMove (
+  this:Bomb,
+  side:SIDES,
+  state:GameState,
+  mode:LinearMutation = 'normal',
+  kicker = -1
+): boolean {
+  if (!this.armed || this.moving || this.flinging || this.holding) return false
+
+  if (mode === 'buff') {
+    // O buff chuta sem limite de casas. Apenas quem chutou decide
+    // o contato final; o evento kick_impact replica a posição exata.
+    this.kickMode = mode
+    this.kickInitiator = kicker
+    this.kickAuthority = kicker === state.players.myself?.index
     this.collidable = false
     this.side = side
     this.moving = true
-    if (side === 'D') {
-      this.finalPosition = this.y + (TILE_SIZE * move)
+    this.setDetonation()
+    const [ax,ay] = this.getAxes()
+    const cell = state.blocks.getBlock([ax,ay])
+    if (cell?.t === 'O' && cell.id === this.id) {
+      state.blocks.destroyBlock([ax,ay])
+    }
+    playKickSound()
+    return true
+  }
+
+  // Chute tradicional: no máximo duas casas. O vírus NÃO altera
+  // essa distância nem redefine o timer, em nenhuma direção.
+  const [ax,ay] = this.getAxes()
+  let move = 0
+  const delta:Record<SIDES,readonly [number,number]> = {
+    D:[1,0], U:[-1,0], R:[0,1], L:[0,-1]
+  }
+  const [dr,dc] = delta[side]
+  for (let i = 1; i < BOMB_MOVE; i++) {
+    const r = ax + dr * i
+    const c = ay + dc * i
+    const row = state.blocks.blocks[r]
+    if (!row || c < 0 || c >= row.length) break
+    const block = row[c]
+    if (block && block.t !== 'B') break
+    move++
+  }
+  if (!move) return false
+
+  this.kickMode = mode
+  this.kickInitiator = kicker
+  this.kickAuthority = kicker === state.players.myself?.index
+  playKickSound()
+  const current = state.blocks.getBlock([ax,ay])
+  if (current?.t === 'O' && current.id === this.id) {
+    state.blocks.destroyBlock([ax,ay])
+  }
+  this.collidable = false
+  this.side = side
+  this.moving = true
+  if (side === 'D' || side === 'U') {
+    this.finalPosition = this.y + (side === 'D' ? TILE_SIZE : -TILE_SIZE) * move
+    if (shouldResetKickTimer(mode)) this.setDetonation()
+  }
+  else {
+    this.finalPosition = this.x + (side === 'R' ? TILE_SIZE : -TILE_SIZE) * move
+    // Mantém a condição original de reset para o chute sem vírus.
+    if (shouldResetKickTimer(mode) &&
+        ((side === 'R' && this.finalPosition < 208) ||
+         (side === 'L' && this.finalPosition > 16))) {
       this.setDetonation()
-    }
-    else if (side === 'U') {
-      this.finalPosition = this.y - (TILE_SIZE * move)
-      this.setDetonation()
-    }
-    else if (side === 'R') {
-      this.finalPosition = this.x + (TILE_SIZE * move)
-      if (this.finalPosition < 208) this.setDetonation()
-    }
-    else if (side === 'L') {
-      this.finalPosition = this.x - (TILE_SIZE * move)
-      if (this.finalPosition > 16) this.setDetonation()
     }
   }
+  return true
+}
+
+// Bomba de chute buff detecta bloqueios dinamicamente enquanto avança.
+// Somente o navegador do jogador que chutou anuncia onde ela explodiu;
+// os demais reproduzem a explosão confirmada por kick_impact.
+function moveBuffKick (this:Bomb, state:GameState) {
+  const row = Math.floor((this.y - TILE_SIZE) / TILE_SIZE)
+  const column = Math.floor((this.x - TILE_SIZE) / TILE_SIZE)
+  if (this.kickAuthority) {
+    const players: [number,number][] = state.players.players
+      .filter(player => player.active && !player.removeTime)
+      .map(player => player.getAxes())
+    const bombs:[number,number][] = []
+    for (const entity of state.entities.entities.values()) {
+      if (entity.id === this.id) continue
+      const candidate = entity as Partial<Bomb>
+      if (candidate.armed && typeof candidate.getAxes === 'function') {
+        bombs.push(candidate.getAxes())
+      }
+    }
+    // Também detecta quando alguém entra lateralmente no espaço da
+    // bomba durante o deslizamento, não apenas na casa seguinte.
+    const touchingPlayer = state.players.players.some(player =>
+      player.active && !player.removeTime &&
+      player.index !== this.kickInitiator &&
+      isCollidingForced(player, this)
+    )
+    if (touchingPlayer || !canBuffKickAdvance(
+      row, column, this.side, state.blocks.blocks, players, bombs
+    )) {
+      // Não entra na casa bloqueada: explode na última posição livre.
+      this.x = Math.max(16, Math.min(208, Math.floor(this.x / TILE_SIZE) * TILE_SIZE))
+      this.y = Math.max(16, Math.min(176, Math.floor(this.y / TILE_SIZE) * TILE_SIZE))
+      this.moving = false
+      emitKickImpact({ i:this.id, x:this.x, y:this.y })
+      this.detonate(state)
+      return
+    }
+  }
+  // Réplicas param na borda enquanto aguardam o evento da autoridade,
+  // evitando sair do tabuleiro se houver latência.
+  if (!this.kickAuthority && (
+    (this.side === 'U' && this.y <= 16) ||
+    (this.side === 'D' && this.y >= 176) ||
+    (this.side === 'L' && this.x <= 16) ||
+    (this.side === 'R' && this.x >= 208)
+  )) {
+    this.moving = false
+    return
+  }
+  if (this.side === 'D') this.y = Math.min(this.y + BOMB_SPEED, 176)
+  else if (this.side === 'U') this.y = Math.max(this.y - BOMB_SPEED, 16)
+  else if (this.side === 'R') this.x = Math.min(this.x + BOMB_SPEED, 208)
+  else if (this.side === 'L') this.x = Math.max(this.x - BOMB_SPEED, 16)
 }
 
 function stopMove (this:Bomb, state:GameState) {
@@ -382,7 +467,12 @@ function moveLeft (this:Bomb, state:GameState) {
 }
 
 function setHolding (this:Bomb, playerIndex:number, state:GameState) {
-  state.blocks.destroyBlock(this.getAxes())
+  // Bombas remotas não têm necessariamente marcador local no tabuleiro.
+  const axes = this.getAxes()
+  const block = state.blocks.getBlock(axes)
+  if (block?.t === 'O' && block.id === this.id) {
+    state.blocks.destroyBlock(axes)
+  }
   this.playerIndex = playerIndex
   this.collidable = false
   this.holding = true
@@ -472,7 +562,8 @@ function tick (this:Bomb, state:GameState) {
     state.entities.remove(this)
   }
   else if (this.moving) {
-    this.moves[this.side](state)
+    if (this.kickMode === 'buff') this.moveBuffKick(state)
+    else this.moves[this.side](state)
   }
   else if (this.flinging) {
     this.flings[this.side](state)
@@ -484,11 +575,25 @@ function tick (this:Bomb, state:GameState) {
   if (this.armed) {
     if (this.collidable) {
       if (isColliding(state.players.myself!, this)) {
-        if (state.players.myself!.kick) {
-          emitMoveBomb({i:this.id,p:this.playerIndex,s:state.players.myself!.side})
-          this.startMove(state.players.myself!.side, state)
+        const localPlayer = state.players.myself!
+        // Buff: segurar Espaço ao esbarrar em bomba adversária no chão.
+        if (localPlayer.isSpaceHeld && localPlayer.holdMutation === 'buff' &&
+            localPlayer.takeBomb(this, state)) return
+        if (localPlayer.kick && Date.now() >= localPlayer.stunnedUntil) {
+          const mode = localPlayer.kickMutation
+          const started = this.startMove(localPlayer.side, state, mode, localPlayer.index)
+          if (started) {
+            emitMoveBomb({
+              i:this.id, p:localPlayer.index, s:localPlayer.side,
+              k: mode === 'normal' ? undefined : mode
+            })
+            if (mode === 'virus') {
+              // Stun de 1 s imediato; o servidor confirma para todos.
+              localPlayer.applyStun(KICK_VIRUS_STUN_MS, 'dizzy')
+            }
+          }
         }
-        stopPlayer(state.players.myself!, this)
+        stopPlayer(localPlayer, this)
       }
     }
     else if (!isColliding(state.players.myself!, this)) {

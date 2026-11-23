@@ -1,11 +1,13 @@
-import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, PRESS_INTERVAL, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
+import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, MAX_SPEED, PRESS_INTERVAL, SPEED, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
 import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
-import { LinearMutation, effectiveBombReach } from '#/virus'
+import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, PingEffectState, SignalMotion, activatePingOnBombPlaced, applyGraphPickup, applyPingPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, firewallExplosionImmune, initialPingEffect, initialSignalMotion, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, pingSpeedMultiplier, reachAfterFling, resetPingUpgrades, signalPickupMode, stunVisualAt, updateSignalMotion } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
+import { drawKickDizziness } from '~/game/animations/dizzy'
 import { PLAYER_D, PLAYER_DH, PLAYER_K, PLAYER_L, PLAYER_LH, PLAYER_R, PLAYER_RH, PLAYER_U, PLAYER_UH } from '~/game/animations/player'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { GamepadFactory } from '~/game/entities/gamepad'
 import { GameState } from '~/game/entities/state'
+import { isCollidingForced } from '~/game/util/collision'
 import { playBombSound } from '~/game/sound/bomb'
 import { playKillSound } from '~/game/sound/kill'
 import { emitFlingBomb, emitFrankLifeUsed, emitHoldBomb, emitKill, emitMove, emitPlaceBomb, emitStunFire } from '~/services/socket'
@@ -35,17 +37,42 @@ export interface Player {
   extraLife         : boolean
   ignoresSlowFloor  : boolean
   hasOverclock      : boolean
+  firewallMode      : LinearMutation|null
+  firewallUntil     : number
   invulnerableUntil : number
   hasBlastVision    : boolean
   isMamedes         : boolean
   spriteId          : number
   stunnedUntil      : number
+  mamedesStunUntil  : number
+  kickStunUntil     : number
+  kickStunStartedAt : number
   skillReadyAt      : number
   lastSkillRequestAt: number
   hold              : boolean
   holding           : 0|1
+  isSpaceHeld       : boolean
+  holdMutation      : Exclude<LinearMutation, 'normal'> | null
+  holdNotice        : LinearMutation | null
+  holdNoticeUntil   : number
+  holdSpeedBuffSuppressed: boolean
+  pingEffect         : PingEffectState
+  pingNoticeMode     : 'buff'|'virus'|null
+  pingNoticeUntil    : number
+  invertedUntil : number
+  boostedUntil  : number
+  invertedUntilDeath : boolean
+  graphNotice        : 'buff'|'virus'|null
+  graphNoticeUntil   : number
+  heldMoveKeys       : Set<string>
+  gamepadDirection   : SIDES|null
+  lastGraphInverted  : boolean
+  onWindowBlur       : () => void
   index              : number
   kick               : boolean
+  kickMutation       : LinearMutation
+  kickNotice         : 'buff'|'virus'|null
+  kickNoticeUntil    : number
   lastPress  : LastPress
   moveKeys   : {[key:string]:SIDES}
   moving     : 0|1
@@ -55,8 +82,12 @@ export interface Player {
   removeTime : number
   side       : SIDES
   sprite     : HTMLImageElement
-  speed      : number
-  speedMultiplier : number
+  baseSpeed          : number
+  speed              : number
+  speedMultiplier    : number
+  signalMotion       : SignalMotion
+  signalNotice       : 'buff'|'virus'|null
+  signalNoticeUntil  : number
   x          : number
   y          : number
   setMyself            : () => void
@@ -73,12 +104,18 @@ export interface Player {
   moves                : {[key in SIDES] : () => void}
   onMove               : (dto:MoveDTO) => void
   stopMove             : (side:SIDES) => void
+  setGamepadDirection  : (side:SIDES|null) => void
+  refreshMovement      : () => void
   invertControls       : () => void
+  applyGraphBonus      : (stage:number, mutation:LinearMutation|undefined) => void
+  applySignalBonus     : (stage:number, mutation:LinearMutation|undefined) => void
+  applyPingBonus       : (stage:number, mutation:LinearMutation|undefined) => void
   handleBomb           : (state:GameState) => void
   useStunSkill        : () => void
-  applyStun           : () => void
+  applyStun           : (durationMs?:number, effect?:'mamedes'|'dizzy') => void
   placeBomb            : (state:GameState) => void
   holdBomb             : (state:GameState) => void
+  takeBomb             : (bomb:Bomb, state:GameState) => boolean
   flingBomb            : (state:GameState) => void
   consumeExtraLife     : () => boolean
   kill                 : (emit:boolean, cause?: 'bomb'|'other') => void
@@ -116,13 +153,37 @@ export function PlayerFactory (props:PlayerProps) : Player {
     isMamedes: props.sprite === MAMEDES_SPRITE_ID,
     spriteId: props.sprite,
     stunnedUntil: 0,
+    mamedesStunUntil: 0,
+    kickStunUntil: 0,
+    kickStunStartedAt: 0,
     skillReadyAt: 0,
     lastSkillRequestAt: 0,
+    firewallMode: null,
+    firewallUntil: 0,
     invulnerableUntil: 0,
     hold: false,
     holding: 0,
+    isSpaceHeld: false,
+    holdMutation: null,
+    holdNotice: null,
+    holdNoticeUntil: 0,
+    holdSpeedBuffSuppressed: false,
+    pingEffect: initialPingEffect(),
+    pingNoticeMode: null,
+    pingNoticeUntil: 0,
+    invertedUntil: 0,
+    boostedUntil: 0,
+    invertedUntilDeath: false,
+    graphNotice: null,
+    graphNoticeUntil: 0,
+    heldMoveKeys: new Set<string>(),
+    gamepadDirection: null,
+    lastGraphInverted: false,
     index: props.index,
     kick: false,
+    kickMutation: 'normal',
+    kickNotice: null,
+    kickNoticeUntil: 0,
     lastPress: {bomb:0},
     moveKeys: {
       'W': 'U',
@@ -139,8 +200,12 @@ export function PlayerFactory (props:PlayerProps) : Player {
     myself: false,
     nick: props.nick,
     side: 'D',
+    baseSpeed: props.sprite === 11 ? props.speed * 1.5 : props.speed,
     speed: props.sprite === 11 ? props.speed * 1.5 : props.speed,
     speedMultiplier: 1,
+    signalMotion: initialSignalMotion('normal'),
+    signalNotice: null,
+    signalNoticeUntil: 0,
     x: props.x,
     y: props.y,
     sprite: new Image()
@@ -155,12 +220,18 @@ export function PlayerFactory (props:PlayerProps) : Player {
   player.moves = {D:moveDown.bind(player), L:moveLeft.bind(player), R:moveRight.bind(player), U:moveUp.bind(player)}
   player.onMove = onMove.bind(player)
   player.stopMove = stopMove.bind(player)
+  player.setGamepadDirection = setGamepadDirection.bind(player)
+  player.refreshMovement = refreshMovement.bind(player)
   player.invertControls = invertControls.bind(player)
+  player.applyGraphBonus = applyGraphBonus.bind(player)
+  player.applySignalBonus = applySignalBonus.bind(player)
+  player.applyPingBonus = applyPingBonus.bind(player)
   player.handleBomb = handleBomb.bind(player)
   player.useStunSkill = useStunSkill.bind(player)
   player.applyStun = applyStun.bind(player)
   player.placeBomb = placeBomb.bind(player)
   player.holdBomb = holdBomb.bind(player)
+  player.takeBomb = takeBomb.bind(player)
   player.flingBomb = flingBomb.bind(player)
   player.consumeExtraLife = consumeExtraLife.bind(player)
   player.kill = kill.bind(player)
@@ -182,6 +253,8 @@ function getAxes (this:Player) : [number, number] {
 function addInputListener (this:Player, state:GameState) {
   this.onVisibilityChange = () => onVisibilityChange.call(this)
   document.addEventListener('visibilitychange', this.onVisibilityChange)
+  this.onWindowBlur = () => clearInputOnBlur.call(this)
+  window.addEventListener('blur', this.onWindowBlur)
   this.keydownListener = event => keydownListener.call(this, event, state)
   document.addEventListener('keydown', this.keydownListener)
   this.keyupListener = event => keyupListener.call(this, event)
@@ -195,13 +268,22 @@ function addInputListener (this:Player, state:GameState) {
 
 function removeInputListener (this:Player) {
   document.removeEventListener('visibilitychange', this.onVisibilityChange)
+  window.removeEventListener('blur', this.onWindowBlur)
   document.removeEventListener('keydown', this.keydownListener)
   document.removeEventListener('keyup', this.keyupListener)
   window.removeEventListener('gamepaddisconnected', this.removeGamepadSupport)
   window.removeEventListener('gamepadconnected', this.addGamepadSupport)
 }
 
+function clearInputOnBlur (this:Player) {
+  this.isSpaceHeld = false
+  this.heldMoveKeys.clear()
+  this.gamepadDirection = null
+  this.refreshMovement()
+}
+
 function onVisibilityChange (this:Player) {
+  if (document.hidden) clearInputOnBlur.call(this)
   if (document.hidden && this.active) this.kill(true)
 }
 
@@ -209,11 +291,16 @@ function keydownListener (this:Player, event:KeyboardEvent, state:GameState) {
   event.preventDefault()
   if (!this.active || Date.now() < this.stunnedUntil) return
   const key = event.key.toUpperCase()
+  if (key === ' ') this.isSpaceHeld = true
   if (key === 'E' && !event.repeat) this.useStunSkill()
   if (this.moveKeys[key]) {
-    this.startMove(this.moveKeys[key])
+    this.heldMoveKeys.add(key)
+    this.refreshMovement()
   }
   if (this.bombKeys[key]) {
+    // Nas mutações da Troca de Dados, manter Espaço pressionado não
+    // pode arremessar automaticamente a bomba por repetição da tecla.
+    if (key === ' ' && this.holdMutation !== null && event.repeat) return
     if (Date.now() > this.lastPress.bomb) {
       this.lastPress.bomb = Date.now() + PRESS_INTERVAL
       this.handleBomb(state)
@@ -223,9 +310,16 @@ function keydownListener (this:Player, event:KeyboardEvent, state:GameState) {
 
 function keyupListener (this:Player, event:KeyboardEvent) {
   event.preventDefault()
-  if (!this.active) return
   const key = event.key.toUpperCase()
-  if (this.moveKeys[key]) this.stopMove(this.moveKeys[key])
+  if (key === ' ') this.isSpaceHeld = false
+  if (!this.active) {
+    this.heldMoveKeys.delete(key)
+    return
+  }
+  if (this.moveKeys[key]) {
+    this.heldMoveKeys.delete(key)
+    this.refreshMovement()
+  }
 }
 
 function addGamepadSupport (this:Player, state:GameState) {
@@ -235,37 +329,83 @@ function addGamepadSupport (this:Player, state:GameState) {
   const id = `G${this.index}`
   if (state.entities.has(id)) return
   const gamepad = GamepadFactory({id, index, player:this})
-  //if (this.moveKeys['W'] === 'D') gamepad.invertControls() funcao comentada por conta do bug 
   state.entities.add(gamepad)
 }
 
 function removeGamepadSupport (this:Player, state:GameState) {
+  this.setGamepadDirection(null)
   const gamepad = state.entities.get(`G${this.index}`)
   if (!gamepad) return
   state.entities.remove(gamepad)
 }
 
+// Armazenamos as teclas FÍSICAS, não as direções já invertidas.
+// Isso evita andar sozinho quando a inversão acaba durante um pressionamento.
+function refreshMovement (this:Player) {
+  const previousMoving = this.moving
+  const now = Date.now()
+  const active = this.active && now >= this.stunnedUntil
+  const inverted = graphControlsInverted(this, now)
+  this.lastGraphInverted = inverted
+
+  const inputs:SIDES[] = []
+  if (active) {
+    for (const key of this.heldMoveKeys) {
+      if (this.moveKeys[key]) inputs.push(this.moveKeys[key])
+    }
+    if (this.gamepadDirection) inputs.push(this.gamepadDirection)
+  }
+
+  const movement = graphHeldMovement(inputs, inverted)
+  this.movingSide = movement.movingSide
+  this.moving = movement.moving
+  if (movement.side) this.side = movement.side
+
+  if (this.myself && previousMoving && !this.moving) {
+    emitMove({ h:this.holding, m:0, p:this.index, s:this.side, x:this.x, y:this.y, v:this.speedMultiplier })
+  }
+}
+
+function setGamepadDirection (this:Player, direction:SIDES|null) {
+  if (this.gamepadDirection === direction) return
+  this.gamepadDirection = direction
+  this.refreshMovement()
+}
+
 function startMove (this:Player, side:SIDES) {
   if (!this.active || Date.now() < this.stunnedUntil) return
-  this.movingSide[side] = true
-  this.side = side
-  this.moving = 1
+  this.setGamepadDirection(side)
 }
 
 function moveTick (
   this:Player,
   state:GameState
 ) {
+  const now = Date.now()
+  // Mudanças de inversão não alteram mais o mapeamento das teclas.
+  if (this.myself && graphControlsInverted(this, now) !== this.lastGraphInverted) {
+    this.refreshMovement()
+  }
 
-  if (!this.moving || Date.now() < this.stunnedUntil) return
+  // Avaliar o repouso em TODOS os quadros, inclusive quando o jogador
+  // não anda ou está atordoado, para os 1000 ms do debuff funcionarem.
+  const actuallyMoving = this.active && this.moving !== 0 && now >= this.stunnedUntil
+  if (this.myself) {
+    this.signalMotion = updateSignalMotion(this.signalMotion, actuallyMoving, now)
+  }
+  if (!actuallyMoving) return
 
-const onSlowFloor =
-  state.slowFloors.isPlayerOnFloor(this)
-
-this.speedMultiplier =
-  onSlowFloor && !this.ignoresSlowFloor
-    ? 0.3
-    : 1
+  if (this.myself) {
+    const onSlowFloor = state.slowFloors.isPlayerOnFloor(this)
+    const carryMutation = this.holdSpeedBuffSuppressed && this.holdMutation === 'buff'
+      ? 'normal' : this.holdMutation
+    this.speedMultiplier =
+      (onSlowFloor && !this.ignoresSlowFloor ? 0.3 : 1) *
+      carrySpeedMultiplier(carryMutation, this.holding === 1) *
+      graphSpeedMultiplier(this, now) *
+      this.signalMotion.multiplier *
+      pingSpeedMultiplier(this.pingEffect, now)
+  }
 
   this.moves[this.side]()
 
@@ -279,7 +419,8 @@ this.speedMultiplier =
     p:this.index,
     s:this.side,
     x:this.x,
-    y:this.y
+    y:this.y,
+    v:this.speedMultiplier
   })
 }
 
@@ -341,32 +482,94 @@ function onMove (this:Player, dto:MoveDTO) {
   this.side = dto.s
   this.x = dto.x
   this.y = dto.y
+  if (typeof dto.v === 'number' && Number.isFinite(dto.v) && dto.v > 0 && dto.v <= 5) {
+    this.speedMultiplier = dto.v
+  }
 }
 
 function stopMove (this:Player, side:SIDES) {
-  this.movingSide[side] = false
-  this.moving = 0
-  if (Date.now() < this.stunnedUntil) return
-  for (const side in this.movingSide) {
-    if (this.movingSide[side as SIDES]) {
-      this.side = side as SIDES
-      this.moving = 1
-      break
-    }
-  }
-  emitMove({h:this.holding, m:this.moving, p:this.index, s:this.side, x:this.x, y:this.y})
+  if (this.gamepadDirection === side) this.setGamepadDirection(null)
 }
 
-//alteracao na função de inverter os controles (adicionar um tmepo para o bonus)
+// Mantido para compatibilidade com chamadas antigas. Nunca fazer toggle
+// de teclas: o efeito precisa ser idempotente mesmo em coletas consecutivas.
 function invertControls (this:Player) {
-  this.moveKeys['W'] = (this.moveKeys['W'] == 'U') ? 'D' : 'U'
-  this.moveKeys['A'] = (this.moveKeys['A'] == 'L') ? 'R' : 'L'
-  this.moveKeys['S'] = (this.moveKeys['W'] == 'D') ? 'U' : 'D'
-  this.moveKeys['D'] = (this.moveKeys['D'] == 'R') ? 'L' : 'R'
-  this.moveKeys['ARROWUP'] = 'D'
-  this.moveKeys['ARROWLEFT'] = 'R'
-  this.moveKeys['ARROWDOWN'] = 'U'
-  this.moveKeys['ARROWRIGHT'] = 'L'
+  this.applyGraphBonus(0, 'normal')
+}
+
+function applyGraphBonus (this:Player, stage:number, mutation:LinearMutation|undefined) {
+  const now = Date.now()
+  const next = applyGraphPickup(this, stage, mutation, now)
+  this.invertedUntil = next.invertedUntil
+  this.boostedUntil = next.boostedUntil
+  this.invertedUntilDeath = next.invertedUntilDeath
+
+  const mode = stage === LABORATORY_STAGE ? (mutation ?? 'normal') : 'normal'
+  this.graphNotice = mode === 'buff' || mode === 'virus' ? mode : null
+  this.graphNoticeUntil = this.graphNotice ? now + LINEAR_NOTICE_DURATION_MS : 0
+  this.refreshMovement()
+}
+
+// A coleta do Sinal Bom normal continua a somar +0.1 de velocidade.
+// Uma mutação não concede esse aumento fixo: registra percentuais
+// que são ativados apenas quando uma nova bomba é colocada.
+function applyPingBonus (
+  this:Player,
+  stage:number,
+  mutation:LinearMutation|undefined
+) {
+  if (stage !== LABORATORY_STAGE || mutation === 'normal' || mutation === undefined) {
+    if (this.speed < MAX_SPEED) this.speed += 0.1
+    this.pingNoticeMode = null
+    this.pingNoticeUntil = 0
+    return
+  }
+  this.pingEffect = applyPingPickup(this.pingEffect, stage, mutation)
+  this.pingNoticeMode = mutation
+  this.pingNoticeUntil = Date.now() + LINEAR_NOTICE_DURATION_MS
+}
+
+// O Sinal Ruim altera a velocidade por movimento contínuo.
+// O vírus zera melhorias de velocidade já coletadas, mas nunca apaga
+// a velocidade inata do personagem nem outras habilidades dos itens.
+function applySignalBonus (
+  this:Player,
+  stage:number,
+  mutation:LinearMutation|undefined
+) {
+  const mode = signalPickupMode(stage, mutation)
+  this.signalMotion = initialSignalMotion(mode)
+  this.signalNotice = mode === 'buff' || mode === 'virus' ? mode : null
+  this.signalNoticeUntil = this.signalNotice
+    ? Date.now() + LINEAR_NOTICE_DURATION_MS : 0
+
+  if (mode === 'normal') {
+    // Preserva o antigo Sinal Ruim nos outros mapas.
+    this.speed = SPEED - 0.1
+  } else if (mode === 'virus') {
+    // Remove bônus permanentes do Sinal Bom e bônus de velocidade
+    // temporários do Grafo e da Troca de Dados já coletados.
+    this.speed = this.baseSpeed
+    this.boostedUntil = 0
+    // O indicador do Grafo não deve continuar prometendo +50%
+    // depois que o Download Limitado cancela esse ganho.
+    if (this.graphNotice === 'buff') {
+      this.graphNotice = null
+      this.graphNoticeUntil = 0
+    }
+    this.holdSpeedBuffSuppressed = true
+    // Download Limitado também elimina os upgrades Ping, inclusive
+    // um efeito de 3s que tenha sido ativado por bomba anteriormente.
+    this.pingEffect = resetPingUpgrades()
+    this.pingNoticeMode = null
+    this.pingNoticeUntil = 0
+    // Mantém a possibilidade de apanhar bombas adversárias, mas a
+    // mensagem de +20% deixa de aparecer após cancelar a velocidade.
+    if (this.holdMutation === 'buff') {
+      this.holdNotice = null
+      this.holdNoticeUntil = 0
+    }
+  }
 }
 
 function handleBomb (this:Player, state:GameState) {
@@ -397,13 +600,29 @@ function useStunSkill (this:Player) {
 }
 
 // Todos os clientes recebem o mesmo alvo da confirmação do servidor.
-function applyStun (this:Player) {
+function applyStun (
+  this:Player,
+  durationMs = STUN_DURATION_MS,
+  effect:'mamedes'|'dizzy' = 'mamedes'
+) {
   if (!this.active) return
 
-  this.stunnedUntil = Math.max(this.stunnedUntil, Date.now() + STUN_DURATION_MS)
+  const now = Date.now()
+  const until = now + durationMs
+  // O bloqueio dos comandos permanece compartilhado; só o efeito visual
+  // distingue o projétil do Mamedes da tontura do Chute com vírus.
+  this.stunnedUntil = Math.max(this.stunnedUntil, until)
+  if (effect === 'dizzy') {
+    this.kickStunUntil = Math.max(this.kickStunUntil, until)
+    this.kickStunStartedAt = now
+  } else {
+    this.mamedesStunUntil = Math.max(this.mamedesStunUntil, until)
+  }
   const wasMoving = this.moving !== 0
   this.moving = 0
   this.movingSide = { U: false, D: false, L: false, R: false }
+  this.heldMoveKeys.clear()
+  this.gamepadDirection = null
 
   if (this.myself && wasMoving) {
     emitMove({ h:this.holding, m:0, p:this.index, s:this.side, x:this.x, y:this.y })
@@ -435,24 +654,44 @@ function placeBomb (this:Player, state:GameState) {
     y: bomb.y
   })
   state.entities.add(bomb)
+  // Só ativa Ping Zero/Alto se a bomba foi realmente colocada.
+  // Tentativas bloqueadas, arremessos e chutes não contam.
+  this.pingEffect = activatePingOnBombPlaced(this.pingEffect, Date.now())
   playBombSound()
 }
 
+function takeBomb (this:Player, bomb:Bomb, state:GameState): boolean {
+  if (!this.myself || !this.hold || this.holding || !bomb.armed ||
+      bomb.holding || bomb.moving || bomb.flinging) return false
+  if (!canPickUpBomb(this.holdMutation, this.index, bomb.ownerIndex)) return false
+  // Contato real: bombas remotas podem não existir como bloco no mapa local.
+  if (!isCollidingForced(this, bomb)) return false
+
+  this.holding = 1
+  this.bombId = bomb.id
+  emitHoldBomb({i:bomb.id, p:this.index, mutation:this.holdMutation ?? undefined})
+  bomb.setHolding(this.index, state)
+  return true
+}
+
 function holdBomb (this:Player, state:GameState) {
+  if (this.holdMutation === 'buff') {
+    for (const entity of state.entities.entities.values()) {
+      const bomb = entity as Partial<Bomb>
+      if (typeof bomb.getAxes !== 'function' || !bomb.id || !bomb.armed) continue
+      if (this.takeBomb(bomb as Bomb, state)) return
+    }
+  }
+
   const axes = this.getAxes()
   const block = state.blocks.getBlock(axes)
   if (block && block.t === 'O') {
     const bomb = state.entities.get(block.id) as Bomb | undefined
-    // Uma explosão (especialmente de alcance zero) pode deixar um marcador
-    // antigo no tabuleiro. Não tente segurar uma entidade já removida.
     if (!bomb?.armed) {
       state.blocks.destroyBlock(axes)
       return
     }
-    this.holding = 1
-    this.bombId = bomb.id
-    emitHoldBomb({i:bomb.id,p:this.index})
-    bomb.setHolding(this.index, state)
+    if (this.takeBomb(bomb, state)) return
   }
   else {
     this.placeBomb(state)
@@ -465,7 +704,9 @@ function flingBomb (this:Player, state:GameState) {
   this.bombId = ''
   // A bomba pode ter explodido enquanto estava sendo carregada.
   if (!bomb?.armed || !bomb.holding) return
-  emitFlingBomb({i:bomb.id,p:this.index,s:this.side,x:this.x,y:this.y-9})
+  // A penalidade altera o raio desta bomba, sem apagar o alcance-base.
+  bomb.reach = reachAfterFling(this.holdMutation, bomb.reach)
+  emitFlingBomb({i:bomb.id,p:this.index,s:this.side,x:this.x,y:this.y-9,r:bomb.reach})
   bomb.startFling(this.side)
 }
 
@@ -481,6 +722,11 @@ function consumeExtraLife (this:Player): boolean {
 
 function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   if (this.removeTime) return
+
+  // Firewall buff protege de bombas próprias e adversárias durante
+  // seis segundos; não protege do IHM nem das demais causas de morte.
+  if (emit && cause === 'bomb' &&
+      firewallExplosionImmune(this.firewallMode, this.firewallUntil, Date.now())) return
 
   // Proteção temporária contra a mesma explosão que gastou a vida extra
   if (
@@ -501,6 +747,24 @@ function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   this.active = false
   this.moving = 0
   this.holding = 0
+  this.isSpaceHeld = false
+  this.heldMoveKeys.clear()
+  this.gamepadDirection = null
+  this.invertedUntilDeath = false
+  this.invertedUntil = 0
+  this.boostedUntil = 0
+  this.mamedesStunUntil = 0
+  this.kickStunUntil = 0
+  this.kickStunStartedAt = 0
+  this.firewallMode = null
+  this.firewallUntil = 0
+  this.signalMotion = initialSignalMotion('normal')
+  this.signalNotice = null
+  this.signalNoticeUntil = 0
+  this.holdSpeedBuffSuppressed = false
+  this.pingEffect = resetPingUpgrades()
+  this.pingNoticeMode = null
+  this.pingNoticeUntil = 0
   this.collidable = false
 
   this.tick = () => {
@@ -618,10 +882,15 @@ function render (this:Player, context:CanvasRenderingContext2D) {
     }
   }
 
-  // Animação arco-íris no jogador atordoado, sem trocar o sprite.
-  if (Date.now() < this.stunnedUntil) {
+  // Visuais separados: o Chute desenha estrelinhas orbitando a cabeça
+  // enquanto o Mamedes mantém o arco-íris da habilidade original.
+  const now = Date.now()
+  const stunVisual = stunVisualAt(now, this.mamedesStunUntil, this.kickStunUntil)
+  if (stunVisual === 'dizzy') {
+    drawKickDizziness(context, this.x, this.y, now - this.kickStunStartedAt)
+  } else if (stunVisual === 'mamedes') {
     const pride = ['#e92737', '#ff8f1f', '#fff033', '#30c865', '#357fff', '#923bd0']
-    const phase = Math.floor(Date.now() / 120) % pride.length
+    const phase = Math.floor(now / 120) % pride.length
 
     context.save()
     context.globalAlpha = 0.25

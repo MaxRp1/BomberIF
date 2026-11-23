@@ -10335,3 +10335,277 @@ Foram retirados o endpoint `GET /debug/virus`, os componentes `devVersion.tsx` e
 **Procedimento local:** iniciar `yarn dev` no servidor sem variáveis de forçar fase e `yarn dev` no cliente. Aguardar o sorteio natural do Laboratório para avaliar a mecânica.
 
 **Qualidade:** após esta limpeza, reexecutar `yarn test:virus`, `yarn test:chain`, `yarn test:lobby`, `yarn test:ranking`, `yarn test:stun`, `yarn test:frank` e builds do cliente e servidor. O PR #13 permanece em rascunho até validação; não houve merge ou deploy nesta alteração.
+
+
+### SEGUNDA MUTAÇÃO EXPERIMENTAL: TROCA DE DADOS (LABORATÓRIO) — 18/11/2026
+
+**Status:** implementada na branch `feat/lab-data-transfer-virus-2026-11-18`, aguardando validação local e multiplayer. Não mesclar nem publicar sem testes e builds no Kali. O PR #13 da Função Linear foi integrado à `main` pelo merge `4b984ce` após validação manual.
+
+A **Troca de Dados (bônus ID 3)** mantém o comportamento original de segurar e arremessar bombas nas fases Campo e Refeitório. Somente no **Laboratório (stage 1)** cada exemplar tem 50% de chance de permanecer `normal` e 50% de chance de possuir uma mutação oculta, dividida igualmente entre `buff` e `virus` (25% de chance de cada um no total). O resultado é sorteado pelo servidor e enviado para todos em `BlockDTO.mutation`. O fallback determinístico por sala/coordenada também inclui esse bônus.
+
+- **Buff:** permite coletar bombas adversárias que estejam no chão, pressionando Espaço ao encostar ou mantendo Espaço enquanto avança contra a bomba. A verificação usa as entidades reais de bomba, pois bombas remotas podem não possuir marcador no tabuleiro local. Enquanto segura qualquer bomba, a velocidade do portador é multiplicada por **1,2** (+20%).
+- **Debuff:** enquanto segura uma bomba, sua velocidade é multiplicada por **0,4** (-60%). Ao arremessar, o alcance daquela bomba é limitado a **2**, o alcance inicial do jogo, quando havia alcance superior. Bombas que já estavam com alcance 0 devido ao vírus da Função Linear continuam com alcance 0; a Troca de Dados não pode aumentar um alcance menor que 2. Esse alcance é enviado aos clientes pelo campo opcional `FlingBombDTO.r`. A penalidade não diminui o alcance-base do jogador nem altera bombas colocadas normalmente.
+- **Persistência:** a última Troca de Dados coletada define o modo de carregamento pelo restante da rodada ou até outra coleta do mesmo power-up. O efeito de velocidade existe somente enquanto uma bomba está sendo segurada. Pisos lentos continuam modificando velocidade e o fator de carregamento é multiplicativo.
+- **Multiplayer:** `Bomb.ownerIndex` permanece vinculado ao autor original; `playerIndex` identifica o carregador atual. `HoldBombDTO.mutation` comunica o efeito de carregamento aos clientes remotos. Ao pegar uma bomba, seu marcador no mapa só é removido se for o marcador correspondente ao próprio ID da bomba.
+- **Controle e HUD:** o buff habilita coleta de bombas adversárias pressionando ou segurando Espaço; eventos de repetição da tecla não arremessam automaticamente a bomba. O HUD da mutação passa a mostrar mensagens de Troca de Dados, preservando o aviso da Função Linear.
+
+**Arquivos modificados:** `shared/virus.ts`, `shared/dto.ts`, `server/src/factory.ts`, `client/src/game/entities/bonus.ts`, `client/src/game/entities/player.ts`, `client/src/game/entities/bomb.ts`, `client/src/game/components/canvas/index.tsx` e `virusHud.tsx`. Testes de regras estão em `server/test/virus.test.ts`.
+
+**Validação pendente no Kali:**
+
+```bash
+cd ~/BomberIF/server
+yarn test:virus
+yarn test:chain
+yarn test:lobby
+yarn test:ranking
+yarn test:stun
+yarn test:frank
+yarn build
+cd ../client
+yarn build
+```
+
+**Teste manual obrigatório:** dois jogadores no Laboratório, pegar bomba adversária no chão, +20% enquanto segura, -60% enquanto segura, arremesso com raio 2 após o debuff, recuperação da velocidade após soltar, bombas próprias e rivais, combos com Função Linear, ausência de mudanças em Campo/Refeitório e explosões em cadeia. A implantação deve atualizar servidor e cliente juntos.
+
+
+### LABORATÓRIO FIXO NA BRANCH DE DESENVOLVIMENTO — 19/11/2026
+
+**Decisão de desenvolvimento:** a branch `feat/lab-data-transfer-virus-2026-11-18` (PR #14, aberto em rascunho, sem merge) mantém todas as novas partidas exclusivamente no Laboratório. A mudança está em `server/src/factory.ts`, com `const stage = LABORATORY_STAGE` (`LABORATORY_STAGE = 1`). O sorteio das mutações dos power-ups continua aleatório.
+
+**A branch principal (`main`) permanece inalterada:** `const stage = Math.floor(Math.random() * STAGES)`, alternando entre Campo (0), Laboratório (1) e Refeitório (2). Nenhum outro mapa foi apagado. Quem baixar a `main` continuará recebendo os três mapas normalmente. Quem executar esta branch de desenvolvimento terá o Laboratório fixo.
+
+**Ao concluir o ciclo de implementação de personagens e power-ups:** restaurar o sorteio em `server/src/factory.ts`, removendo a importação de `LABORATORY_STAGE` caso deixe de ser usada e reintroduzindo `STAGES`. Testar novamente os três cenários antes de mesclar o PR com a `main`.
+
+**Status:** mudança enviada ao GitHub apenas nesta branch de desenvolvimento. Não há merge nem deploy associado; execução de build e testes multiplayer no Kali ainda depende de validação local.
+
+
+### ITENS NORMAIS E MUTAÇÕES MISTERIOSAS NO LABORATÓRIO — 19/11/2026
+
+**Status:** implementado na branch `feat/lab-data-transfer-virus-2026-11-18` do PR #14 (rascunho, sem merge/deploy). Builds e validação multiplayer no Kali ainda pendentes. Esta regra altera a interpretação anterior de “infectado = debuff”, que estava incorreta para o design pretendido.
+
+**Regra de duas etapas, por exemplar:** para os power-ups com mutações já implementadas — Função Linear (ID 2) e Troca de Dados (ID 3), apenas no Laboratório (stage 1) — o servidor sorteia 50% de chance de **item normal** e 50% de chance de **item mutado**. Quando é mutado, divide-se igualmente entre o buff positivo (50% entre os mutados, equivalente a 25% de todos os itens) e o debuff negativo (50% entre os mutados, também 25% do total). `chooseLinearMutation(random())` codifica os três resultados `'normal'`, `'buff'` e `'virus'`, com faixas [0, 0,5), [0,5, 0,75) e [0,75, 1), respectivamente. O servidor inclui explicitamente o estado `'normal'` no `BlockDTO.mutation` para não ser confundido com um campo ausente no tráfego de rede.
+
+**Consequências ao pegar o item:**
+- **Normal (50%):** usa sprite original e comportamento clássico. Função Linear dá **+1 de alcance**; Troca de Dados habilita **segurar e arremessar bombas próprias**, sem bônus/penalidade extra de velocidade.
+- **Mutado com buff (25% geral):** tem sprite misterioso alterado. Função Linear dá **+3 permanentes/acumuláveis**; Troca de Dados permite capturar bombas adversárias no chão e dá **+20% de velocidade enquanto segura bomba**.
+- **Mutado com vírus (25% geral):** tem **o mesmo sprite misterioso** do buff, sem pistas visuais sobre a polaridade. Função Linear zera o alcance das novas bombas por 10 segundos; Troca de Dados dá **-60% de velocidade enquanto segura bomba** e limita o alcance das bombas arremessadas a 2, sem aumentar alcance já menor.
+
+**Sprite de risco:** `client/src/game/entities/bonus.ts` mantém spritesheets originais de 16 × 16 pixels. Somente `isMutatedBonus(props.mutation)` define se haverá filtro roxo e glitches de pixels rosa/verde. Buff mutado e vírus mutado são visualmente **indistinguíveis** antes da coleta, preservando a decisão de arriscar. As mensagens de buff/vírus no HUD só aparecem depois da coleta. A aparência não revela o efeito oculto.
+
+**Rede:** `server/src/factory.ts` faz o sorteio para cada bloco elegível; `shared/dto.ts` aceita os três estados. `fillMissingLabPowerupMutations` preserva inclusive `'normal'`, e, somente para pacotes antigos sem campo, `fallbackLinearMutation` deriva deterministamente os três estados (50/25/25) da sala + coordenada para todos os clientes. `client/src/game/entities/block.ts` propaga o estado à entidade do power-up. Em outras fases, todos os itens têm efeitos e visuais clássicos.
+
+**Escopo e testes:** não sortear mutações para os outros IDs enquanto os efeitos não existirem; mantê-los normais. Verificar os limiares do sorteio, efeitos clássicos, equivalência visual do buff/vírus, sincronização multiplayer, compatibilidade com HUD e alcance zero, builds do cliente/servidor e repetição com diferentes spritesheets. Arquivos alterados: `shared/virus.ts`, `shared/dto.ts`, `client/src/game/entities/bonus.ts`, `client/src/game/entities/player.ts`, `server/test/virus.test.ts`, GDD e este documento. Não integrar à `main` sem validar e restaurar o sorteio normal dos mapas na branch.
+
+
+### GRAFO — CORREÇÃO DE MOVIMENTO PRESO — 19/11/2026
+
+**Estado:** implementado na branch `feat/lab-data-transfer-virus-2026-11-18` (PR #14 em rascunho), sem merge/deploy. Validação de build e controle físico no Kali ainda pendente.
+
+**Problema anterior:** `Player.invertControls()` alterava o mapeamento das teclas a cada coleta e tentava desfazê-lo por `setTimeout`, mas não restaurava corretamente as setas nem todas as direções de WASD. A liberação da tecla depois de uma inversão podia usar uma direção diferente da que havia sido registrada no pressionamento, deixando `movingSide` com estados inconsistentes e dando a impressão de que o jogador andava sozinho. Além disso, o gamepad chamava `startMove/stopMove` repetidamente, inclusive com analógico neutro, podendo interferir no teclado.
+
+**Correção:** as teclas físicas pressionadas são guardadas em `Player.heldMoveKeys`, enquanto o analógico/D-pad mantém `gamepadDirection` separado. `graphHeldMovement()` deriva as direções reais a partir do estado atual de inversão, sem modificar `moveKeys`. Ao soltar a tecla, perder o foco da janela, sofrer stun ou desconectar o controle, o estado de entrada é limpo/recalculado, e a movimentação só permanece ativa se existir uma entrada física. O efeito do Grafo agora é definido por prazos (`invertedUntil`, `boostedUntil`) e pelo marcador `invertedUntilDeath`, sem temporizadores que façam toggles acumulados ou atrasados. O servidor recebe a movimentação como antes; `MoveDTO.v` opcional comunica o multiplicador de velocidade para melhorar a simulação visual remota.
+
+**Regressões:** testar WASD e setas pressionadas durante ativação/expiração do Grafo, soltar uma tecla enquanto outra permanece pressionada, alternar para o gamepad e desconectá-lo, perda de foco, stun do Mamedes, colisões em paredes, morte e novo início de partida. Testes de regras puras e movimentação em `server/test/virus.test.ts`.
+
+### GRAFO — MUTACÕES EXPERIMENTAIS DO LABORATÓRIO — 19/11/2026
+
+**Estado:** implementado na mesma branch, ainda não mesclado, aguardando builds e validação de gameplay. Sorteio do Laboratório permanece em **50% normal / 25% buff / 25% debuff**, com desenho de mutação misteriosa **igual** para os dois resultados modificados.
+
+**Identificação:** Grafo = bônus ID **8** (`BonusFactory` usa `InvertBonus`). Incluído em `shared/virus.ts` nas funções `assignLabPowerupMutations` e `fillMissingLabPowerupMutations`; os outros cenários mantêm seu efeito original.
+
+- **Normal (50%):** sprite comum; inverte controles durante **10 segundos**, sem bônus de velocidade.
+- **Buff mutado (25%):** sprite misterioso; mantém a inversão de controles durante **10 segundos** e multiplica a velocidade de movimento por **1,5 (+50%)** enquanto o efeito estiver ativo, retornando ao normal no prazo.
+- **Debuff mutado (25%):** mesmo sprite misterioso; mantém os controles invertidos **até o personagem morrer**, sem prazo automático de recuperação.
+- **Acúmulo/novas coletas:** coletar um Grafo com inversão temporária reinicia o prazo de 10 segundos; buffs de velocidade não acumulam multiplicadores, apenas renovam o próprio prazo. Uma inversão permanente não pode ser removida por coletar Grafo normal ou buff. Em caso de outro efeito de velocidade (Troca de Dados, piso lento), os fatores são multiplicativos. Um boost temporário que já estava ativo pode terminar normalmente mesmo sob uma inversão permanente.
+- **Morte/rodada seguinte:** o estado de inversão, boost e controles pressionados é limpo, e a próxima rodada constrói um `Player` com estado inicial sem Grafo.
+- **Informação visual:** após a coleta, o HUD informa +50% de velocidade e duração ou a inversão até morrer. O ícone do power-up mutado não indica previamente se será positivo ou negativo.
+
+**Documentação relevante:** `shared/virus.ts`, `shared/dto.ts`, `server/src/factory.ts`, `client/src/game/entities/player.ts`, `client/src/game/entities/gamepad.ts`, `client/src/game/entities/bonus.ts`, `client/src/game/components/canvas/virusHud.tsx`, `server/test/virus.test.ts` e seção Laboratório do GDD. A tabela geral do GDD continua descrevendo o efeito normal da inversão por 10 segundos.
+
+**Validação necessária:** `cd server && yarn test:virus && yarn test:stun && yarn build`, `cd ../client && yarn build`; teste multiplayer com dois navegadores e controle físico, conferindo que as versões misteriosas mantêm o mesmo sprite e que os movimentos nunca ficam presos. A branch continua forçando apenas o Laboratório; restaurar o sorteio normal antes de mesclar na main.
+
+
+### IHM — SORTEIO DE ALVO ENTRE JOGADORES VIVOS (LABORATÓRIO) — 19/11/2026
+
+**Estado:** implementado exclusivamente na branch `feat/lab-data-transfer-virus-2026-11-18` do PR #14, ainda rascunho e **sem merge nem deploy**. Build e validação em partidas reais no Kali são pendências. O Laboratório segue temporariamente fixo apenas nessa branch.
+
+**Power-up:** IHM (ID **9**; função `KillBonus`). No Campo e Refeitório, continua com o efeito tradicional de morte do coletor. No Laboratório, participa do sorteio de três estados: `normal` com **50%** (sprite original), `buff` com **25%** e `virus` com **25%** (as duas variantes mutadas compartilham o mesmo sprite misterioso, sem identificar o resultado antes da coleta).
+
+- **Normal (50%):** morte de quem coleta, sem alterar a regra clássica do IHM.
+- **Buff mutado (25%):** o servidor sorteia **uniformemente um jogador entre todos os que estão vivos na rodada, incluindo quem coletou o IHM**, e elimina exatamente esse alvo. Com dois vivos, o coletor tem 50% de chance de morrer e o adversário tem 50% de chance de morrer **condicionados ao item ser o buff**. Com três vivos, cada um tem 1/3, etc. Jogadores mortos, desconectados ou já fora do ranking de vivos não participam.
+- **Debuff mutado (25%):** mesma morte imediata do coletor, sem efeitos adicionais.
+
+**Autoridade e multiplayer:** para coletar o IHM no Laboratório, o cliente transmite somente `IhmPickupDTO.a` (`[linha,coluna]`) via evento `ihm_pickup`. O servidor registra as posições e as mutações reais dos IHM no início da rodada, após o mapa ser montado. `claimIhmPickup` confere se a partida está ativa, o coletor está vivo e a posição coincide com um IHM não consumido do mapa; também compara as coordenadas do coletor com o item (tolerância para latência). A tentativa consome o item **uma única vez**. Para item normal ou vírus o servidor escolhe o coletor; para buff escolhe um participante do conjunto atual de sobreviventes com `chooseIhmVictim`. O cliente não decide o alvo nem altera o sorteio.
+
+**Eliminação e ranking:** `onIhmPickup` chama `registerDefeat(io, socketDaVitima)` no servidor; a vítima é marcada como não viva e o servidor emite `ihm_result` e `kl` para sincronização. O cliente da própria vítima usa `kill(false)` para reproduzir sua animação sem emitir uma segunda morte. Os demais espectadores recebem `kl` e a rodada termina pelo fluxo existente de vitória/empate e placar. Isso funciona mesmo que o buff elimine o coletor ou que haja apenas um sobrevivente. Fora do Laboratório, a coleta ainda chama `kill(true)` local, como antes.
+
+**Arquivos:** `shared/virus.ts` (ID e helper de sorteio), `shared/dto.ts` (ID 9 e mensagens), `server/src/factory.ts` (estado de mapa no ranking), `server/src/ranking.ts` (itens consumíveis e conjunto de sobreviventes), `server/src/game.ts` + `server/src/ioListener.ts` (validação, morte e eventos), `client/src/game/entities/bonus.ts` (coleta), `client/src/game/components/canvas/index.tsx` (vítima local), `client/src/services/socket.ts` (envio), `server/test/ihm.test.ts` (regressão), `server/package.json` (comando `yarn test:ihm`), tabela e descrição do Laboratório no GDD. A tabela geral do GDD permanece com o IHM original.
+
+**Testes obrigatórios no Kali:** `cd server && yarn test:ihm && yarn test:virus && yarn test:ranking && yarn build`; `cd ../client && yarn build`. Em jogo, verificar IHM normal, buff e debuff; com 1, 2 e 3+ sobreviventes, confirmar possibilidade de eliminar o coletor, nenhum alvo já morto, resultado igual para todos, sem mortes duplas com cliques/rede, vitória e ranking correto, e comportamento clássico fora do Laboratório. As configurações atuais da branch forçam apenas o Laboratório; restaurar os três mapas antes do merge.
+
+
+### MODO TEMPORÁRIO DE TESTES — APENAS POWER-UPS MUTADOS NO LABORATÓRIO — 19/11/2026
+
+**Escopo:** **somente a branch `feat/lab-data-transfer-virus-2026-11-18`**, PR #14 em rascunho e **sem merge/deploy**. A `main` não foi alterada e mantém as regras existentes. Esta é uma configuração temporária de teste do Laboratório, **não** uma alteração do design final do GDD.
+
+**Interruptor único:** `shared/virus.ts` → `export const LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true`. Esta flag controla simultaneamente a seleção dos itens distribuídos no mapa, o sorteio do servidor e o fallback determinístico de clientes com dados incompletos. **Para restaurar a distribuição original**, mudar somente para `false`; não é preciso voltar commits ou reescrever os mutadores. Antes de mesclar a branch, restaurar também a escolha aleatória das três arenas em `server/src/factory.ts` (atualmente estágio 1 forçado).
+
+**Configuração com a flag `true` (atual para testes):**
+- No Laboratório, `server/src/factory.ts` passa a gerar **apenas os power-ups com mutações implementadas**: **Função Linear (2), Troca de Dados (3), Chute (4), Sinal Bom (5), Sinal Ruim (6), Firewall (7), Grafo (8) e IHM (9)**. Os demais IDs não aparecem no mapa temporariamente.
+- Cada instância dos oito itens tem **100% de chance de receber mutação**, com **50% buff / 50% vírus**. Não há item `normal` desses tipos enquanto o modo está ligado; portanto, todos têm o **mesmo sprite misterioso** que oculta a polaridade da mutação.
+- Os efeitos já definidos dos buffs e debuffs **não mudam**. O backend é a autoridade do sorteio, inclusive para as mutações do IHM.
+- Os cenários Campo e Refeitório continuam fora desse filtro. A branch de testes está forçando somente o Laboratório, mas o filtro foi explicitamente limitado ao `LABORATORY_STAGE`.
+
+**Configuração com a flag `false` (restauração):** volta o pool inteiro dos nove tipos de power-up, preservando a quantidade definida em `shared/constants.ts` → `BONUSES`. Os oito itens que admitem mutações voltam à regra pretendida: **50% normal / 25% buff / 25% vírus**; os demais seguem tradicionais. O sprite original continua exclusivo das versões normais.
+
+**Implementação:** `shared/virus.ts` declara a flag, `isLabMutatablePowerup`, `canDropLabPowerup`, `chooseLinearMutation(roll, onlyMutated)` e os parâmetros opcionais de modo em `assignLabPowerupMutations`, `fallbackLinearMutation` e `fillMissingLabPowerupMutations`. `server/src/factory.ts` escolhe o estágio **antes** de distribuir os itens, aplica o filtro e passa a flag ao sorteio do servidor. `client/src/game/components/canvas/index.tsx` passa a mesma flag ao fallback, garantindo que clientes desatualizados não inventem um item saudável em modo de teste. `server/test/virus.test.ts` cobre ambos os modos e a reversibilidade.
+
+**Validar no Kali:** `cd server && yarn test:virus && yarn test:ihm && yarn test:ranking && yarn build`; depois `cd ../client && yarn build`. Conferir em partida que **nenhum** power-up sem mutação (ID 1) apareça no Laboratório, que os oito IDs elegíveis sempre tenham sprite misterioso e que os resultados ocorram em ambas as polaridades. Executar testes novamente após desligar a flag. **Os testes e builds deste novo modo ainda não foram executados no Kali.**
+
+
+### CHUTE — MUTAÇÃO DE IMPACTO E STUN NO LABORATÓRIO — 19/11/2026
+
+**Estado:** implementação presente somente na branch `feat/lab-data-transfer-virus-2026-11-18` do PR #14 (rascunho; sem merge/deploy). **Testes `yarn test:kick`, builds e gameplay precisam ser executados no Kali.**
+
+**Identificação do item:** Chute = bônus ID **4** (sprite `BonusFactory/KickBonus`, recorte da spritesheet com `spriteY=32` em blocos 16×16). Foi acrescentado a `isLabMutatablePowerup`, ao sorteio do servidor e à configuração temporária de testes. Após integrar o Firewall, há **seis** IDs mutáveis no Laboratório: 2, 3, **4**, **7**, 8 e 9. O modo temporário `LAB_ONLY_MUTATED_DROPS_FOR_TESTS=true` distribui exclusivamente os oito, todos com sprite misterioso e chance **50% buff / 50% debuff**. Ao mudar a flag para `false`, todos os power-ups originais são distribuídos novamente e cada ID mutável tem **50% normal / 25% buff / 25% debuff**. Campo e Refeitório não recebem mutações.
+
+**Chute normal (sem mutação):** permite empurrar uma bomba por **até duas casas**, preservando a movimentação existente e seu comportamento de temporizador. O efeito é adquirido ao coletar o power-up e vale até o fim da rodada.
+
+**Buff do Chute:** quando o jogador chuta uma bomba, ela avança continuamente na direção do chute, sem o limite usual de duas casas, até encontrar **bloco destrutível, bloco indestrutível, outra bomba, jogador vivo ou borda do mapa**. Ela para **na última casa livre antes do impedimento e explode imediatamente**. O buff não impõe stun ao jogador e o timer da bomba pode ser renovado ao iniciar o chute, embora a colisão antecipada dispare a explosão antes do prazo. Chute bloqueado imediatamente pela casa adjacente provoca explosão na casa atual.
+
+**Debuff do Chute:** mantém o deslocamento normal (até duas casas), mas **nenhum chute redefine o timer da bomba**, independentemente da direção. O prazo anterior, inclusive temporizadores acelerados do Proença, é preservado. **Toda vez que o jogador consegue efetivamente chutar uma bomba, ele fica atordoado por 1 segundo**. A tentativa contra uma bomba que não pode se mover não conta como chute bem-sucedido. Durante o stun, não se movimenta nem posiciona bombas. O efeito utiliza `Player.applyStun(1000)`, sem alterar a duração padrão de 2 segundos da habilidade do Mamedes. Uma bomba que atinge seu timer enquanto desliza para de se mover imediatamente e não volta a ocupar o tabuleiro após detonar.
+
+**Detecção de impacto:** `canBuffKickAdvance` em `shared/virus.ts` verifica grade/limites, blocos `D/I/O`, jogadores vivos e bombas armadas; itens coletáveis `B` não são bloqueios. `Bomb.moveBuffKick` em `client/src/game/entities/bomb.ts` revisa os impedimentos a cada atualização (inclusive jogadores em movimento). A bomba de buff move-se à velocidade de chute existente (`BOMB_SPEED`) e respeita a explosão pelo timer ou por reação em cadeia.
+
+**Sincronização:** o cliente do chutador envia `MoveBombDTO` com o ID, direção e a mutação (`k`). O servidor corrige `p` para **o índice real de quem chutou**, que pode ser diferente do dono da bomba. Em caso de vírus, registra `stunnedUntil` por 1 segundo e emite `kick_stun` para todos os clientes. Em caso de buff, apenas o chutador pode anunciar `kick_impact` com ID e coordenada de destino; o servidor valida sala, autorização de uso único, coordenadas alinhadas à grade e limitações da arena antes de retransmitir para todos. Os clientes recebem o mesmo ponto final da explosão, evitando divergir ao calcular a colisão com personagens móveis. A simulação fina de colisões é realizada no navegador que chutou, **não** no servidor; a validação do servidor evita reuso grosseiro, mas não equivale a um mecanismo antitrapaça autoritativo completo.
+
+**HUD:** ao coletar Chute buff ou vírus, `client/src/game/components/canvas/virusHud.tsx` exibe a variação descoberta; antes da coleta ambos usam o mesmo sprite roxo com glitches para preservar a escolha de risco.
+
+**Arquivos relevantes:** `shared/virus.ts`, `shared/dto.ts`, `client/src/game/entities/bonus.ts`, `client/src/game/entities/bomb.ts`, `client/src/game/entities/player.ts`, `client/src/game/components/canvas/index.tsx`, `client/src/game/components/canvas/virusHud.tsx`, `client/src/services/socket.ts`, `server/src/game.ts`, `server/src/ioListener.ts`, `server/src/factory.ts`, `server/test/virus.test.ts`, `server/test/kick.test.ts`, `server/package.json` e tabelas/descrição do Laboratório no GDD. As tabelas gerais continuam descrevendo o chute clássico.
+
+**Testar no Kali:** `cd ~/BomberIF/server && yarn test:kick && yarn test:virus && yarn test:ihm && yarn test:ranking && yarn test:stun && yarn build`; depois `cd ../client && yarn build`. Testes manuais: chute em todas as direções, colisão com blocos, jogadores, bombas e borda; detonação sincronizada em dois navegadores; chutador de bomba rival; mudança de posição do jogador durante deslizamento; debuff preservando fuse perto da explosão; stun de 1 segundo sem alongar habilidade do Mamedes; timer rápido do Proença; morte/cascata enquanto desliza; versão normal fora do Lab; reversão do modo temporário ao final.
+
+
+### FIREWALL — INTEGRAÇÃO COM O CHUTE NO LABORATÓRIO — 19/11/2026
+
+**Origem:** implementação já realizada anteriormente na branch `feat/lab-firewall-virus-2026-11-19`, recuperada e integrada seletivamente à branch de testes principal `feat/lab-data-transfer-virus-2026-11-18` (PR #14). As duas branches haviam divergido: **não** houve substituição dos novos arquivos do Chute. A `main` não foi alterada e o PR #14 continua rascunho, sem merge/deploy.
+
+**Power-up:** Firewall (ID **7**), implementação `PassBonus` + `PassFactory`.
+
+**Efeitos por 6 segundos:**
+- **Normal (sem mutação):** atravessa blocos destrutíveis, indestrutíveis e bordas da arena; não concede imunidade a bombas. Modo padrão também no Campo e Refeitório.
+- **Buff:** conserva a travessia total do Firewall original, inclusive pelas bordas, e acrescenta **imunidade a explosões próprias e adversárias** durante os 6 segundos. A imunidade se aplica apenas à morte com causa `bomb` e não protege do IHM ou de efeitos sem causa de explosão.
+- **Debuff / vírus:** por 6 segundos, permite **atravessar somente blocos destrutíveis**. Blocos indestrutíveis, bombas e bordas continuam sólidos. O jogador **não** recebe imunidade a explosões.
+
+Uma nova coleta de Firewall **substitui** o modo anterior e reinicia a contagem de 6 segundos; usa uma entidade de efeito estável (`P<índice>`), evitando timers concorrentes e resets de colisão antigos. Ao terminar, restabelece colisões normais; se o jogador estiver preso dentro de bloco ao expirar, mantém a regra existente de morte por solidificação.
+
+**Sorteio para testar junto com o Chute:** a flag `LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true` passa a distribuir no Laboratório **somente** Função Linear (2), Troca de Dados (3), Chute (4), Sinal Ruim (6), Firewall (7), Grafo (8) e IHM (9), todos mutados, com 50% buff e 50% debuff e o **mesmo sprite misterioso** nos dois resultados. Ao mudar a flag para `false`, o pool original volta e cada um dos sete itens modificáveis utiliza 50% normal, 25% buff e 25% debuff. A branch continua forçando o estágio Laboratório (1) por enquanto; a `main` mantém o sorteio aleatório.
+
+**Código alterado / a documentar:** `shared/virus.ts` (`FIREWALL_BONUS_ID`, duração, elegibilidade e predicados), `client/src/game/entities/pass.ts` (substituição de efeito e cronômetro), `client/src/game/entities/block.ts` (passagem exclusiva pelos blocos destrutíveis sob vírus), `client/src/game/entities/bonus.ts` (coleta), `client/src/game/entities/player.ts` (estado e proteção contra dano de explosões), `client/src/game/components/canvas/virusHud.tsx` (aviso e cronômetro), `server/test/virus.test.ts` (pool de sete), `server/test/firewall.test.ts` (10 casos de regras) e `server/package.json` (`yarn test:firewall`). O GDD foi atualizado em **Laboratório → tabela de mutações, descrição das mecânicas e modo temporário**. A tabela geral de power-ups preserva a regra normal.
+
+**Validação pendente no Kali:** `cd server && yarn test:firewall && yarn test:kick && yarn test:virus && yarn test:ihm && yarn test:ranking && yarn test:stun && yarn build`; em seguida `cd ../client && yarn build`. No jogo, verificar coleta de buff/debuff/normal (flag desligada apenas para teste final), imunidade contra bombas próprias e rivais, contato com paredes e bordas, coletar outro Firewall antes dos 6 segundos, terminar o efeito dentro de um bloco, e interação com bombas chutadas que explodem no impacto. **Os novos testes e builds ainda não foram executados neste ambiente.**
+
+
+### CORREÇÃO DE TIPAGEM — CHUTE BUFF E INICIALIZAÇÃO DO SERVIDOR — 19/11/2026
+
+**Falha reproduzida pelo usuário no Kali:** `cd server && yarn dev` interrompia o `ts-node` com quatro mensagens `TS2339: Property 'pendingKickImpacts' does not exist on type 'PlayerDTO'` em `server/src/game.ts` (linhas 40, 41 e 63). O servidor já utilizava o conjunto de IDs de bombas para autorizar o evento `kick_impact`, mas esse campo não existia no tipo usado por `Socket.data`.
+
+**Correção:** `server/src/dto.ts` agora declara `pendingKickImpacts?: Set<string>` em seu `PlayerDTO` de servidor. Esse é o tipo efetivamente usado em `server/src/extends.ts`; não confundir com `shared/dto.ts`, que define estruturas transmitidas entre cliente e servidor. A propriedade opcional acompanha a inicialização do conjunto em `server/src/factory.ts` no começo da rodada e a criação defensiva em `server/src/game.ts`. Nenhum protocolo de rede ou mecânica foi alterado.
+
+**Prevenção:** foi acrescentado `yarn typecheck` ao `server/package.json`, executando `tsc --noEmit --project tsconfig.json`. O `yarn build` com esbuild e os testes com `ts-node --transpile-only` não substituem essa verificação estrita e podem deixar passar campos ausentes em interfaces TypeScript.
+
+**Validação pendente:** após `git pull --ff-only origin feat/lab-data-transfer-virus-2026-11-18`, executar no diretório `server` os comandos `yarn typecheck`, `yarn test:kick`, `yarn test:firewall`, `yarn build` e finalmente `yarn dev`. Caso apareça outro diagnóstico de TypeScript, corrigir por mensagem específica; não usar `--transpile-only` para mascarar erros. A mudança está apenas na branch do PR #14, ainda em rascunho, sem merge na `main`.
+
+
+### SINAL RUIM — DOWNLOAD TURBO / DOWNLOAD LIMITADO (LABORATÓRIO) — 19/11/2026
+
+**Estado:** nova funcionalidade na branch `feat/lab-data-transfer-virus-2026-11-18`, PR #14 em rascunho. Não foi feito merge na `main`, e os testes/builds do novo recurso ainda não foram executados no Kali.
+
+**Power-up:** Sinal Ruim = bônus ID **6**, coletado por `SlowBonus`. O Sinal Bom (ID 5) segue **sem mutação**, conservando o incremento de velocidade de +0,1 até seu teto existente. O Sinal Ruim original, em Campo e Refeitório ou quando a variante é `normal`, continua fixando a velocidade em `SPEED - 0.1` (0,9 em unidades do jogo).
+
+**Download Turbo (buff):** ao coletar, define um estado de aceleração progressiva. Enquanto o jogador efetivamente se movimenta, a velocidade recebe um fator que evolui **linearmente de 1,0× a 1,7× em 4 segundos** de movimentação contínua. Essa rampa tem teto de **+70%**, não acumula indefinidamente e não depende da taxa de quadros. Parar, ficar atordoado ou interromper o deslocamento reinicia a rampa imediatamente; ao retomar o movimento, começa de 0% de bônus. Usa a velocidade vigente do personagem como referência; outros modificadores legítimos permanecem multiplicativos.
+
+**Download Limitado (debuff):** a coleta limpa **todos os ganhos de velocidade que estavam ativos por power-ups anteriores**: bônus permanentes do Sinal Bom são perdidos por `player.speed = player.baseSpeed`; aceleração temporária do Grafo é cancelada por `boostedUntil = 0`; a velocidade adicional de +20% da Troca de Dados é suprimida pela flag `holdSpeedBuffSuppressed` até uma nova coleta daquele item. O jogador **não** perde a habilidade de pegar bombas adversárias da Troca de Dados, nem a inversão de controles do Grafo. A velocidade inata do personagem (por exemplo, a passiva de velocidade do sprite 11, `1.5×`) **é preservada**.
+
+Depois da coleta negativa, a velocidade evolui linearmente de **1,0× a 0,6× em 4 segundos** contínuos de movimento (**−40% de velocidade** no limite). Ao **ficar parado durante um segundo completo**, a penalidade é temporariamente eliminada e o personagem retorna à **velocidade natural de referência**. Ao voltar a andar, reinicia a desaceleração. Uma pausa mais curta que 1 segundo **não** limpa a penalidade e **não** conta como tempo de movimento: a rampa continua do ponto anterior. O debuff persiste até outro Sinal Ruim substituí-lo ou até o personagem morrer; não há timeout de efeito.
+
+**Regras de coexistência:** novas coletas de Sinal Bom, Grafo e Troca de Dados **depois** do Download Limitado podem conceder seus bônus normalmente; a limpeza de upgrades é aplicada na coleta negativa, não é um bloqueio permanente a todos os itens. O fator gradual de Download Limitado se multiplica com modificadores vigentes depois da coleta, como a desaceleração de terrenos especiais e os efeitos negativos de carregar bombas. A variante mais recente do Sinal Ruim substitui sua rampa anterior e a reinicia. O debuff não remove privilégios permanentes de outros power-ups que não sejam de velocidade.
+
+**Implementação:** `shared/virus.ts` expõe `SIGNAL_BAD_BONUS_ID=6`, `SIGNAL_RAMP_DURATION_MS=4000`, `SIGNAL_BUFF_MAX_MULTIPLIER=1.7`, `SIGNAL_VIRUS_MIN_MULTIPLIER=0.6`, `SIGNAL_VIRUS_REST_MS=1000`, `signalPickupMode`, `initialSignalMotion` e `updateSignalMotion`. O estado `SignalMotion` é independente da taxa de quadros e registra `movingSince` e `stoppedSince`. `client/src/game/entities/player.ts` utiliza esse estado no `moveTick` mesmo durante repouso, recalculando o fator no produto total de velocidade (piso lento × Troca de Dados × Grafo × Sinal Ruim). `client/src/game/entities/bonus.ts` aplica o efeito na coleta e mantém a variante normal nas outras arenas. `client/src/game/components/canvas/virusHud.tsx` exibe o modo descoberto e o percentual progressivo da velocidade, com mensagem da recuperação em repouso. O servidor distribui as variantes no início da partida e o movimento já existente `MoveDTO.v` transporta o multiplicador para os clientes remotos.
+
+**Modo temporário de testes:** `LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true` inclui **sete power-ups mutáveis**: **Função Linear (2), Troca de Dados (3), Chute (4), Sinal Bom (5), Sinal Ruim (6), Firewall (7), Grafo (8) e IHM (9)**. Somente esses itens são distribuídos no Laboratório, com aparência mutada indistinguível e probabilidades de **50% buff / 50% debuff**, sem versões normais. Com a flag `false`, voltam todos os nove itens e a distribuição planejada **50% normal / 25% buff / 25% debuff** entre os sete que podem sofrer mutações. A `main` permanece intacta.
+
+**Testes:** `server/test/signal.test.ts` traz 12 casos novos cobrindo rampas intermediárias e extremos, recomeço após parada, pausa de 999 ms vs. 1000 ms, restauração e não somar tempo parado, substituição de mutações, cenários fora do Lab, sprite misterioso, distribuição e fallback determinístico. `server/test/virus.test.ts` e `server/test/firewall.test.ts` foram atualizados para a lista de sete itens. `server/package.json` inclui `yarn test:signal`.
+
+**Validação ainda pendente no Kali:** atualizar a branch e executar `cd server && yarn typecheck && yarn test:signal && yarn test:virus && yarn test:firewall && yarn test:kick && yarn test:ranking && yarn test:stun && yarn test:ihm && yarn build`; depois `cd ../client && yarn build`. Verificar in-game em teclado/gamepad e com dois navegadores: caminhar 4 s continuamente, esperar 1 s parado, pausa de 0,5 s, coleta após Sinal Bom, Grafo e Troca de Dados, personagem com velocidade inata aumentada, reinício de marcha após stun, efeitos em terreno lento do Refeitório e coexistência com inversão de controles.
+
+
+### CHUTE — ANIMAÇÃO DE TONTURA DIFERENCIADA DO MAMEDES — 19/11/2026
+
+**Motivação:** no protótipo do Chute com vírus, o atordoamento de um segundo reutilizava o mesmo efeito arco-íris do Mamedes. Como a consequência da mutação representa tontura, esse feedback visual era inadequado, embora a penalidade mecânica e a duração estivessem corretas.
+
+**Comportamento novo:**
+- **Chute debuff (vírus):** o jogador permanece atordoado por **1000 ms**, sem mover-se nem executar ações durante o período. Visualmente, **três estrelinhas amarelas em pixel art giram em volta da cabeça**. A órbita é desenhada diretamente no canvas usando coordenadas inteiras e tempo decorrido (ciclo de 700 ms), sem acrescentar uma spritesheet ou mudar o desenho do personagem. As estrelinhas somem quando o seu efeito expira.
+- **Habilidade do Mamedes:** mantém o stun original de **2000 ms** e o **brilho colorido arco-íris**. Nenhum ajuste foi feito nas condições de disparo, cooldown, trajetória ou duração da habilidade.
+- **Sobreposição:** o bloqueio funcional (`stunnedUntil`) continua sendo o máximo dos prazos recebidos; os prazos dos dois feedbacks visuais são separados. Se os dois stuns coincidirem, o visual do Mamedes prevalece enquanto sua duração estiver ativa. Se o Chute ainda estiver causando tontura depois, as estrelinhas reaparecem até encerrar seu prazo; depois desaparecem. A regra evita que o efeito do Mamedes seja substituído inadvertidamente.
+- **Multiplayer:** o chutador chama `applyStun(KICK_VIRUS_STUN_MS, 'dizzy')` em `client/src/game/entities/bomb.ts`. O cliente remoto recebe `kick_stun` em `client/src/game/components/canvas/index.tsx` e chama o mesmo método com a indicação `dizzy`. Para `stun_apply` do Mamedes, o segundo argumento é omitido e permanece `mamedes` por padrão. Não houve alteração nos protocolos Socket.IO, no servidor ou na regra de impedimento de movimento.
+- **Desenho:** `client/src/game/animations/dizzy.ts` define `drawKickDizziness(context, x, y, elapsedMs)`, com três estrelas que giram sobre a cabeça com retângulos preenchidos 100% pixelados (sem filtro). `client/src/game/entities/player.ts` armazena `mamedesStunUntil`, `kickStunUntil`, `kickStunStartedAt`, escolhe o feedback na renderização e limpa tudo em caso de morte. `shared/virus.ts` mantém a função pura `stunVisualAt` para seleção do visual.
+- **Testes:** `server/test/kick.test.ts` recebeu quatro casos novos, somando **14 casos da suíte de Chute**: efeito correto durante os 1000 ms, preservação dos 2000 ms do Mamedes, prioridade/revezamento em casos de sobreposição e animação das estrelinhas com coordenadas inteiras. Nenhum teste substitui a validação visual in-game. A suíte `server/test/stun.test.ts` continua verificando a habilidade do Mamedes.
+
+**Validação no Kali (pendente de execução neste ambiente):** fazer pull da branch `feat/lab-data-transfer-virus-2026-11-18`, executar `cd server && yarn typecheck && yarn test:kick && yarn test:stun && yarn test:virus && yarn build`, depois `cd ../client && yarn build`. Em dois navegadores, testar o chute debuff e o projétil do Mamedes separadamente, observando visual e duração do stun em todos os clientes; testar também uma segunda aplicação de stun durante a primeira e a morte do personagem sob efeito.
+
+**GDD:** seção do Laboratório, tabela de mutações na linha **Chute → Debuff**, e descrições do cenário e das mutações. A alteração é apenas de feedback gráfico, sem impacto sobre as regras de jogo. **PR #14 permanece draft, sem merge/deploy e com a main intacta.**
+
+
+### SINAL BOM — PING ZERO / PING ALTO (LABORATÓRIO) — 20/11/2026
+
+**Estado:** nova implementação experimental no PR #14, branch `feat/lab-data-transfer-virus-2026-11-18` em rascunho (sem merge/deploy). A `main` continua intacta. **Testes e builds posteriores a esta alteração ainda dependem de validação no Kali.**
+
+**Item:** Sinal Bom = power-up **ID 5** (`SpeedBonus`), agora mutável apenas no Laboratório. A coleta normal (versão `normal`) e a coleta em Campo e Refeitório **mantêm o comportamento tradicional** de `+0.1` de velocidade até o limite anterior (`MAX_SPEED`). O Sinal Ruim (ID 6) permanece com as mutações Download Turbo/Limitado já existentes.
+
+**Mutação positiva — Ping Zero:** na primeira coleta mutada, o jogador acumula um saldo de **+40 pontos percentuais**. Nas coletas mutadas seguintes do mesmo item, cada Ping Zero acrescenta **+20 pontos percentuais** ao saldo (independentemente da polaridade das coletas anteriores). O bônus só é ativado quando o jogador **coloca uma bomba com sucesso** no tabuleiro. A partir da colocação, a velocidade recebe o multiplicador correspondente durante **3 segundos**, sem necessidade de estar segurando tecla ou andando para iniciar o cronômetro. Colocar outra bomba durante ou após esse prazo reinicia os **3 segundos**, usando o saldo disponível naquele momento. A quantidade de coletas persiste até morrer ou sofrer uma limpeza pelo Download Limitado.
+
+**Mutação negativa — Ping Alto:** na primeira coleta mutada, armazena **−40 pontos percentuais**, e a partir da segunda coleta mutada cada novo Ping Alto subtrai **20 pontos percentuais**. O debuff também é ativado exclusivamente após **colocar uma bomba com sucesso**, permanece por **3 segundos** e é reativado/reiniciado a cada nova colocação de bomba. Vários debuffs podem ser acumulados, mas o multiplicador resultante tem piso de **0,2×** da velocidade de referência: isso evita travar ou inverter o deslocamento caso o saldo passe de −100%. Não existe teto adicional para o saldo positivo no código experimental; equilibrar após teste de gameplay.
+
+**Coletas mistas:** a primeira mutação de Sinal Bom vale ±40; **todas as seguintes valem ±20**, somadas algebricamente. Exemplos: buff seguido de buff = **+60%**; debuff seguido de debuff = **−60%**; buff seguido de debuff = **+20%**; debuff seguido de buff = **−20%**. Novas coletas mudam o saldo armazenado, mas **não modificam uma ativação de 3 segundos que já esteja em andamento**. A próxima bomba aplica o saldo atualizado. Os sinais podem se compensar até chegar a zero.
+
+**Interação com outras habilidades:** o modificador Ping é combinado em `Player.moveTick` com os fatores de Sinal Ruim, Grafo, Troca de Dados e terreno lento, sem alterar a velocidade natural de personagens (inclusive a passiva do sprite 11). A mutação de Sinal Bom não cria novos tipos de bomba nem muda o inventário/limite de bombas. **Somente `Player.placeBomb` depois de uma colocação bem-sucedida** ativa o Ping: tentar colocar sobre um obstáculo, chutar, segurar, apanhar, arremessar ou simplesmente explodir uma bomba não ativa o efeito.
+
+**Download Limitado:** a coleta do Sinal Ruim com debuff **apaga também todo o saldo acumulado de Ping**, o contador de coletas e a eventual janela ativa de 3 segundos, junto com os bônus do Sinal Bom tradicional, do Grafo e da Troca de Dados. Se o jogador pegar depois outra mutação de Sinal Bom, ela se torna sua primeira coleta pós-reset (±40). Morte igualmente limpa todos os estados Ping.
+
+**Renderização/HUD:** `client/src/game/components/canvas/virusHud.tsx` mostra o resultado misterioso ao coletar, o saldo pronto para ativação e o contador de 3 segundos depois de colocar bomba, incluindo o sinal do percentual ativo. O HUD tem prioridade temporária sobre as outras notificações durante a ativação. O evento de movimento já existente (`MoveDTO.v`) replica o multiplicador de velocidade para os clientes remotos; não é necessário adicionar eventos de rede.
+
+**Código alterado:** `shared/virus.ts` (`SIGNAL_GOOD_BONUS_ID=5`, `PING_BONUS_DURATION_MS=3000`, `PING_FIRST_PICKUP_PERCENT=40`, `PING_NEXT_PICKUP_PERCENT=20`, `PING_MIN_MOVEMENT_MULTIPLIER=0.2`, `PingEffectState`, `applyPingPickup`, `activatePingOnBombPlaced`, `pingSpeedMultiplier`, `resetPingUpgrades` e elegibilidade do oitavo item), `shared/dto.ts` (documentação do ID mutável), `client/src/game/entities/player.ts` (coleta, estoque, gatilho de bomba, composição de velocidade, morte e limpeza), `client/src/game/entities/bonus.ts` (Sinal Bom mutado/normal), `client/src/game/components/canvas/virusHud.tsx` (avisos) e `server/package.json` (`yarn test:ping`). A suíte específica `server/test/ping.test.ts` contém **17 casos escritos**. Suítes `server/test/kick.test.ts`, `virus.test.ts`, `signal.test.ts` e `firewall.test.ts` foram atualizadas para reconhecer o Sinal Bom como elegível.
+
+**Modo temporário de testes:** `LAB_ONLY_MUTATED_DROPS_FOR_TESTS = true` agora distribui exclusivamente **oito** tipos mutáveis, IDs **2,3,4,5,6,7,8,9**, no Lab forçado. Cada exemplar tem sprite misterioso e chance 50%/50% buff/vírus. Com a flag `false`, retorna o pool completo e a distribuição prevista 50% normal, 25% buff e 25% debuff para esses oito IDs. Campo e Refeitório não sofrem mutação.
+
+**Validação pendente:** atualizar a branch no Kali e executar `cd server && yarn typecheck && yarn test:ping && yarn test:virus && yarn test:kick && yarn test:signal && yarn test:firewall && yarn test:ihm && yarn test:ranking && yarn test:stun && yarn build`, depois `cd ../client && yarn build`. Testar primeiro buff/debuff 3s, segundo Sinal Bom de mesma polaridade, coletas mistas, renovações por colocação real de bomba, ausência de gatilho ao chutar/segurar/arremessar, preservação da velocidade natural, reset pelo Download Limitado e funcionamento de itens normais fora do Laboratório. **O teste de gameplay e os builds não foram executados pelo assistente.**
+
+
+### HUD DAS MUTAÇÕES — FEEDBACK DE BUFF/VÍRUS E REPOSICIONAMENTO — 20/11/2026
+
+**Motivação:** o aviso antigo do Laboratório era exibido no topo central da janela e praticamente não diferenciava buff e debuff além do texto. A solicitação de UX é distinguir imediatamente a recompensa de uma infecção e evitar que a notificação se sobreponha à arena.
+
+**Redesign visual (somente no cliente):**
+- **Buff / recompensa:** painel retrô com fundo marrom-oliva escuro e detalhes **dourados claros** (#e9c779 / #ffe7a0), moldura pixelada estável, iluminação discreta, marcador `[+]` e identificação **RECOMPENSA // SINAL ESTAVEL**. O objetivo é comunicar alívio/resultado positivo sem contrastes agressivos.
+- **Vírus / falha:** painel escuro vinho/roxo (#301a2a / #180f20), borda vermelha-coral (#f26864), detalhes magenta, marcador `[!]` e identificação **ALERTA // SISTEMA CORROMPIDO**. Uma linha curta de interferência percorre uma região do fundo com animação CSS `mutation-glitch` de baixa intensidade, sem deslocar o painel inteiro nem fazer o texto tremer.
+- Os dois preservam os nomes, descrições e temporizadores de cada mutação (Função Linear, Troca de Dados, Chute, Sinal Bom, Sinal Ruim, Firewall, Grafo e IHM). O mesmo **sprite misterioso** do item permanece inalterado antes da coleta: as cores do feedback só revelam a polaridade **após** coletar.
+- O efeito CSS respeita `prefers-reduced-motion: reduce`, removendo a animação de interferência. O layout evita interação com clique/toque por `pointer-events: none` e utiliza dimensão compacta, com quebra de palavras e tipografia legível.
+
+**Posicionamento definitivo na lateral direita (ajuste solicitado após avaliação no jogo):**
+- O ranking permanece no **canto esquerdo**, enquanto o aviso de mutação ocupa **sempre o canto superior direito**; isso reduz a densidade de informação abaixo do placar. A lógica antiga que media a altura do ranking com `ResizeObserver` foi retirada do `client/src/game/components/canvas/index.tsx` porque não é mais necessária para o HUD.
+- A função `getMutationHudPlacement()` em `client/src/game/components/canvas/mutationHudLayout.ts` retorna a posição padrão **topo 96 px, largura 246 px**. O painel usa `right: 12px`, sempre com alinhamento à direita, sem depender da largura, altura ou estado expandido do ranking.
+- Em telas de até 600 px, o painel permanece à direita (`right: 7px`), passa a **topo 82 px** e largura máxima de **220 px**. O deslocamento vertical evita competir com os elementos superiores, preservando a área central do mapa. O visual dourado/vermelho e o glitch permanecem iguais.
+- O novo desenho e posicionamento não alteram o motor do jogo, o canvas, os bônus, os tempos, o estado multiplayer, a aleatoriedade do Laboratório nem o servidor.
+
+**Arquivos:**
+- `client/src/game/components/canvas/virusHud.tsx` — duas identidades de feedback; estilos 8-bit, scanline/glitch leve, redução de movimento, dimensões/posicionamento responsivo, marcador positivo/negativo.
+- `client/src/game/components/canvas/mutationHudLayout.ts` — configuração centralizada para fixar o HUD à direita, com topo padrão 96 px e largura 246 px.
+- `client/src/game/components/canvas/index.tsx` — remoção das medições do ranking usadas no HUD; envio da posição fixa ao componente.
+- `server/test/mutationHud.test.ts` — três testes escritos para o novo posicionamento fixo à direita, estabilidade da configuração e dimensões compactas; `server/package.json` mantém `yarn test:hud`.
+- `GDD_BomberIF_Final` (Google Docs) — parágrafos **Peculiaridades: o Laboratório** e **Tipografia e legibilidade** atualizados.
+
+**Testes pendentes no Kali:** `cd server && yarn typecheck && yarn test:hud && yarn test:ping && yarn test:virus && yarn test:signal && yarn test:kick && yarn test:firewall && yarn build`, depois `cd ../client && yarn build`. Validar visualmente as duas polaridades à direita, ausência de conflito com o cronômetro, ranking expandido/recolhido, telas reduzidas e fullscreen, painel longo, contraste e conforto dos efeitos, incluindo `prefers-reduced-motion`. A suíte escrita não substitui esses testes de renderização e acessibilidade.
+
+**Publicação:** código apenas na branch `feat/lab-data-transfer-virus-2026-11-18`, PR #14 **draft e sem merge/deploy**, `main` intacta.

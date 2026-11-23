@@ -1,5 +1,5 @@
 import io from 'socket.io-client'
-import { CallAnswerDTO, CallOfferDTO, CharacterSelectionDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, JoinRoomDTO, KillDTO, LobbyReadyDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
+import { CallAnswerDTO, CallOfferDTO, CharacterSelectionDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, IhmPickupDTO, JoinRoomDTO, KickImpactDTO, KillDTO, LobbyReadyDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
 import { SERVER_URL } from '~/constants'
 
 export const socket = io(SERVER_URL)
@@ -42,6 +42,11 @@ export function emitIceCandidate (dto:IceCandidateDTO) {
   socket.emit('ice_candidate', dto)
 }
 
+// A escolha de quem morre é exclusiva do servidor.
+export function emitIhmPickup (dto:IhmPickupDTO) {
+  socket.emit('ihm_pickup', dto)
+}
+
 export function emitJoinRoom (dto:JoinRoomDTO) {
   socket.emit('join_room', dto)
 }
@@ -65,6 +70,11 @@ export function emitKill (dto:KillDTO) {
 
 export function emitMove (dto:MoveDTO) {
   socket.emit('mv', dto)
+}
+
+// O impacto só é anunciado por quem iniciou o chute buff.
+export function emitKickImpact (dto:KickImpactDTO) {
+  socket.emit('kick_impact', dto)
 }
 
 export function emitMoveBomb (dto:MoveBombDTO) {

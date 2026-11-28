@@ -2,7 +2,7 @@
 
 ## Recurso em desenvolvimento — introdução progressiva do Laboratório (28/11/2026)
 
-**Branch:** `feat/lab-intro-first-visit-2026-11-28`. Este trecho descreve a implementação ainda não mesclada à `main`. O estado do PR #14 e a distribuição dos mapas/mutações continuam os mesmos.
+**Branch:** `feat/lab-intro-first-visit-2026-11-28`, [PR #16](https://github.com/MaxRp1/BomberIF/pull/16) em rascunho. Este trecho descreve a implementação ainda não mesclada à `main`. O estado do PR #14 e a distribuição dos mapas/mutações continuam os mesmos.
 
 ### UX e regras
 

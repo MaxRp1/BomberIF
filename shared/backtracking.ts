@@ -86,3 +86,11 @@ export function backtrackOverlapsBlock(
   return x + 15 > block.x && x < block.x + TILE_SIZE &&
     y + 23 > block.y && y + 7 < block.y + TILE_SIZE
 }
+
+/** Teste comum para terreno fixo e obstáculos temporários do cliente. */
+export function backtrackDestinationClear(
+  x:number,y:number,obstacles:readonly {x:number;y:number}[]
+):boolean {
+  return isBacktrackWorldPosition(x,y) &&
+    obstacles.every(obstacle=>!backtrackOverlapsBlock(x,y,obstacle))
+}

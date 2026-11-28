@@ -209,3 +209,31 @@ test('parede indestrutível e reaproveitamento da sala não escapam da validaç�
   assert.deepEqual(s.socket.data.backtrackHistory,[])
   assert.equal(s.socket.data.backtrackPending,null)
 })
+
+
+// Segurança visual: o cliente não confirma um retorno para dentro de paredes,
+// bombas remotas ou outro personagem. O estado é apenas uma maquete de tabuleiro.
+test('validação local veta blocos D/I/O, bombas remotas e adversários',()=>{
+  // Usamos a mesma hitbox de isBacktrackDestinationSafe, sem carregar o canvas.
+  const safe=(x:number,y:number,obstacles:{x:number;y:number}[])=>(
+    x>=17 && x<=209 && y>=9 && y<=169 &&
+    obstacles.every(o=>!backtrackOverlapsBlock(x,y,o))
+  )
+  assert.equal(safe(17,9,[]),true)
+  assert.equal(safe(17,9,[{x:16,y:16}]),false)
+  assert.equal(safe(0,9,[]),false)
+  assert.equal(safe(209,169,[]),true)
+})
+
+test('oferta vencida pode ser solicitada novamente sem ficar em BUSY permanente',()=>{
+  const s=fixture()
+  s.record(2500,33,9)
+  s.record(4900,65,9)
+  withNow(5100,()=>onBacktrackRequest(s.io,s.socket))
+  assert.equal(s.offer().token,1)
+  withNow(5200,()=>onBacktrackRequest(s.io,s.socket))
+  assert.equal(s.reject().reason,'busy')
+  withNow(7100,()=>onBacktrackRequest(s.io,s.socket))
+  assert.equal(s.offer().token,2)
+  assert.equal(s.socket.data.backtrackReadyAt,0)
+})

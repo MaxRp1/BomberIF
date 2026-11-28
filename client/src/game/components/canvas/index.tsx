@@ -16,6 +16,7 @@ import { socket } from '~/services/socket'
 import { Pairing, SkillButton, Timer } from './style'
 import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { renderExplosionPreview } from '~/game/util/explosionPreview'
+import { renderArthurHiddenBonuses } from '~/game/util/arthurVision'
 import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
@@ -79,6 +80,8 @@ function render () {
   state?.slowFloors.render(context)
   state?.blocks.render(context, state)
   renderExplosionPreview(context!, state!)
+  // Indicadores da Cola de Prova são visíveis somente ao Arthur local.
+  if (state) renderArthurHiddenBonuses(context, state)
 
   if (state!.players.players.find(p => p.holding)) {
     state?.players.render(context)

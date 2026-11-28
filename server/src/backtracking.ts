@@ -77,9 +77,13 @@ export function initializeBacktrackingForSocket(
 
   // Só os obstáculos indestrutíveis são estáticos. Destrutíveis somem
   // durante a rodada, por isso a confirmação fina fica com o canvas.
-  socket.data.backtrackWalls = state.blocks.flat()
-    .filter(b => b?.t === 'I')
-    .map(b => ({x:b!.x,y:b!.y}))
+  const walls:{x:number;y:number}[] = []
+  for (const row of state.blocks) {
+    for (const block of row) {
+      if (block?.t === 'I') walls.push({x:block.x,y:block.y})
+    }
+  }
+  socket.data.backtrackWalls = walls
 
   if (socket.data.spriteId === VALKENEDY_SPRITE_ID) {
     socket.data.backtrackHistory = appendBacktrackPoint([], {

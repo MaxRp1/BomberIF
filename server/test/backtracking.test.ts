@@ -60,8 +60,8 @@ function fixture(sprite=VALKENEDY_SPRITE_ID, wall=false) {
     socket.data.playerY=y
     trackBacktrackingMove(socket,at,x,y)
   }
-  const offer=()=>clientEmitted.findLast(x=>x.event==='backtrack_offer')?.dto
-  const reject=()=>clientEmitted.findLast(x=>x.event==='backtrack_reject')?.dto
+  const offer=()=>clientEmitted.filter(x=>x.event==='backtrack_offer').slice(-1)[0]?.dto
+  const reject=()=>clientEmitted.filter(x=>x.event==='backtrack_reject').slice(-1)[0]?.dto
   return {io,socket,emitted,clientEmitted,record,offer,reject}
 }
 

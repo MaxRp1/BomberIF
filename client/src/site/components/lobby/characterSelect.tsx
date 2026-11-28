@@ -10,6 +10,7 @@ import {
 } from './characterSelectStyle'
 
 const LABELS: Record<number, { name: string; ability: string }> = {
+  0: { name: 'Valkenedy', ability: 'Backtracking: retorna à posição de 3 segundos atrás, até 4 casas, com recarga de 20 segundos (E / LB / L1). Não desfaz bombas ou itens.' },
   4: { name: 'Arthur', ability: 'Cola de Prova: revela discretamente os power-ups escondidos em blocos próximos (até 2 casas), sem mostrar se a mutação é boa ou ruim.' },
   2: { name: 'Proença', ability: 'Explosão acelerada e visão do alcance das bombas.' },
   8: { name: 'Mamedes', ability: 'Projétil que atordoa outro jogador por 2 segundos.' },

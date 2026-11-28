@@ -1,5 +1,36 @@
 # Estudo Técnico - BomberIF
 
+## Recurso em desenvolvimento — introdução progressiva do Laboratório (28/11/2026)
+
+**Branch:** `feat/lab-intro-first-visit-2026-11-28`. Este trecho descreve a implementação ainda não mesclada à `main`. O estado do PR #14 e a distribuição dos mapas/mutações continuam os mesmos.
+
+### UX e regras
+
+- Ao iniciar uma rodada no **Laboratório** (`stage === 1`), é exibida uma introdução pixel art com explicação das mutações antes da liberação dos controles. **Campo (0)** e **Refeitório (2)** não exibem esse aviso.
+- **Primeira visita no navegador:** tela completa com os oito itens elegíveis, as probabilidades por item (**50% normal / 25% buff / 25% vírus**), a aparência misteriosa dos itens mutados e a revelação pelo HUD após coletar. Pode ser dispensada por **ENTENDI** ou automaticamente depois de **9 segundos**.
+- **Visitas seguintes:** lembrete compacto com o mesmo sorteio e aviso do glitch roxo. Pode ser dispensado por **CONTINUAR** ou automaticamente depois de **2,8 segundos**.
+- O reconhecimento da primeira visita fica no `localStorage`, chave `bomberif.lab-intro-seen.v1`. Quando indisponível (p. ex. restrições de privacidade), um marcador em memória mantém o modo compacto ao menos nas próximas rodadas da mesma página. Não é uma preferência persistida na conta, na sala ou no servidor.
+- **Multiplayer:** dispensar o painel não inicia a rodada unilateralmente. O `ready` só é emitido quando o carregamento de assets terminou **e** o aviso local foi concluído. Até receber o `ready` coletivo de todos os participantes, o jogador vê "Aguardando os outros jogadores". O timer, movimento e bombas continuam inativos; quando todos estiverem prontos, o fluxo já existente inicia a arena para todos. Os botões não oferecem vantagem de tempo sobre quem ainda lê.
+- A UI tem `role=dialog`, botão acessível, estilo retrô, layout adaptável a telas pequenas/landscape e fechamento automático; o ciclo de vida cancela o timeout ao desmontar a tela. Sair da partida ou receber resultado remove o aviso.
+
+### Código e testes
+
+| Arquivo | Alteração |
+|---|---|
+| `shared/labIntro.ts` | Regras puras de cenário, primeira visita, duração e pré-condição de `ready`. |
+| `client/src/game/components/labIntro/index.tsx` | Sobreposição de instruções, resumo, estado de espera, tempo limite e botões. |
+| `client/src/game/components/canvas/index.tsx` | Identifica primeira visita e stage; bloqueia readiness até assets + aviso, sem alterar as mecânicas existentes. |
+| `client/src/game/util/assets.ts` | Permite callback de carregamento para integrar com a barreira de início da rodada. |
+| `server/test/labIntro.test.ts` | Testes de elegibilidade, alternância primeira/recorrente, durações e prontidão. |
+| `server/package.json` | Script `yarn test:lab-intro`. |
+
+**Validação proposta no Kali:** `cd server && yarn test:lab-intro && yarn test:virus && yarn test:lobby && yarn test:ranking && yarn typecheck && yarn build`; depois `cd ../client && yarn build`. Testar dois navegadores com armazenamento limpo no Laboratório, um no aviso completo e outro no resumo, clique antecipado, timeout automático, espera coletiva, fechamento por saída e comportamento sem telas extras em Campo/Refeitório. Nenhuma execução dessas verificações foi informada nesta implementação; os testes foram adicionados ao repositório, mas ainda devem ser executados no ambiente com dependências instaladas.
+
+**GDD correspondente:** `GDD_BomberIF_Final` (Google Drive), seção "Mutações dos power-ups — Laboratório" e novo parágrafo "Aviso de entrada no Laboratório — apresentação progressiva".
+
+---
+
+
 ## Estado vigente — integração do PR #14 (23/11/2026)
 
 **Fonte de verdade para a versão `main` atual:** o PR [#14](https://github.com/MaxRp1/BomberIF/pull/14) foi mesclado à branch principal em 23/11/2026, no commit [`58573384f58b52b54825122d5e1d70e27626bbd3`](https://github.com/MaxRp1/BomberIF/commit/58573384f58b52b54825122d5e1d70e27626bbd3). As referências abaixo sobre PR #14 "em rascunho", "sem merge", "Laboratório fixo" ou "modo de testes ativo" descrevem **etapas históricas do desenvolvimento**, não o comportamento atual.

@@ -16,3 +16,11 @@ export function labIntroModeForStage(stage:number, hasSeenIntro:boolean): LabInt
 export function labIntroDuration(mode:LabIntroMode):number {
   return mode === 'full' ? LAB_INTRO_FIRST_DURATION_MS : LAB_INTRO_REPEAT_DURATION_MS
 }
+
+export function mayAnnounceRoundReady(
+  assetsLoaded:boolean,
+  introFinished:boolean,
+  alreadyAnnounced:boolean
+):boolean {
+  return assetsLoaded && introFinished && !alreadyAnnounced
+}

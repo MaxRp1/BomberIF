@@ -17,6 +17,7 @@ import { emitReady, socket } from '~/services/socket'
 import { Pairing, SkillButton, Timer } from './style'
 import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { renderExplosionPreview } from '~/game/util/explosionPreview'
+import { renderArthurHiddenBonuses } from '~/game/util/arthurVision'
 import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
@@ -130,6 +131,8 @@ function render () {
   state?.slowFloors.render(context)
   state?.blocks.render(context, state)
   renderExplosionPreview(context!, state!)
+  // Cola de Prova aparece somente no canvas do Arthur local, inclusive após o tutorial.
+  if (state) renderArthurHiddenBonuses(context, state)
 
   if (state!.players.players.find(p => p.holding)) {
     state?.players.render(context)

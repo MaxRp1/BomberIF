@@ -119,9 +119,9 @@ export function backtrackingMoveEpochAllowed(socket:Socket, epoch:unknown):boole
 export function onBacktrackRequest(io:Server, socket:Socket):void {
   const now=Date.now()
   if (!canStartBacktrack(io,socket,now)) return reject(socket,REASONS.unavailable)
-  const pending:PendingOffer|null=socket.data.backtrackPending ?? null
-  if (pending && now-pending.at<=BACKTRACK_OFFER_TIMEOUT_MS) return reject(socket,REASONS.busy)
-  if (pending) socket.data.backtrackPending=null
+  const earlierOffer:PendingOffer|null=socket.data.backtrackPending ?? null
+  if (earlierOffer && now-earlierOffer.at<=BACKTRACK_OFFER_TIMEOUT_MS) return reject(socket,REASONS.busy)
+  if (earlierOffer) socket.data.backtrackPending=null
   const readyAt = socket.data.backtrackReadyAt ?? 0
   if (now < readyAt) return reject(socket,REASONS.cooldown,readyAt-now)
 

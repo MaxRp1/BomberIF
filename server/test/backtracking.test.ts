@@ -9,6 +9,7 @@ import {
   BACKTRACK_MAX_DISTANCE_PX,
   VALKENEDY_SPRITE_ID,
   appendBacktrackPoint,
+  backtrackDestinationClear,
   backtrackOverlapsBlock,
   chooseBacktrackPosition
 } from '../../shared/backtracking'
@@ -214,15 +215,10 @@ test('parede indestrutível e reaproveitamento da sala não escapam da validaç�
 // Segurança visual: o cliente não confirma um retorno para dentro de paredes,
 // bombas remotas ou outro personagem. O estado é apenas uma maquete de tabuleiro.
 test('validação local veta blocos D/I/O, bombas remotas e adversários',()=>{
-  // Usamos a mesma hitbox de isBacktrackDestinationSafe, sem carregar o canvas.
-  const safe=(x:number,y:number,obstacles:{x:number;y:number}[])=>(
-    x>=17 && x<=209 && y>=9 && y<=169 &&
-    obstacles.every(o=>!backtrackOverlapsBlock(x,y,o))
-  )
-  assert.equal(safe(17,9,[]),true)
-  assert.equal(safe(17,9,[{x:16,y:16}]),false)
-  assert.equal(safe(0,9,[]),false)
-  assert.equal(safe(209,169,[]),true)
+  assert.equal(backtrackDestinationClear(17,9,[]),true)
+  assert.equal(backtrackDestinationClear(17,9,[{x:16,y:16}]),false)
+  assert.equal(backtrackDestinationClear(0,9,[]),false)
+  assert.equal(backtrackDestinationClear(209,169,[]),true)
 })
 
 test('oferta vencida pode ser solicitada novamente sem ficar em BUSY permanente',()=>{

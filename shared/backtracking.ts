@@ -73,9 +73,25 @@ export function chooseBacktrackPosition(
     return {ok:false,reason:'no_history'}
   }
   const distance = backtrackPixelDistance(current,candidate)
-  if (distance < 1) return {ok:false,reason:'no_history'}
-  if (distance > BACKTRACK_MAX_DISTANCE_PX) return {ok:false,reason:'too_far'}
-  return {ok:true,point:candidate}
+  if (distance >= 1 && distance <= BACKTRACK_MAX_DISTANCE_PX) {
+    return {ok:true,point:candidate}
+  }
+  // Com velocidade normal, andar durante 3s pode ultrapassar 4 casas.
+  // Em vez de inutilizar a habilidade, escolhe o ponto MAIS ANTIGO
+  // da trajetória recente que ainda esteja dentro do limite de 64px.
+  // O rewind passa a cobrir ATÉ 3s, respeitando sempre o alcance máximo.
+  if (distance > BACKTRACK_MAX_DISTANCE_PX) {
+    for (const sample of history) {
+      if (sample.at <= targetAt || sample.at > now) continue
+      const stepDistance = backtrackPixelDistance(current,sample)
+      if (stepDistance >= 1 && stepDistance <= BACKTRACK_MAX_DISTANCE_PX &&
+          isBacktrackWorldPosition(sample.x,sample.y)) {
+        return {ok:true,point:sample}
+      }
+    }
+    return {ok:false,reason:'too_far'}
+  }
+  return {ok:false,reason:'no_history'}
 }
 
 // Mesma hitbox dos blocos utilizada em client/src/game/util/collision.ts.

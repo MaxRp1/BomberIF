@@ -3,6 +3,7 @@ import test from 'node:test'
 import type { Server } from 'socket.io'
 import type { Socket } from '../src/extends'
 import type { GameStateDTO } from '../../shared/dto'
+import { onMove } from '../src/game'
 import {
   BACKTRACK_COOLDOWN_MS,
   BACKTRACK_LOOKBACK_MS,
@@ -242,4 +243,20 @@ test('oferta vencida pode ser solicitada novamente sem ficar em BUSY permanente'
   withNow(7100,()=>onBacktrackRequest(s.io,s.socket))
   assert.equal(s.offer().token,2)
   assert.equal(s.socket.data.backtrackReadyAt,0)
+})
+
+
+test('movimentação atrasada é rejeitada após teleportar e volta com a geração correta',()=>{
+  const s=fixture()
+  s.record(2500,33,9)
+  s.record(4900,65,9)
+  withNow(5100,()=>onBacktrackRequest(s.io,s.socket))
+  withNow(5130,()=>onBacktrackConfirm(s.io,s.socket,{token:s.offer().token}))
+  assert.equal(s.socket.data.playerX,17)
+  const dto={p:0,h:0 as const,m:1 as const,s:'R' as const,x:65,y:9}
+  withNow(5150,()=>onMove(s.io,s.socket,{...dto,q:0}))
+  assert.equal(s.socket.data.playerX,17)
+  withNow(5160,()=>onMove(s.io,s.socket,{...dto,q:1,x:24}))
+  assert.equal(s.socket.data.playerX,24)
+  assert.equal(s.emitted.filter(e=>e.event==='mv').length,1)
 })

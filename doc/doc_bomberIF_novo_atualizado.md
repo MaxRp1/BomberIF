@@ -2,7 +2,7 @@
 
 ## Recurso em validação — Arthur: Cola de Prova (28/11/2026)
 
-**Estado:** implementado na branch `feat/arthur-cola-de-prova-2026-11-28`, ainda **não integrado à `main`**. Arthur foi identificado como **sprite `4.png`** mediante comparação da ficha ilustrada no GDD com `client/public/sprites/chars/4.png`. Os quatro personagens anteriormente dotados de habilidades próprias continuam intactos.
+**Estado:** implementado na branch `feat/arthur-cola-de-prova-2026-11-28`, [PR #17](https://github.com/MaxRp1/BomberIF/pull/17) em rascunho; ainda **não integrado à `main`**. Arthur foi identificado como **sprite `4.png`** mediante comparação da ficha ilustrada no GDD com `client/public/sprites/chars/4.png`. Os quatro personagens anteriormente dotados de habilidades próprias continuam intactos.
 
 ### Comportamento da habilidade passiva
 

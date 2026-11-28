@@ -57,7 +57,7 @@ function canStartBacktrack(io:Server, socket:Socket, now:number):boolean {
     socket.data.alive === true && socket.data.backtrackRoundReady === true &&
     roomIsReady(io,roomId) &&
     (socket.data.stunnedUntil ?? 0) <= now &&
-    socket.data.backtrackHolding !== true
+    !(socket.data.backtrackHolding === true && now < (socket.data.backtrackHoldingUntil ?? 0))
 }
 
 export function initializeBacktrackingForSocket(
@@ -70,6 +70,7 @@ export function initializeBacktrackingForSocket(
   socket.data.backtrackPending = null
   socket.data.backtrackRoundReady = false
   socket.data.backtrackHolding = false
+  socket.data.backtrackHoldingUntil = 0
   socket.data.backtrackEpoch = 0
   socket.data.backtrackNextToken = 0
   socket.data.backtrackReadyAt = 0
@@ -95,6 +96,7 @@ export function clearBacktrackingForSocket(socket:Socket):void {
   socket.data.backtrackWalls = []
   socket.data.backtrackRoundReady = false
   socket.data.backtrackHolding = false
+  socket.data.backtrackHoldingUntil = 0
 }
 
 // O histórico fica no servidor e registra apenas a posição do próprio socket.
@@ -109,14 +111,17 @@ export function trackBacktrackingMove(socket:Socket, now:number, x:number, y:num
 // após uma ativação (q=1). A geração é válida somente para Valkenedy.
 export function backtrackingMoveEpochAllowed(socket:Socket, epoch:unknown):boolean {
   if (socket.data.spriteId !== VALKENEDY_SPRITE_ID) return true
-  return epoch === (socket.data.backtrackEpoch ?? 0)
+  const expected=socket.data.backtrackEpoch ?? 0
+  return epoch === expected || (epoch === undefined && expected === 0)
 }
 
 // 1. Solicitação sem coordenadas. O destino é extraído do histórico autoritativo.
 export function onBacktrackRequest(io:Server, socket:Socket):void {
   const now=Date.now()
   if (!canStartBacktrack(io,socket,now)) return reject(socket,REASONS.unavailable)
-  if (socket.data.backtrackPending) return reject(socket,REASONS.busy)
+  const pending:PendingOffer|null=socket.data.backtrackPending ?? null
+  if (pending && now-pending.at<=BACKTRACK_OFFER_TIMEOUT_MS) return reject(socket,REASONS.busy)
+  if (pending) socket.data.backtrackPending=null
   const readyAt = socket.data.backtrackReadyAt ?? 0
   if (now < readyAt) return reject(socket,REASONS.cooldown,readyAt-now)
 

@@ -10,8 +10,12 @@ export class Assets {
   public static bombSprite  : HTMLImageElement
   public static bonusSprite : HTMLImageElement
   public static stageSprite : HTMLImageElement
+  private static readyCallback: (()=>void)|null = null
 
-  public static set (state:GameState) {
+  // O canvas só anuncia "ready" quando os recursos E a explicação da fase
+  // estiverem concluídos. O argumento é opcional para compatibilidade.
+  public static set (state:GameState, onReady:()=>void = emitReady) {
+    this.readyCallback = onReady
     this.blastSprite = new Image()
     this.blastSprite.src = `${process.env.PUBLIC_URL}/sprites/blasts/${state.blast}.png`
 
@@ -39,7 +43,7 @@ export class Assets {
     if (this.bgSound) {
       this.bgSound.oncanplaythrough = null
     }
-    emitReady()
+    this.readyCallback?.()
   }
 
   public static start () {
@@ -47,6 +51,9 @@ export class Assets {
   }
 
   public static stop () {
+    if (this.stageSprite) this.stageSprite.onload = null
+    if (this.bgSound) this.bgSound.oncanplaythrough = null
+    this.readyCallback = null
     this.stopBgSound()
   }
 

@@ -53,7 +53,7 @@ function tick (this:GamepadHost, state:GameState) {
 
   // Botão 4 = LB / L1 (borda de pressionamento para não disparar sem parar).
   const skillPressed = !!gamepad.buttons[4]?.pressed
-  if (skillPressed && !this.skillHeld) this.player.useStunSkill()
+  if (skillPressed && !this.skillHeld) this.player.useCharacterSkill()
   this.skillHeld = skillPressed
 
   // Bloqueia movimento, bombas e ações durante o stun.

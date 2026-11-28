@@ -4,6 +4,7 @@ import { KICK_VIRUS_STUN_MS } from '#/virus'
 import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmPickupDTO, IhmResultDTO, KickImpactDTO, KickStunDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO } from '#/dto'
 import { Socket } from '~/extends'
 import { claimIhmPickup, registerDefeat } from '~/ranking'
+import { backtrackingMoveEpochAllowed, clearBacktrackingForSocket, trackBacktrackingMove } from '~/backtracking'
 
 function isStunned(socket: Socket) {
   return socket.data.stunnedUntil > Date.now()
@@ -13,6 +14,8 @@ export function onMove (io:Server, socket:Socket, dto:MoveDTO) {
   if (!dto || isStunned(socket)) return
   if (!Number.isFinite(dto.x) || !Number.isFinite(dto.y)) return
   if (dto.x < 0 || dto.x > 240 || dto.y < 0 || dto.y > 208) return
+  if (!backtrackingMoveEpochAllowed(socket,dto.q) || socket.data.backtrackPending) return
+  trackBacktrackingMove(socket,Date.now(),dto.x,dto.y)
 
   socket.data.playerX = dto.x
   socket.data.playerY = dto.y
@@ -72,12 +75,18 @@ export function onKickImpact (io:Server, socket:Socket, dto:KickImpactDTO) {
 
 export function onHoldBomb (io:Server, socket:Socket, dto:HoldBombDTO) {
   if (isStunned(socket)) return
+  socket.data.backtrackHolding=true
+  // Bombas podem detonar enquanto são carregadas, sem evento de liberação.
+  // Limite de segurança evita bloquear a habilidade para sempre.
+  socket.data.backtrackHoldingUntil=Date.now()+4000
   dto.p = socket.data.index
   io.to(socket.data.roomId).emit('hb', dto)
 }
 
 export function onFlingBomb (io:Server, socket:Socket, dto:FlingBombDTO) {
   if (isStunned(socket)) return
+  socket.data.backtrackHolding=false
+  socket.data.backtrackHoldingUntil=0
   dto.p = socket.data.index
   io.to(socket.data.roomId).emit('fb', dto)
 }
@@ -108,6 +117,7 @@ export function onIhmPickup(io:Server, socket:Socket, dto:IhmPickupDTO, random:(
 
   if (!registerDefeat(io, target)) return
   target.data.alive = false
+  clearBacktrackingForSocket(target)
 
   const result:IhmResultDTO = { p:target.data.index }
   // A vítima recebe confirmação direta inclusive se foi quem coletou.
@@ -140,6 +150,7 @@ export function onKill(
   // A identidade vem do socket, não do payload do navegador.
   if (!registerDefeat(io, socket)) return
   socket.data.alive = false
+  clearBacktrackingForSocket(socket)
 
   dto.p = socket.data.index
   io.to(socket.data.roomId).emit('kl', { p: dto.p })

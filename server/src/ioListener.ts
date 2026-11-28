@@ -2,6 +2,7 @@ import { Server } from 'socket.io'
 import { onFlingBomb, onFrankLifeUsed, onHoldBomb, onIhmPickup, onKickImpact, onKill, onMove, onMoveBomb, onNullifyBlock, onPlaceBomb } from '~/game'
 import { changeLobby, createLobby, exitPairing, joinRoom, onDisconnect, onReady, selectCharacter, sendToLobby, setLobbyReady, setUser } from '~/manager'
 import { onStunFire, onStunHit } from '~/stun'
+import { onBacktrackCancel, onBacktrackConfirm, onBacktrackRequest } from '~/backtracking'
 
 export default function ioListener (io:Server) {
 
@@ -42,6 +43,9 @@ export default function ioListener (io:Server) {
     socket.on('ihm_pickup', dto => onIhmPickup(io, socket, dto))
     socket.on('stun_fire', dto => onStunFire(io, socket, dto))
     socket.on('stun_hit', dto => onStunHit(io, socket, dto))
+    socket.on('backtrack_request', () => onBacktrackRequest(io,socket))
+    socket.on('backtrack_confirm', dto => onBacktrackConfirm(io,socket,dto))
+    socket.on('backtrack_cancel', dto => onBacktrackCancel(socket,dto))
 
   })
 

@@ -36,6 +36,29 @@ export interface StunFireDTO {
   s: SIDES
 }
 
+/** Valkenedy: o cliente solicita, o servidor oferece a posição histórica,
+ * e a confirmação só é enviada após validar colisões no mapa local. */
+export interface BacktrackOfferDTO {
+  token: number
+  x: number
+  y: number
+}
+export interface BacktrackConfirmDTO {
+  token: number
+}
+export interface BacktrackApplyDTO {
+  roomId: string
+  p: number
+  x: number
+  y: number
+  epoch: number
+  cooldownMs: number
+}
+export interface BacktrackRejectDTO {
+  reason: 'unavailable'|'no_history'|'too_far'|'not_safe'|'cooldown'|'busy'
+  remainingMs?: number
+}
+
 // Disparo autorizado pelo servidor -> todos na partida.
 export interface StunShotDTO {
   i: string
@@ -162,6 +185,7 @@ export interface MoveDTO {
   x : number // player x position
   y : number // player y position
   v ?: number // modificador total de velocidade, inclusive Grafo, para clientes remotos
+  q ?: number // geração de movimento após o Backtracking; descarta pacotes antigos
 }
 
 export interface NullifyBlockDTO {

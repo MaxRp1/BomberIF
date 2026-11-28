@@ -10,6 +10,7 @@ import {
 } from '#/dto'
 import { Socket } from '~/extends'
 import { beginRankingRound } from '~/ranking'
+import { initializeBacktrackingForSocket } from '~/backtracking'
 
 const CAFETERIA_STAGE = 2
 const SLOW_FLOOR_COUNT = 12
@@ -66,6 +67,13 @@ export function startGameFactory (
 
   // Cria o estado inicial da partida
   const state = stateFactory()
+
+  // Cada rodada limpa a geração, recarga e posições históricas de Valkenedy.
+  const historyStartedAt=Date.now()
+  for (const socketId of playerIds) {
+    const player=io.sockets.sockets.get(socketId) as Socket|undefined
+    if (player) initializeBacktrackingForSocket(player,state,historyStartedAt)
+  }
 
   // Inicializa o acompanhamento de vitórias da rodada
   beginRankingRound(roomId, playerIds, state)

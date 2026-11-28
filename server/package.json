@@ -23,7 +23,8 @@
     "test:ping": "ts-node --transpile-only -r tsconfig-paths/register test/ping.test.ts",
     "test:hud": "ts-node --transpile-only -r tsconfig-paths/register test/mutationHud.test.ts",
     "test:lab-intro": "ts-node --transpile-only -r tsconfig-paths/register test/labIntro.test.ts",
-    "test:arthur": "ts-node --transpile-only -r tsconfig-paths/register test/arthur.test.ts"
+    "test:arthur": "ts-node --transpile-only -r tsconfig-paths/register test/arthur.test.ts",
+    "test:backtracking": "ts-node --transpile-only -r tsconfig-paths/register test/backtracking.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

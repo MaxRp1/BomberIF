@@ -1,8 +1,23 @@
 import io from 'socket.io-client'
-import { CallAnswerDTO, CallOfferDTO, CharacterSelectionDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, IhmPickupDTO, JoinRoomDTO, KickImpactDTO, KillDTO, LobbyReadyDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
+import { BacktrackConfirmDTO, CallAnswerDTO, CallOfferDTO, CharacterSelectionDTO, FlingBombDTO, HoldBombDTO, IceCandidateDTO, IhmPickupDTO, JoinRoomDTO, KickImpactDTO, KillDTO, LobbyReadyDTO, MoveDTO, MoveBombDTO, NullifyBlockDTO, PlaceBombDTO, StunFireDTO, StunHitDTO, UserDTO } from '#/dto'
 import { SERVER_URL } from '~/constants'
 
 export const socket = io(SERVER_URL)
+
+let movementEpoch = 0
+export function setMovementEpoch(epoch:number):void {
+  movementEpoch=Number.isSafeInteger(epoch)&&epoch>=0?epoch:0
+}
+
+export function emitBacktrackRequest():void {
+  socket.emit('backtrack_request')
+}
+export function emitBacktrackConfirm(dto:BacktrackConfirmDTO):void {
+  socket.emit('backtrack_confirm',dto)
+}
+export function emitBacktrackCancel(dto:BacktrackConfirmDTO):void {
+  socket.emit('backtrack_cancel',dto)
+}
 
 export function emitCallAnswer (dto:CallAnswerDTO) {
   socket.emit('call_answer', dto)
@@ -69,7 +84,9 @@ export function emitKill (dto:KillDTO) {
 }
 
 export function emitMove (dto:MoveDTO) {
-  socket.emit('mv', dto)
+  // Impede que eventos de posição emitidos antes do Backtracking voltem a
+  // sobrescrever o destino depois da confirmação do servidor.
+  socket.emit('mv', {...dto,q:movementEpoch})
 }
 
 // O impacto só é anunciado por quem iniciou o chute buff.

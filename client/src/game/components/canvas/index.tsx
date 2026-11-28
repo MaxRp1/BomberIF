@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { LAB_INTRO_STORAGE_KEY, LabIntroMode, labIntroModeForStage, mayAnnounceRoundReady } from '#/labIntro'
 import { FRANK_SPRITE_ID, OVERCLOCK_DETONATION_MULTIPLIER, STUN_COOLDOWN_MS } from '#/constants'
-import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmResultDTO, KickImpactDTO, KickStunDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
+import { VALKENEDY_SPRITE_ID } from '#/backtracking'
+import { BacktrackApplyDTO, BacktrackOfferDTO, BacktrackRejectDTO, FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmResultDTO, KickImpactDTO, KickStunDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
 import { BlocksFactory } from '~/game/entities/block'
 import { Bomb, BombFactory } from '~/game/entities/bomb'
 import { EntitiesFactory } from '~/game/entities/factory'
@@ -13,11 +14,12 @@ import { TimerFactory } from '~/game/entities/timer'
 import { playBombSound } from '~/game/sound/bomb'
 import { playWinSound, stopWinSound } from '~/game/sound/win'
 import { Assets } from '~/game/util/assets'
-import { emitReady, socket } from '~/services/socket'
+import { emitBacktrackCancel, emitBacktrackConfirm, emitReady, setMovementEpoch, socket } from '~/services/socket'
 import { Pairing, SkillButton, Timer } from './style'
 import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { renderExplosionPreview } from '~/game/util/explosionPreview'
 import { renderArthurHiddenBonuses } from '~/game/util/arthurVision'
+import { drawBacktrackFlash, isBacktrackDestinationSafe } from '~/game/util/backtracking'
 import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
@@ -83,6 +85,7 @@ export default function Canvas ({myself, style, setShowGame, touchEnabled, touch
   const [skillRemaining, setSkillRemaining] = useState(0)
   const [stunRemaining, setStunRemaining] = useState(0)
   const [skillActive, setSkillActive] = useState(false)
+  const [backtrackStatus, setBacktrackStatus] = useState('')
 
   // Cada cliente envia ready apenas uma vez, depois de carregar recursos
   // e concluir seu aviso. A rodada começa no evento coletivo ready.
@@ -142,12 +145,14 @@ function render () {
     state?.entities.render(context)
     state?.players.render(context)
   }
+  if (state) drawBacktrackFlash(context,state,Date.now())
 }
 
 function startGame (dto:StartGameDTO) {
   socket.off('start_game', startGame)
 
   roomIdRef.current = dto.roomId
+  setMovementEpoch(0)
   finishedRef.current = false
   readyRef.current = 0
   readyEmittedRef.current = false
@@ -183,6 +188,7 @@ function startGame (dto:StartGameDTO) {
   setVictories(dto.players.map(p => p.wins ?? 0))
   setSkillActive(false)
   setSkillRemaining(0)
+  setBacktrackStatus('')
   setStunRemaining(0)
 }
 
@@ -294,6 +300,53 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     state?.blocks.destroyBlock(dto.a)
   }
 
+  // O servidor oferece a posição histórica; o próprio cliente confere
+  // blocos, bombas e rivais ANTES de autorizar a teletransposição.
+  function onBacktrackOffer(dto:BacktrackOfferDTO) {
+    const player=state?.players.myself
+    if (!player?.isValkenedy || !player.active || !player.backtrackPending ||
+        !state || finishedRef.current || !Number.isSafeInteger(dto?.token)) {
+      if (dto && Number.isSafeInteger(dto.token)) emitBacktrackCancel({token:dto.token})
+      return
+    }
+    if (!isBacktrackDestinationSafe(state,dto.x,dto.y)) {
+      emitBacktrackCancel({token:dto.token})
+      return
+    }
+    emitBacktrackConfirm({token:dto.token})
+  }
+
+  function onBacktrackReject(dto:BacktrackRejectDTO) {
+    const player=state?.players.myself
+    if (!player?.isValkenedy) return
+    player.backtrackPending=false
+    // Uma rejeição também deve destravar a movimentação imediatamente.
+    player.refreshMovement()
+    const now=Date.now()
+    if (dto.reason==='cooldown' && typeof dto.remainingMs==='number') {
+      player.skillReadyAt=now+Math.max(0,dto.remainingMs)
+    }
+    const messages:Record<BacktrackRejectDTO['reason'],string> = {
+      cooldown:'EM RECARGA',no_history:'SEM HISTÓRICO',too_far:'LONGE DEMAIS',
+      not_safe:'CAMINHO BLOQUEADO',busy:'PROCESSANDO',unavailable:'INDISPONÍVEL'
+    }
+    player.backtrackNotice=messages[dto.reason] || 'INDISPONÍVEL'
+    player.backtrackNoticeUntil=now+1700
+  }
+
+  function onBacktrackApply(dto:BacktrackApplyDTO) {
+    if (!state || finishedRef.current || dto.roomId!==roomIdRef.current) return
+    if (!Number.isInteger(dto.p) || !Number.isFinite(dto.x) || !Number.isFinite(dto.y)) return
+    const player=state.players.players[dto.p]
+    if (!player?.isValkenedy || player.spriteId!==VALKENEDY_SPRITE_ID) return
+    if (dto.p===myself) setMovementEpoch(dto.epoch)
+    player.applyBacktrack(dto)
+    if (dto.p===myself) {
+      setSkillRemaining(Math.ceil(dto.cooldownMs/1000))
+      setBacktrackStatus('RETORNO CONCLUÍDO')
+    }
+  }
+
   // O disparo só é criado quando o servidor confirmar a habilidade.
   function onStunShot (dto: StunShotDTO) {
     if (!state || state.entities.has(dto.i)) return
@@ -393,6 +446,9 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     socket.on('wins_update', onWinsUpdate)
     socket.on('stun_shot', onStunShot)
     socket.on('stun_apply', onStunApply)
+    socket.on('backtrack_offer', onBacktrackOffer)
+    socket.on('backtrack_reject', onBacktrackReject)
+    socket.on('backtrack_apply', onBacktrackApply)
     return () => {
       socket.off('start_game', startGame)
       socket.off('ready', onReady)
@@ -411,6 +467,9 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       socket.off('wins_update', onWinsUpdate)
       socket.off('stun_shot', onStunShot)
       socket.off('stun_apply', onStunApply)
+      socket.off('backtrack_offer', onBacktrackOffer)
+      socket.off('backtrack_reject', onBacktrackReject)
+      socket.off('backtrack_apply', onBacktrackApply)
     }
   }, [state])
 
@@ -477,13 +536,13 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     }
   }, [])
 
-  // HUD de recarga apenas para o Mamedes controlado localmente.
+  // HUD de recarga compartilhado pelo Mamedes e Valkenedy.
   useEffect(() => {
     if (typeof myself !== 'number' || !state) return
 
     const interval = setInterval(() => {
       const player = state.players.players[myself]
-      if (!player?.isMamedes) return
+      if (!player?.isMamedes && !player?.isValkenedy) return
 
       // Também reflete a morte do personagem, que muta Player fora do React.
       setSkillActive(player.active)
@@ -491,6 +550,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       const now = Date.now()
       setSkillRemaining(Math.ceil(Math.max(0, player.skillReadyAt - now) / 1000))
       setStunRemaining(Math.ceil(Math.max(0, player.stunnedUntil - now) / 1000))
+      if (player.isValkenedy) setBacktrackStatus(now<player.backtrackNoticeUntil?player.backtrackNotice:'')
     }, 150)
 
     return () => clearInterval(interval)
@@ -590,20 +650,25 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
   })}
 </RankingPanel>
 
-    {localPlayer?.isMamedes && (
+    {(localPlayer?.isMamedes || localPlayer?.isValkenedy) && (
       <SkillButton
         type="button"
         $touch={touchEnabled}
         $portrait={touchPortrait}
-        disabled={!skillActive || !localPlayer.active || skillRemaining > 0 || stunRemaining > 0}
-        onClick={() => localPlayer.useStunSkill()}
-        title="Habilidade de Mamedes: E no teclado ou LB/L1 no controle"
+        disabled={!skillActive || !localPlayer.active || skillRemaining > 0 || stunRemaining > 0 ||
+          (localPlayer.isValkenedy && (localPlayer.backtrackPending || !!localPlayer.holding))}
+        onClick={() => localPlayer.useCharacterSkill()}
+        title={localPlayer.isValkenedy
+          ? 'Backtracking de Valkenedy: retorna 3s, recarga de 20s (E ou LB/L1)'
+          : 'Habilidade de Mamedes: E no teclado ou LB/L1 no controle'}
         aria-label={skillRemaining > 0
-          ? `Raio do Mamedes: ${skillRemaining} segundos de recarga`
-          : 'Disparar raio de stun do Mamedes'}
+          ? `${localPlayer.isValkenedy?'Backtracking':'Raio'}: ${skillRemaining} segundos de recarga`
+          : localPlayer.isValkenedy ? 'Ativar Backtracking de Valkenedy' : 'Disparar raio de stun do Mamedes'}
       >
-        <strong>🌈 RAIO</strong>
-        <span>{stunRemaining > 0 ? 'ATORDOADO' : skillRemaining > 0 ? `${skillRemaining}s` : 'E · LB/L1'}</span>
+        <strong>{localPlayer.isValkenedy?'↶ VOLTAR 3s':'🌈 RAIO'}</strong>
+        <span>{stunRemaining > 0 ? 'ATORDOADO' : skillRemaining > 0 ? `${skillRemaining}s` :
+          localPlayer.isValkenedy && localPlayer.backtrackPending ? 'PROCESSANDO' :
+          localPlayer.isValkenedy && backtrackStatus ? backtrackStatus : 'E · LB/L1'}</span>
       </SkillButton>
     )}
     <VirusHud player={localPlayer} stage={state?.stage.name} placement={mutationHudPlacement} />

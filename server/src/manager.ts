@@ -9,6 +9,7 @@ import { rooms } from '~/rooms'
 import { generateId } from '~/util'
 import { registerDeparture } from '~/ranking'
 import { clearStunShotsForSocket } from '~/stun'
+import { clearBacktrackingForSocket } from '~/backtracking'
 
 export function setUser (io:Server, socket:Socket, user:UserDTO) {
   if (typeof user.nick !== 'string' || user.nick.length < NICK.MIN || user.nick.length > NICK.MAX) {
@@ -138,11 +139,16 @@ export async function joinRoom (io:Server, socket:Socket, dto:JoinRoomDTO) {
 }
 
 export function onReady (io:Server, socket:Socket) {
-  io.to(socket.data.roomId).emit('ready')
+  // Um socket só confirma o carregamento uma vez por rodada.
+  const roomId=socket.data.roomId
+  if (!roomId || !socket.rooms.has(roomId) || socket.data.backtrackRoundReady) return
+  socket.data.backtrackRoundReady=true
+  io.to(roomId).emit('ready')
 }
 
 export function onDisconnect (io:Server, socket:Socket) {
   clearStunShotsForSocket(socket.id)
+  clearBacktrackingForSocket(socket)
   socket.data.alive = false
   registerDeparture(io, socket)
   updateRoomQueue(socket)
@@ -246,6 +252,7 @@ function updateRoomQueue (socket:Socket) {
 export function exitPairing (io:Server, socket:Socket) {
   const roomId = socket.data.roomId
   clearStunShotsForSocket(socket.id)
+  clearBacktrackingForSocket(socket)
   socket.data.alive = false
 
   // Sair pelo botão Voltar também é uma desistência da rodada.

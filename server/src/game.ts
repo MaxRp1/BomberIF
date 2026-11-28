@@ -76,6 +76,9 @@ export function onKickImpact (io:Server, socket:Socket, dto:KickImpactDTO) {
 export function onHoldBomb (io:Server, socket:Socket, dto:HoldBombDTO) {
   if (isStunned(socket)) return
   socket.data.backtrackHolding=true
+  // Bombas podem detonar enquanto são carregadas, sem evento de liberação.
+  // Limite de segurança evita bloquear a habilidade para sempre.
+  socket.data.backtrackHoldingUntil=Date.now()+4000
   dto.p = socket.data.index
   io.to(socket.data.roomId).emit('hb', dto)
 }
@@ -83,6 +86,7 @@ export function onHoldBomb (io:Server, socket:Socket, dto:HoldBombDTO) {
 export function onFlingBomb (io:Server, socket:Socket, dto:FlingBombDTO) {
   if (isStunned(socket)) return
   socket.data.backtrackHolding=false
+  socket.data.backtrackHoldingUntil=0
   dto.p = socket.data.index
   io.to(socket.data.roomId).emit('fb', dto)
 }

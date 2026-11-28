@@ -1,5 +1,6 @@
 import { FRANK_PROTECTION_MS, FRANK_SPRITE_ID, MAMEDES_SPRITE_ID, MAX_SPEED, PRESS_INTERVAL, SPEED, STUN_DURATION_MS, TILE_SIZE } from '#/constants'
-import { MoveDTO, PlayerDTO, SIDES } from '#/dto'
+import { BACKTRACK_EFFECT_MS, VALKENEDY_SPRITE_ID } from '#/backtracking'
+import { BacktrackApplyDTO, MoveDTO, PlayerDTO, SIDES } from '#/dto'
 import { LABORATORY_STAGE, LINEAR_NOTICE_DURATION_MS, LinearMutation, PingEffectState, SignalMotion, activatePingOnBombPlaced, applyGraphPickup, applyPingPickup, canPickUpBomb, carrySpeedMultiplier, effectiveBombReach, firewallExplosionImmune, initialPingEffect, initialSignalMotion, graphControlsInverted, graphHeldMovement, graphSpeedMultiplier, pingSpeedMultiplier, reachAfterFling, resetPingUpgrades, signalPickupMode, stunVisualAt, updateSignalMotion } from '#/virus'
 import { animate, AnimControl } from '~/game/animations/animation'
 import { drawKickDizziness } from '~/game/animations/dizzy'
@@ -10,7 +11,7 @@ import { GameState } from '~/game/entities/state'
 import { isCollidingForced } from '~/game/util/collision'
 import { playBombSound } from '~/game/sound/bomb'
 import { playKillSound } from '~/game/sound/kill'
-import { emitFlingBomb, emitFrankLifeUsed, emitHoldBomb, emitKill, emitMove, emitPlaceBomb, emitStunFire } from '~/services/socket'
+import { emitBacktrackRequest, emitFlingBomb, emitFrankLifeUsed, emitHoldBomb, emitKill, emitMove, emitPlaceBomb, emitStunFire } from '~/services/socket'
 
 interface LastPress {
   bomb : number
@@ -42,6 +43,14 @@ export interface Player {
   invulnerableUntil : number
   hasBlastVision    : boolean
   isMamedes         : boolean
+  isValkenedy       : boolean
+  backtrackPending  : boolean
+  backtrackRequestAt: number
+  backtrackFlashUntil: number
+  backtrackFlashFromX: number
+  backtrackFlashFromY: number
+  backtrackNotice: string
+  backtrackNoticeUntil: number
   spriteId          : number
   stunnedUntil      : number
   mamedesStunUntil  : number
@@ -112,6 +121,8 @@ export interface Player {
   applyPingBonus       : (stage:number, mutation:LinearMutation|undefined) => void
   handleBomb           : (state:GameState) => void
   useStunSkill        : () => void
+  useCharacterSkill  : () => void
+  applyBacktrack     : (dto:BacktrackApplyDTO) => void
   applyStun           : (durationMs?:number, effect?:'mamedes'|'dizzy') => void
   placeBomb            : (state:GameState) => void
   holdBomb             : (state:GameState) => void
@@ -151,6 +162,14 @@ export function PlayerFactory (props:PlayerProps) : Player {
     hasOverclock: props.sprite === 2,
     hasBlastVision: props.sprite === 2,
     isMamedes: props.sprite === MAMEDES_SPRITE_ID,
+    isValkenedy: props.sprite === VALKENEDY_SPRITE_ID,
+    backtrackPending:false,
+    backtrackRequestAt:0,
+    backtrackFlashUntil:0,
+    backtrackFlashFromX:0,
+    backtrackFlashFromY:0,
+    backtrackNotice:'',
+    backtrackNoticeUntil:0,
     spriteId: props.sprite,
     stunnedUntil: 0,
     mamedesStunUntil: 0,
@@ -228,6 +247,8 @@ export function PlayerFactory (props:PlayerProps) : Player {
   player.applyPingBonus = applyPingBonus.bind(player)
   player.handleBomb = handleBomb.bind(player)
   player.useStunSkill = useStunSkill.bind(player)
+  player.useCharacterSkill = useCharacterSkill.bind(player)
+  player.applyBacktrack = applyBacktrack.bind(player)
   player.applyStun = applyStun.bind(player)
   player.placeBomb = placeBomb.bind(player)
   player.holdBomb = holdBomb.bind(player)
@@ -292,7 +313,7 @@ function keydownListener (this:Player, event:KeyboardEvent, state:GameState) {
   if (!this.active || Date.now() < this.stunnedUntil) return
   const key = event.key.toUpperCase()
   if (key === ' ') this.isSpaceHeld = true
-  if (key === 'E' && !event.repeat) this.useStunSkill()
+  if (key === 'E' && !event.repeat) this.useCharacterSkill()
   if (this.moveKeys[key]) {
     this.heldMoveKeys.add(key)
     this.refreshMovement()
@@ -344,7 +365,7 @@ function removeGamepadSupport (this:Player, state:GameState) {
 function refreshMovement (this:Player) {
   const previousMoving = this.moving
   const now = Date.now()
-  const active = this.active && now >= this.stunnedUntil
+  const active = this.active && now >= this.stunnedUntil && !this.backtrackPending
   const inverted = graphControlsInverted(this, now)
   this.lastGraphInverted = inverted
 
@@ -382,6 +403,16 @@ function moveTick (
   state:GameState
 ) {
   const now = Date.now()
+  if (this.myself && this.backtrackPending) {
+    if (now - this.backtrackRequestAt < 2500) return
+    // Conexão perdida ou confirmação sem resposta: jamais travar os controles.
+    this.backtrackPending=false
+    this.backtrackNotice='SEM RESPOSTA'
+    this.backtrackNoticeUntil=now+1500
+    this.heldMoveKeys.clear()
+    this.gamepadDirection=null
+    this.refreshMovement()
+  }
   // Mudanças de inversão não alteram mais o mapeamento das teclas.
   if (this.myself && graphControlsInverted(this, now) !== this.lastGraphInverted) {
     this.refreshMovement()
@@ -587,6 +618,49 @@ function handleBomb (this:Player, state:GameState) {
   }
 }
 
+// Roteador da ação especial: preserva o Mamedes e adiciona Valkenedy.
+function useCharacterSkill(this:Player) {
+  if (this.isMamedes) return this.useStunSkill()
+  if (!this.isValkenedy || !this.myself || !this.active) return
+  const now=Date.now()
+  if (this.backtrackPending || now < this.stunnedUntil || now < this.skillReadyAt) return
+  if (this.holding) {
+    this.backtrackNotice='SOLTE A BOMBA'
+    this.backtrackNoticeUntil=now+1400
+    return
+  }
+  if (now-this.lastSkillRequestAt<300) return
+  this.lastSkillRequestAt=now
+  this.backtrackPending=true
+  this.backtrackRequestAt=now
+  this.backtrackNotice='BUSCANDO ROTA'
+  this.backtrackNoticeUntil=now+2500
+  this.refreshMovement()
+  emitBacktrackRequest()
+}
+
+// A posição e o cooldown só mudam com a confirmação oficial de todos os clientes.
+function applyBacktrack(this:Player,dto:BacktrackApplyDTO) {
+  const now=Date.now()
+  this.backtrackFlashFromX=this.x
+  this.backtrackFlashFromY=this.y
+  this.x=dto.x
+  this.y=dto.y
+  this.moving=0
+  this.movingSide={U:false,L:false,D:false,R:false}
+  this.backtrackFlashUntil=now+BACKTRACK_EFFECT_MS
+  this.backtrackPending=false
+  this.backtrackNotice='RETORNO CONCLUÍDO'
+  this.backtrackNoticeUntil=now+1200
+  if (this.myself) {
+    this.skillReadyAt=now+dto.cooldownMs
+    this.heldMoveKeys.clear()
+    this.gamepadDirection=null
+    this.isSpaceHeld=false
+    this.refreshMovement()
+  }
+}
+
 // Habilidade ativa exclusiva do Mamedes: E / LB / botão na tela.
 // O cooldown só começa após o servidor confirmar o disparo.
 function useStunSkill (this:Player) {
@@ -750,6 +824,10 @@ function kill (this:Player, emit:boolean, cause:'bomb'|'other' = 'other') {
   this.isSpaceHeld = false
   this.heldMoveKeys.clear()
   this.gamepadDirection = null
+  this.backtrackPending=false
+  this.backtrackNotice=''
+  this.backtrackNoticeUntil=0
+  this.backtrackFlashUntil=0
   this.invertedUntilDeath = false
   this.invertedUntil = 0
   this.boostedUntil = 0

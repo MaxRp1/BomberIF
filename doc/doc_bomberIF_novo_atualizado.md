@@ -2,7 +2,7 @@
 
 ## Recurso em desenvolvimento — Backtracking do Valkenedy (28/11/2026)
 
-**Estado:** implementado na branch `feat/valkenedy-backtracking-3s-2026-11-28`, criada a partir da branch do PR #16 (tutorial do Laboratório + Arthur). **Ainda não integrado à `main`; testes isolados da lógica passaram, mas builds completos, conexão real e partidas conjuntas precisam ser executados.** Valkenedy é o **sprite 0.png**, conferido a partir da ficha ilustrada no GDD.
+**Estado:** implementado no [PR #18](https://github.com/MaxRp1/BomberIF/pull/18), branch `feat/valkenedy-backtracking-3s-2026-11-28`, aberto em rascunho contra a branch do PR #16 (tutorial do Laboratório + Arthur). **Ainda não integrado à `main`; testes isolados da lógica passaram, mas builds completos, conexão real e partidas conjuntas precisam ser executados.** Valkenedy é o **sprite 0.png**, conferido a partir da ficha ilustrada no GDD.
 
 ### Regras de gameplay
 

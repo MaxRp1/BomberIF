@@ -320,6 +320,8 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     const player=state?.players.myself
     if (!player?.isValkenedy) return
     player.backtrackPending=false
+    // Uma rejeição também deve destravar a movimentação imediatamente.
+    player.refreshMovement()
     const now=Date.now()
     if (dto.reason==='cooldown' && typeof dto.remainingMs==='number') {
       player.skillReadyAt=now+Math.max(0,dto.remainingMs)

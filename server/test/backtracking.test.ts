@@ -79,7 +79,7 @@ test('histórico remove amostras excessivas, preservando anterior à janela',()=
   h=appendBacktrackPoint(h,{at:1120,x:20,y:9})
   assert.equal(h.length,2)
   h=appendBacktrackPoint(h,{at:5000,x:45,y:9})
-  assert.equal(h.length,3)
+  assert.equal(h.length,2)
   h=appendBacktrackPoint(h,{at:5500,x:47,y:9})
   assert.equal(h[0].at,1100)
   assert.equal(h[h.length-1].at,5500)

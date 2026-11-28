@@ -2,18 +2,18 @@
 
 ## Recurso em desenvolvimento — Backtracking do Valkenedy (28/11/2026)
 
-**Estado:** implementado na branch `feat/valkenedy-backtracking-3s-2026-11-28`, criada a partir da branch do PR #16 (tutorial do Laboratório + Arthur). **Ainda não integrado à `main`; testes de builds, conexão e partidas conjuntas precisam ser executados.** Valkenedy é o **sprite 0.png**, conferido a partir da ficha ilustrada no GDD.
+**Estado:** implementado na branch `feat/valkenedy-backtracking-3s-2026-11-28`, criada a partir da branch do PR #16 (tutorial do Laboratório + Arthur). **Ainda não integrado à `main`; testes isolados da lógica passaram, mas builds completos, conexão real e partidas conjuntas precisam ser executados.** Valkenedy é o **sprite 0.png**, conferido a partir da ficha ilustrada no GDD.
 
 ### Regras de gameplay
 
 - **Nome:** Backtracking. **Ativação:** tecla **E**, botão **LB/L1** do gamepad, ou botão `VOLTAR 3s` na interface. **Duração do recuo:** aproximadamente **3 segundos** no histórico de movimentação; o efeito é uma transposição instantânea, não uma volta temporal da arena.
 - **Recarga:** **20 segundos** após a confirmação positiva do servidor. Solicitações recusadas (sem histórico, distância excessiva, local ocupado, atordoamento, jogador morto ou segurando bomba) não consomem recarga.
-- **Alcance máximo:** **quatro casas** em distância Manhattan, equivalentes a 64 pixels. A origem é a posição atual confirmada no servidor e o destino é o último ponto de trajetória registrado em ou antes de `Date.now() - 3000`; trechos parados preservam o último ponto anterior.
+- **Alcance máximo:** **quatro casas** em distância Manhattan, equivalentes a 64 pixels. A origem é a posição atual confirmada no servidor. O servidor tenta primeiro o último ponto registrado em ou antes de `Date.now() - 3000`; se a distância ultrapassar quatro casas, utiliza o ponto mais antigo do histórico recente que caiba no limite, resultando em retorno de **até três segundos** (não necessariamente três segundos exatos). Se não houver ponto elegível, cancela sem iniciar a recarga. Trechos parados preservam o último ponto anterior.
 - **Destino seguro:** o servidor verifica limites e paredes indestrutíveis. Antes de confirmar, o cliente verifica a posição contra a grade **atual** de blocos destrutíveis, indestrutíveis e bombas (inclusive explosivos remotos que vivem apenas nas entidades), além de outros jogadores vivos. Como parte das colisões e das explosões ainda é simulada localmente, esse é um protocolo de segurança em duas etapas; não representa um servidor autoritativo para a física de toda a arena.
 - **Sem reversão do estado:** somente as coordenadas do jogador retornam. Bombas colocadas, itens coletados, efeitos de mutação, dano, eliminações, cronômetro, ranking e posição dos adversários permanecem inalterados. A habilidade não ressuscita o personagem, não concede invulnerabilidade e não funciona segurando bombas.
 - **Sincronização multiplayer:** o servidor gera um `backtrack_offer` privado com token e destino; o cliente só responde `backtrack_confirm` depois de validar o lugar. O servidor aplica a posição, inicia a recarga e distribui `backtrack_apply` para toda a sala. `backtrack_cancel` ou `backtrack_reject` não consomem cooldown. O servidor incrementa o `backtrackEpoch`, exigido em `mv.q` após o teleporte para **rejeitar mensagens antigas de movimento**.
 - **Histórico:** é mantido exclusivamente no servidor, com amostragem aproximada de 55 ms e janela de 3,7 segundos; preserva uma amostra anterior à janela para representar trechos parados, sem depender de relógio nem timestamps enviados pelo cliente. O histórico, a geração e o cooldown são restaurados a cada nova rodada e apagados ao desconectar/sair.
-- **Falhas seguras:** ofertas expiram em 1500 ms sem confirmação, e o cliente destrava os controles se ficar sem resposta por mais de 2500 ms. O HUD indica bloqueio, ausência de histórico, distância excessiva e recarga. Um brilho pixelado de aproximadamente 650 ms mostra a origem e o destino após o salto.
+- **Falhas seguras:** ofertas expiram em 1500 ms sem confirmação; uma rejeição destrava a movimentação imediatamente, e o cliente também recupera os comandos se ficar sem resposta por mais de 2500 ms. O HUD indica bloqueio, ausência de histórico, distância excessiva e recarga. Um brilho pixelado de aproximadamente 650 ms mostra a origem e o destino após o salto.
 
 ### Arquivos alterados
 
@@ -28,7 +28,8 @@
 | `client/src/game/util/backtracking.ts` | Validação do destino contra blocos, bombas, jogadores e renderização pixelada. |
 | `client/src/game/components/canvas/index.tsx` | Listener dos eventos, atualização simultânea dos personagens locais/remotos e HUD de cooldown. |
 | `client/src/site/components/lobby/characterSelect.tsx` | Nome e descrição de Valkenedy no seletor. |
-| `server/test/backtracking.test.ts`, `server/package.json` | Testes de histórico, cooldown, autorização, salas, replay e geometria; script `yarn test:backtracking`. |
+| `server/test/backtracking.test.ts`, `server/package.json` | Testes de histórico, cooldown, autorização, salas, replay, limite de recuo e geometria; script `yarn test:backtracking`. |
+| `client/src/game/util/backtracking.test.ts` | Casos Jest para verificar segurança do destino no canvas: obstáculos, bombas remotas, adversários e bordas. |
 | `GDD_BomberIF_Final` | Ficha de Valkenedy (seção 5) e contexto dos personagens (seção 4) atualizados. |
 
 ### Checklist de testes para o Kali (ainda pendente)
@@ -46,10 +47,11 @@ yarn test:virus
 yarn typecheck
 yarn build
 cd ../client
+CI=true yarn test --watchAll=false --runInBand backtracking.test.ts
 yarn build
 ```
 
-**Cenários manuais indispensáveis:** jogar com Valkenedy (sprite 0) e outro personagem simultaneamente; após 3 s mover até quatro casas e usar E/LB/L1/botão; conferir posição idêntica nos dois navegadores, cooldown 20 s e trilha visual. Bloquear retorno para dentro de blocos/bombas e ao carregar bomba; testar sem histórico, mais de quatro casas, stun, morte, latência e repetição da tecla. Jogar no Laboratório com tutorial e mutações, com Arthur revelando itens, para detectar regressões entre os três recursos. Repetir após nova rodada e troca de personagem. **Nenhum desses testes integrados ou builds foi executado nesta alteração; a funcionalidade ainda depende de validação no ambiente do projeto.**
+**Cenários manuais indispensáveis:** jogar com Valkenedy (sprite 0) e outro personagem simultaneamente; após 3 s mover até quatro casas e usar E/LB/L1/botão; conferir posição idêntica nos dois navegadores, cooldown 20 s e trilha visual. Bloquear retorno para dentro de blocos/bombas e ao carregar bomba; testar sem histórico, mais de quatro casas, stun, morte, latência e repetição da tecla. Jogar no Laboratório com tutorial e mutações, com Arthur revelando itens, para detectar regressões entre os três recursos. Repetir após nova rodada e troca de personagem. **Validação realizada em ambiente isolado:** 13/13 casos automatizados da lógica real do servidor passaram, a verificação sintática de 16 arquivos TypeScript/TSX não encontrou erros e nove verificações isoladas da função de segurança do cliente passaram. **Ainda faltam** a execução da suíte Jest do frontend, os builds completos do servidor e cliente, os testes de rede em partida multiplayer e a avaliação no Kali. A habilidade não deve ser mesclada à `main` até essas verificações.
 
 ---
 

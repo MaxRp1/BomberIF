@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { LAB_INTRO_STORAGE_KEY, LabIntroMode, labIntroModeForStage } from '#/labIntro'
 import { FRANK_SPRITE_ID, OVERCLOCK_DETONATION_MULTIPLIER, STUN_COOLDOWN_MS } from '#/constants'
 import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmResultDTO, KickImpactDTO, KickStunDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
 import { BlocksFactory } from '~/game/entities/block'
@@ -12,18 +13,45 @@ import { TimerFactory } from '~/game/entities/timer'
 import { playBombSound } from '~/game/sound/bomb'
 import { playWinSound, stopWinSound } from '~/game/sound/win'
 import { Assets } from '~/game/util/assets'
-import { socket } from '~/services/socket'
+import { emitReady, socket } from '~/services/socket'
 import { Pairing, SkillButton, Timer } from './style'
 import { SlowFloorsFactory } from '~/game/entities/slowFloor'
 import { renderExplosionPreview } from '~/game/util/explosionPreview'
 import { RankingPanel, RankingToggle } from './rankingStyle'
 import { WinsUpdateDTO } from '#/dto'
 import RoundResult from '~/game/components/roundResult'
+import LabIntro from '~/game/components/labIntro'
 import VirusHud from './virusHud'
 import { getMutationHudPlacement } from './mutationHudLayout'
 import { fillMissingLabPowerupMutations, KICK_VIRUS_STUN_MS, LAB_ONLY_MUTATED_DROPS_FOR_TESTS } from '#/virus'
 
 const RESULT_DISPLAY_MS = 5000
+
+interface LabIntroState {
+  mode: LabIntroMode
+  waiting: boolean
+}
+
+// Fallback em memória caso o navegador bloqueie localStorage.
+let labIntroSeenInPage = false
+
+function hasSeenLabIntro(): boolean {
+  if (labIntroSeenInPage) return true
+  try {
+    return window.localStorage.getItem(LAB_INTRO_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function rememberLabIntro(): void {
+  labIntroSeenInPage = true
+  try {
+    window.localStorage.setItem(LAB_INTRO_STORAGE_KEY, '1')
+  } catch {
+    // Em navegação privada, a versão curta vale ao menos nesta aba.
+  }
+}
 
 interface CanvasProps {
   myself : number|null
@@ -39,16 +67,38 @@ export default function Canvas ({myself, style, setShowGame, touchEnabled, touch
   const readyRef = useRef(0)
   const roomIdRef = useRef('')
   const finishedRef = useRef(false)
+  const assetsReadyRef = useRef(false)
+  const introFinishedRef = useRef(true)
+  const readyEmittedRef = useRef(false)
+  const introModeRef = useRef<LabIntroMode|null>(null)
   const timeRef = useRef<{endGame:NodeJS.Timeout|undefined, gameLoop:NodeJS.Timer|undefined}>({endGame:undefined, gameLoop:undefined})
   const [context, setContext] = useState<CanvasRenderingContext2D>()
   const [state, setState] = useState<GameState>()
   const [roundResult, setRoundResult] = useState<RoundResultDTO|null>(null)
+  const [labIntro, setLabIntro] = useState<LabIntroState|null>(null)
   const [victories, setVictories] = useState<number[]>([])
   const [rankingWidth, setRankingWidth] = useState(0)
   const [rankingOpen, setRankingOpen] = useState(false)
   const [skillRemaining, setSkillRemaining] = useState(0)
   const [stunRemaining, setStunRemaining] = useState(0)
   const [skillActive, setSkillActive] = useState(false)
+
+  // Cada cliente envia ready apenas uma vez, depois de carregar recursos
+  // e concluir seu aviso. A rodada começa no evento coletivo ready.
+  function maybeEmitReady() {
+    if (finishedRef.current || readyEmittedRef.current ||
+        !assetsReadyRef.current || !introFinishedRef.current) return
+    readyEmittedRef.current = true
+    emitReady()
+  }
+
+  function finishLabIntro() {
+    if (finishedRef.current || introFinishedRef.current || !introModeRef.current) return
+    if (introModeRef.current === 'full') rememberLabIntro()
+    introFinishedRef.current = true
+    setLabIntro(current => current ? {...current, waiting:true} : null)
+    maybeEmitReady()
+  }
 
   function gameLoop () {
     try {
@@ -96,6 +146,12 @@ function startGame (dto:StartGameDTO) {
   roomIdRef.current = dto.roomId
   finishedRef.current = false
   readyRef.current = 0
+  readyEmittedRef.current = false
+  assetsReadyRef.current = false
+  const mode = labIntroModeForStage(dto.state.stage, hasSeenLabIntro())
+  introModeRef.current = mode
+  introFinishedRef.current = mode === null
+  setLabIntro(mode ? {mode, waiting:false} : null)
   setRoundResult(null)
 
   console.log('CLIENT STAGE:', dto.state.stage)
@@ -142,6 +198,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     if (!state) return
     if (readyRef.current < state.players.players.length) return
     socket.off('ready', onReady)
+    setLabIntro(null)
     const timer = TimerFactory()
     timer.start()
     state.entities.add(timer)
@@ -283,6 +340,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     if (!state || !roomIdRef.current || dto.roomId !== roomIdRef.current) return
     if (finishedRef.current) return
     finishedRef.current = true
+    setLabIntro(null)
 
     // Congela a arena, os controles e o temporizador para ambos os jogadores.
     clearInterval(timeRef.current.gameLoop)
@@ -364,7 +422,10 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
 
   useEffect(() => {
     if (!context || typeof myself !== 'number' || !state) return
-    Assets.set(state)
+    Assets.set(state, () => {
+      assetsReadyRef.current = true
+      maybeEmitReady()
+    })
     timeRef.current.gameLoop = setInterval(gameLoop, 1000 / 60)
     return () => {
       clearInterval(timeRef.current.gameLoop)
@@ -542,6 +603,7 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
       </SkillButton>
     )}
     <VirusHud player={localPlayer} stage={state?.stage.name} placement={mutationHudPlacement} />
+    {labIntro && <LabIntro mode={labIntro.mode} waiting={labIntro.waiting} onContinue={finishLabIntro} />}
     <Timer id='timer' />
     <canvas ref={canvasRef} width={240} height={208} style={style} />
     {roundResult && <RoundResult result={roundResult} myself={myself} />}

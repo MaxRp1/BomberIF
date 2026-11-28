@@ -324,11 +324,11 @@ function onWinsUpdate(dto: WinsUpdateDTO) {
     if (dto.reason==='cooldown' && typeof dto.remainingMs==='number') {
       player.skillReadyAt=now+Math.max(0,dto.remainingMs)
     }
-    player.backtrackNotice=(
-      {cooldown:'EM RECARGA',no_history:'SEM HISTÓRICO',too_far:'LONGE DEMAIS',
-       not_safe:'CAMINHO BLOQUEADO',busy:'PROCESSANDO',unavailable:'INDISPONÍVEL'}
-      as Record<BacktrackRejectDTO['reason'],string>
-    )[dto.reason] || 'INDISPONÍVEL'
+    const messages:Record<BacktrackRejectDTO['reason'],string> = {
+      cooldown:'EM RECARGA',no_history:'SEM HISTÓRICO',too_far:'LONGE DEMAIS',
+      not_safe:'CAMINHO BLOQUEADO',busy:'PROCESSANDO',unavailable:'INDISPONÍVEL'
+    }
+    player.backtrackNotice=messages[dto.reason] || 'INDISPONÍVEL'
     player.backtrackNoticeUntil=now+1700
   }
 

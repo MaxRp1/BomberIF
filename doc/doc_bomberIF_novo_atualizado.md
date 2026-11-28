@@ -1,5 +1,54 @@
 # Estudo Técnico - BomberIF
 
+## Recurso em validação — Arthur: Cola de Prova (28/11/2026)
+
+**Estado:** implementado na branch `feat/arthur-cola-de-prova-2026-11-28`, ainda **não integrado à `main`**. Arthur foi identificado como **sprite `4.png`** mediante comparação da ficha ilustrada no GDD com `client/public/sprites/chars/4.png`. Os quatro personagens anteriormente dotados de habilidades próprias continuam intactos.
+
+### Comportamento da habilidade passiva
+
+- **Nome:** Cola de Prova. **Personagem:** Arthur (aluno de BSI, ID de sprite 4). **Ativação:** automática, enquanto o personagem local estiver vivo/ativo. **Recarga:** nenhuma.
+- **Raio:** até 2 células em **distância Manhattan** entre `player.getAxes()` e as coordenadas `[linha, coluna]` do bloco; deslocamentos diagonais somam os passos dos dois eixos. A área de leitura tem forma de losango (até 13 células incluindo o centro).
+- **Alvos:** somente blocos **destrutíveis (`t === 'D'`) que ainda escondem algum power-up (`b` inteiro entre 1 e 9)**. O ícone é desenhado discretamente sobre o bloco, com moldura translúcida em pixel art. Blocos indestrutíveis, bombas, itens já revelados (`t === 'B'`), blocos sem bônus e blocos em destruição não geram pistas.
+- **Visibilidade:** somente o canvas do usuário que controla Arthur desenha as pistas; nenhum evento de rede, `BlockDTO` ou regra do servidor precisa mudar. Outros jogadores continuam vendo os blocos normais, mesmo próximos do Arthur.
+- **Sem violar o Laboratório:** o ícone informa o **tipo de power-up**, e a borda roxa pode indicar que o item tem uma mutação misteriosa. As variantes `'buff'` e `'virus'` são traduzidas para o **mesmo** dado visual `mysterious: true`, sem expor qual resultado será aplicado após a coleta. Os itens normais mantêm indicação discreta em verde-água. A habilidade vale no Campo, Laboratório e Refeitório.
+- **Sem vantagem extra:** Cola de Prova não aumenta alcance, dano, velocidade ou número de bombas; tampouco destrói blocos ou coleta itens à distância. É apenas uma habilidade de **informação e planejamento**.
+
+### Organização do código
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `shared/arthur.ts` | Constantes `ARTHUR_SPRITE_ID=4`, raio de 2 casas; função pura `getArthurHiddenBonusHint()`, com filtragem de blocos e anonimização de buff/vírus. |
+| `client/src/game/util/arthurVision.ts` | Renderizador local `renderArthurHiddenBonuses()`, consultando a grade atual de blocos e recortando o ícone da spritesheet real. |
+| `client/src/game/components/canvas/index.tsx` | Chamada do renderizador após a arena, sem alterar o ciclo de ticks, colisões ou lógica multiplayer. |
+| `client/src/site/components/lobby/characterSelect.tsx` | Identifica o ID 4 como Arthur e apresenta sua habilidade na seleção. |
+| `server/test/arthur.test.ts` | Cinco casos automatizados: exclusividade e jogador ativo, raio Manhattan, elegibilidade dos blocos, sprites 1–9 e igualdade de aparência entre buff/vírus. |
+| `server/package.json` | Script `yarn test:arthur`. |
+| `GDD_BomberIF_Final` | Seção 4 (contexto narrativo) e seção 5, ficha Arthur, atualizadas no Google Drive. |
+
+### Verificação e publicação
+
+A regra isolada equivalente em TypeScript foi exercitada localmente com `ts-node`, com **5/5 testes aprovados**. **Ainda não foram executados** o build integral do cliente/servidor, as demais suítes do repositório ou um teste visual e multiplayer no Kali. Isso deve ser validado **antes de integrar à main**, verificando também que um rival ao lado do Arthur não vê marcações.
+
+```bash
+cd ~/BomberIF
+git fetch origin
+git switch --track origin/feat/arthur-cola-de-prova-2026-11-28
+cd server
+yarn test:arthur
+yarn test:virus
+yarn test:lobby
+yarn test:ranking
+yarn typecheck
+yarn build
+cd ../client
+yarn build
+```
+
+**Validação manual:** em dois navegadores, selecionar Arthur (ID 4) e outro personagem, iniciar partidas nos três cenários; aproximar-se e afastar-se de blocos com itens; verificar alcance de 2 casas e invisibilidade ao rival; destruir o bloco; verificar sprites de Bomba (ID 1) e dos power-ups 2–9; no Laboratório confirmar que itens mutados têm sinal roxo igual para buffs e vírus. Não confundir ausência de pista com falha: o bloco pode estar vazio ou fora do raio.
+
+---
+
+
 ## Estado vigente — integração do PR #14 (23/11/2026)
 
 **Fonte de verdade para a versão `main` atual:** o PR [#14](https://github.com/MaxRp1/BomberIF/pull/14) foi mesclado à branch principal em 23/11/2026, no commit [`58573384f58b52b54825122d5e1d70e27626bbd3`](https://github.com/MaxRp1/BomberIF/commit/58573384f58b52b54825122d5e1d70e27626bbd3). As referências abaixo sobre PR #14 "em rascunho", "sem merge", "Laboratório fixo" ou "modo de testes ativo" descrevem **etapas históricas do desenvolvimento**, não o comportamento atual.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LAB_INTRO_STORAGE_KEY, LabIntroMode, labIntroModeForStage } from '#/labIntro'
+import { LAB_INTRO_STORAGE_KEY, LabIntroMode, labIntroModeForStage, mayAnnounceRoundReady } from '#/labIntro'
 import { FRANK_SPRITE_ID, OVERCLOCK_DETONATION_MULTIPLIER, STUN_COOLDOWN_MS } from '#/constants'
 import { FlingBombDTO, FrankLifeUsedDTO, HoldBombDTO, IhmResultDTO, KickImpactDTO, KickStunDTO, KillDTO, MoveBombDTO, MoveDTO, NullifyBlockDTO, PlaceBombDTO, RoundResultDTO, StartGameDTO, StunApplyDTO, StunShotDTO } from '#/dto'
 import { BlocksFactory } from '~/game/entities/block'
@@ -86,8 +86,9 @@ export default function Canvas ({myself, style, setShowGame, touchEnabled, touch
   // Cada cliente envia ready apenas uma vez, depois de carregar recursos
   // e concluir seu aviso. A rodada começa no evento coletivo ready.
   function maybeEmitReady() {
-    if (finishedRef.current || readyEmittedRef.current ||
-        !assetsReadyRef.current || !introFinishedRef.current) return
+    if (finishedRef.current || !mayAnnounceRoundReady(
+      assetsReadyRef.current, introFinishedRef.current, readyEmittedRef.current
+    )) return
     readyEmittedRef.current = true
     emitReady()
   }

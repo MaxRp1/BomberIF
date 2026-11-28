@@ -1,5 +1,58 @@
 # Estudo Técnico - BomberIF
 
+## Recurso em desenvolvimento — Backtracking do Valkenedy (28/11/2026)
+
+**Estado:** implementado na branch `feat/valkenedy-backtracking-3s-2026-11-28`, criada a partir da branch do PR #16 (tutorial do Laboratório + Arthur). **Ainda não integrado à `main`; testes de builds, conexão e partidas conjuntas precisam ser executados.** Valkenedy é o **sprite 0.png**, conferido a partir da ficha ilustrada no GDD.
+
+### Regras de gameplay
+
+- **Nome:** Backtracking. **Ativação:** tecla **E**, botão **LB/L1** do gamepad, ou botão `VOLTAR 3s` na interface. **Duração do recuo:** aproximadamente **3 segundos** no histórico de movimentação; o efeito é uma transposição instantânea, não uma volta temporal da arena.
+- **Recarga:** **20 segundos** após a confirmação positiva do servidor. Solicitações recusadas (sem histórico, distância excessiva, local ocupado, atordoamento, jogador morto ou segurando bomba) não consomem recarga.
+- **Alcance máximo:** **quatro casas** em distância Manhattan, equivalentes a 64 pixels. A origem é a posição atual confirmada no servidor e o destino é o último ponto de trajetória registrado em ou antes de `Date.now() - 3000`; trechos parados preservam o último ponto anterior.
+- **Destino seguro:** o servidor verifica limites e paredes indestrutíveis. Antes de confirmar, o cliente verifica a posição contra a grade **atual** de blocos destrutíveis, indestrutíveis e bombas (inclusive explosivos remotos que vivem apenas nas entidades), além de outros jogadores vivos. Como parte das colisões e das explosões ainda é simulada localmente, esse é um protocolo de segurança em duas etapas; não representa um servidor autoritativo para a física de toda a arena.
+- **Sem reversão do estado:** somente as coordenadas do jogador retornam. Bombas colocadas, itens coletados, efeitos de mutação, dano, eliminações, cronômetro, ranking e posição dos adversários permanecem inalterados. A habilidade não ressuscita o personagem, não concede invulnerabilidade e não funciona segurando bombas.
+- **Sincronização multiplayer:** o servidor gera um `backtrack_offer` privado com token e destino; o cliente só responde `backtrack_confirm` depois de validar o lugar. O servidor aplica a posição, inicia a recarga e distribui `backtrack_apply` para toda a sala. `backtrack_cancel` ou `backtrack_reject` não consomem cooldown. O servidor incrementa o `backtrackEpoch`, exigido em `mv.q` após o teleporte para **rejeitar mensagens antigas de movimento**.
+- **Histórico:** é mantido exclusivamente no servidor, com amostragem aproximada de 55 ms e janela de 3,7 segundos; preserva uma amostra anterior à janela para representar trechos parados, sem depender de relógio nem timestamps enviados pelo cliente. O histórico, a geração e o cooldown são restaurados a cada nova rodada e apagados ao desconectar/sair.
+- **Falhas seguras:** ofertas expiram em 1500 ms sem confirmação, e o cliente destrava os controles se ficar sem resposta por mais de 2500 ms. O HUD indica bloqueio, ausência de histórico, distância excessiva e recarga. Um brilho pixelado de aproximadamente 650 ms mostra a origem e o destino após o salto.
+
+### Arquivos alterados
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `shared/backtracking.ts` | Constantes `VALKENEDY_SPRITE_ID=0`, `BACKTRACK_LOOKBACK_MS=3000`, `BACKTRACK_COOLDOWN_MS=20000`, `BACKTRACK_MAX_TILES=4`; histórico, escolha de ponto e testes geométricos puros. |
+| `shared/dto.ts` | Contratos `BacktrackOfferDTO`, `BacktrackConfirmDTO`, `BacktrackApplyDTO`, `BacktrackRejectDTO`; versão opcional `MoveDTO.q`. |
+| `server/src/backtracking.ts` | Histórico por socket, autorização, validação de cooldown e stun, handshake de duas etapas, propagação ao lobby e rejeição de movimento obsoleto. |
+| `server/src/factory.ts`, `manager.ts`, `game.ts`, `ioListener.ts` | Reinicialização por rodada, confirmação de pronto, posição de jogador, liberação ao sair/morrer e rotas Socket.IO. |
+| `client/src/services/socket.ts` | Eventos de solicitação, confirmação e cancelamento; geração de pacotes de movimento. |
+| `client/src/game/entities/player.ts`, `gamepad.ts` | Roteador do botão de habilidade, bloqueio de ações durante a espera e reposicionamento após confirmação. |
+| `client/src/game/util/backtracking.ts` | Validação do destino contra blocos, bombas, jogadores e renderização pixelada. |
+| `client/src/game/components/canvas/index.tsx` | Listener dos eventos, atualização simultânea dos personagens locais/remotos e HUD de cooldown. |
+| `client/src/site/components/lobby/characterSelect.tsx` | Nome e descrição de Valkenedy no seletor. |
+| `server/test/backtracking.test.ts`, `server/package.json` | Testes de histórico, cooldown, autorização, salas, replay e geometria; script `yarn test:backtracking`. |
+| `GDD_BomberIF_Final` | Ficha de Valkenedy (seção 5) e contexto dos personagens (seção 4) atualizados. |
+
+### Checklist de testes para o Kali (ainda pendente)
+
+```bash
+git fetch origin
+git switch --track origin/feat/valkenedy-backtracking-3s-2026-11-28
+cd server
+yarn test:backtracking
+yarn test:stun
+yarn test:lab-intro
+yarn test:arthur
+yarn test:lobby
+yarn test:virus
+yarn typecheck
+yarn build
+cd ../client
+yarn build
+```
+
+**Cenários manuais indispensáveis:** jogar com Valkenedy (sprite 0) e outro personagem simultaneamente; após 3 s mover até quatro casas e usar E/LB/L1/botão; conferir posição idêntica nos dois navegadores, cooldown 20 s e trilha visual. Bloquear retorno para dentro de blocos/bombas e ao carregar bomba; testar sem histórico, mais de quatro casas, stun, morte, latência e repetição da tecla. Jogar no Laboratório com tutorial e mutações, com Arthur revelando itens, para detectar regressões entre os três recursos. Repetir após nova rodada e troca de personagem. **Nenhum desses testes integrados ou builds foi executado nesta alteração; a funcionalidade ainda depende de validação no ambiente do projeto.**
+
+---
+
 ## Pacote conjunto — Tutorial do Laboratório + Cola de Prova do Arthur (28/11/2026)
 
 O [PR #16](https://github.com/MaxRp1/BomberIF/pull/16) reúne duas funcionalidades anteriormente desenvolvidas em PRs independentes: a introdução progressiva do Laboratório (PR #16) e a habilidade passiva **Cola de Prova** de Arthur (trabalho do [PR #17](https://github.com/MaxRp1/BomberIF/pull/17)). A integração preserva as modificações das duas implementações em `client/src/game/components/canvas/index.tsx`: o carregamento e a barreira de prontidão do tutorial continuam ativos, e a renderização privada das pistas do Arthur foi adicionada após o desenho dos blocos.

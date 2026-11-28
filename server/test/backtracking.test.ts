@@ -101,6 +101,16 @@ test('seleção usa posição registrada antes de t-3s, não destino arbitrário
   )
 })
 
+test('movimento contínuo: retorna pelo caminho mais antigo dentro de quatro casas',()=>{
+  const hist=[
+    {at:1000,x:17,y:9}, {at:2500,x:65,y:9},
+    {at:3500,x:130,y:9}, {at:4900,x:180,y:9}
+  ]
+  const choice=chooseBacktrackPosition(hist,{x:180,y:9},5100)
+  assert.equal(choice.ok,true)
+  if (choice.ok) assert.deepEqual(choice.point,{at:3500,x:130,y:9})
+})
+
 test('hitbox valida sobreposição do pé do jogador com blocos',()=>{
   assert.equal(backtrackOverlapsBlock(17,9,{x:16,y:16}),true)
   assert.equal(backtrackOverlapsBlock(17,9,{x:160,y:160}),false)

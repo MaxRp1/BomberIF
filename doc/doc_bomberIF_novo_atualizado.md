@@ -1,5 +1,94 @@
 # Estudo Técnico - BomberIF
 
+## Pacote conjunto — Tutorial do Laboratório + Cola de Prova do Arthur (28/11/2026)
+
+O [PR #16](https://github.com/MaxRp1/BomberIF/pull/16) reúne duas funcionalidades anteriormente desenvolvidas em PRs independentes: a introdução progressiva do Laboratório (PR #16) e a habilidade passiva **Cola de Prova** de Arthur (trabalho do [PR #17](https://github.com/MaxRp1/BomberIF/pull/17)). A integração preserva as modificações das duas implementações em `client/src/game/components/canvas/index.tsx`: o carregamento e a barreira de prontidão do tutorial continuam ativos, e a renderização privada das pistas do Arthur foi adicionada após o desenho dos blocos.
+
+**Validação:** o usuário confirmou funcionamento da habilidade do Arthur em jogo. Não há registro de validação conjunta com o aviso do Laboratório, nem de novos builds ou testes automatizados depois desta integração. O pacote permanece em rascunho até essa conferência.
+
+**Testes disponíveis:** `cd server && yarn test:lab-intro && yarn test:arthur` e os scripts de regressão anteriores. A compilação do frontend (`cd client && yarn build`) também deve ser executada. Na verificação manual, usar dois navegadores, com pelo menos um jogador selecionando Arthur; o tutorial só aparece quando o stage é Laboratório e não deve modificar a habilidade, a sincronização de ready ou a privacidade das pistas.
+
+---
+
+## Recurso em validação — Arthur: Cola de Prova (28/11/2026)
+
+**Estado:** implementação e validação funcional do Arthur relatada pelo responsável; trabalho original no [PR #17](https://github.com/MaxRp1/BomberIF/pull/17), agora consolidado no [PR #16](https://github.com/MaxRp1/BomberIF/pull/16) junto com a introdução do Laboratório. A combinação ainda **não foi integrada à `main`**; faltam testes conjuntos. Arthur foi identificado como **sprite `4.png`** mediante comparação da ficha ilustrada no GDD com `client/public/sprites/chars/4.png`. Os quatro personagens anteriormente dotados de habilidades próprias continuam intactos.
+
+### Comportamento da habilidade passiva
+
+- **Nome:** Cola de Prova. **Personagem:** Arthur (aluno de BSI, ID de sprite 4). **Ativação:** automática, enquanto o personagem local estiver vivo/ativo. **Recarga:** nenhuma.
+- **Raio:** até 2 células em **distância Manhattan** entre `player.getAxes()` e as coordenadas `[linha, coluna]` do bloco; deslocamentos diagonais somam os passos dos dois eixos. A área de leitura tem forma de losango (até 13 células incluindo o centro).
+- **Alvos:** somente blocos **destrutíveis (`t === 'D'`) que ainda escondem algum power-up (`b` inteiro entre 1 e 9)**. O ícone é desenhado discretamente sobre o bloco, com moldura translúcida em pixel art. Blocos indestrutíveis, bombas, itens já revelados (`t === 'B'`), blocos sem bônus e blocos em destruição não geram pistas.
+- **Visibilidade:** somente o canvas do usuário que controla Arthur desenha as pistas; nenhum evento de rede, `BlockDTO` ou regra do servidor precisa mudar. Outros jogadores continuam vendo os blocos normais, mesmo próximos do Arthur.
+- **Sem violar o Laboratório:** o ícone informa o **tipo de power-up**, e a borda roxa pode indicar que o item tem uma mutação misteriosa. As variantes `'buff'` e `'virus'` são traduzidas para o **mesmo** dado visual `mysterious: true`, sem expor qual resultado será aplicado após a coleta. Os itens normais mantêm indicação discreta em verde-água. A habilidade vale no Campo, Laboratório e Refeitório.
+- **Sem vantagem extra:** Cola de Prova não aumenta alcance, dano, velocidade ou número de bombas; tampouco destrói blocos ou coleta itens à distância. É apenas uma habilidade de **informação e planejamento**.
+
+### Organização do código
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `shared/arthur.ts` | Constantes `ARTHUR_SPRITE_ID=4`, raio de 2 casas; função pura `getArthurHiddenBonusHint()`, com filtragem de blocos e anonimização de buff/vírus. |
+| `client/src/game/util/arthurVision.ts` | Renderizador local `renderArthurHiddenBonuses()`, consultando a grade atual de blocos e recortando o ícone da spritesheet real. |
+| `client/src/game/components/canvas/index.tsx` | Chamada do renderizador após a arena, sem alterar o ciclo de ticks, colisões ou lógica multiplayer. |
+| `client/src/site/components/lobby/characterSelect.tsx` | Identifica o ID 4 como Arthur e apresenta sua habilidade na seleção. |
+| `server/test/arthur.test.ts` | Cinco casos automatizados: exclusividade e jogador ativo, raio Manhattan, elegibilidade dos blocos, sprites 1–9 e igualdade de aparência entre buff/vírus. |
+| `server/package.json` | Script `yarn test:arthur`. |
+| `GDD_BomberIF_Final` | Seção 4 (contexto narrativo) e seção 5, ficha Arthur, atualizadas no Google Drive. |
+
+### Verificação e publicação
+
+A regra isolada equivalente em TypeScript foi exercitada localmente com `ts-node`, com **5/5 testes aprovados**. **Ainda não foram executados** o build integral do cliente/servidor, as demais suítes do repositório ou um teste visual e multiplayer no Kali. Isso deve ser validado **antes de integrar à main**, verificando também que um rival ao lado do Arthur não vê marcações.
+
+```bash
+cd ~/BomberIF
+git fetch origin
+git switch --track origin/feat/lab-intro-first-visit-2026-11-28
+cd server
+yarn test:arthur
+yarn test:virus
+yarn test:lobby
+yarn test:ranking
+yarn typecheck
+yarn build
+cd ../client
+yarn build
+```
+
+**Validação manual:** em dois navegadores, selecionar Arthur (ID 4) e outro personagem, iniciar partidas nos três cenários; aproximar-se e afastar-se de blocos com itens; verificar alcance de 2 casas e invisibilidade ao rival; destruir o bloco; verificar sprites de Bomba (ID 1) e dos power-ups 2–9; no Laboratório confirmar que itens mutados têm sinal roxo igual para buffs e vírus. Não confundir ausência de pista com falha: o bloco pode estar vazio ou fora do raio.
+
+---
+
+## Recurso em desenvolvimento — introdução progressiva do Laboratório (28/11/2026)
+
+**Branch:** `feat/lab-intro-first-visit-2026-11-28`, [PR #16](https://github.com/MaxRp1/BomberIF/pull/16) consolidado com o recurso Cola de Prova do Arthur, originalmente no PR #17. As duas funcionalidades ainda não foram mescladas à `main`. O estado do PR #14 e a distribuição dos mapas/mutações continuam os mesmos.
+
+### UX e regras
+
+- Ao iniciar uma rodada no **Laboratório** (`stage === 1`), é exibida uma introdução pixel art com explicação das mutações antes da liberação dos controles. **Campo (0)** e **Refeitório (2)** não exibem esse aviso.
+- **Primeira visita no navegador:** tela completa com os oito itens elegíveis, as probabilidades por item (**50% normal / 25% buff / 25% vírus**), a aparência misteriosa dos itens mutados e a revelação pelo HUD após coletar. Pode ser dispensada por **ENTENDI** ou automaticamente depois de **9 segundos**.
+- **Visitas seguintes:** lembrete compacto com o mesmo sorteio e aviso do glitch roxo. Pode ser dispensado por **CONTINUAR** ou automaticamente depois de **2,8 segundos**.
+- O reconhecimento da primeira visita fica no `localStorage`, chave `bomberif.lab-intro-seen.v1`. Quando indisponível (p. ex. restrições de privacidade), um marcador em memória mantém o modo compacto ao menos nas próximas rodadas da mesma página. Não é uma preferência persistida na conta, na sala ou no servidor.
+- **Multiplayer:** dispensar o painel não inicia a rodada unilateralmente. O `ready` só é emitido quando o carregamento de assets terminou **e** o aviso local foi concluído. Até receber o `ready` coletivo de todos os participantes, o jogador vê "Aguardando os outros jogadores". O timer, movimento e bombas continuam inativos; quando todos estiverem prontos, o fluxo já existente inicia a arena para todos. Os botões não oferecem vantagem de tempo sobre quem ainda lê.
+- A UI tem `role=dialog`, botão acessível, estilo retrô, layout adaptável a telas pequenas/landscape e fechamento automático; o ciclo de vida cancela o timeout ao desmontar a tela. Sair da partida ou receber resultado remove o aviso.
+
+### Código e testes
+
+| Arquivo | Alteração |
+|---|---|
+| `shared/labIntro.ts` | Regras puras de cenário, primeira visita, duração e pré-condição de `ready`. |
+| `client/src/game/components/labIntro/index.tsx` | Sobreposição de instruções, resumo, estado de espera, tempo limite e botões. |
+| `client/src/game/components/canvas/index.tsx` | Identifica primeira visita e stage; bloqueia readiness até assets + aviso, sem alterar as mecânicas existentes. |
+| `client/src/game/util/assets.ts` | Permite callback de carregamento para integrar com a barreira de início da rodada. |
+| `server/test/labIntro.test.ts` | Testes de elegibilidade, alternância primeira/recorrente, durações e prontidão. |
+| `server/package.json` | Script `yarn test:lab-intro`. |
+
+**Validação proposta no Kali:** `cd server && yarn test:lab-intro && yarn test:virus && yarn test:lobby && yarn test:ranking && yarn typecheck && yarn build`; depois `cd ../client && yarn build`. Testar dois navegadores com armazenamento limpo no Laboratório, um no aviso completo e outro no resumo, clique antecipado, timeout automático, espera coletiva, fechamento por saída e comportamento sem telas extras em Campo/Refeitório. Nenhuma execução dessas verificações foi informada nesta implementação; os testes foram adicionados ao repositório, mas ainda devem ser executados no ambiente com dependências instaladas.
+
+**GDD correspondente:** `GDD_BomberIF_Final` (Google Drive), seção "Mutações dos power-ups — Laboratório" e novo parágrafo "Aviso de entrada no Laboratório — apresentação progressiva".
+
+---
+
+
 ## Estado vigente — integração do PR #14 (23/11/2026)
 
 **Fonte de verdade para a versão `main` atual:** o PR [#14](https://github.com/MaxRp1/BomberIF/pull/14) foi mesclado à branch principal em 23/11/2026, no commit [`58573384f58b52b54825122d5e1d70e27626bbd3`](https://github.com/MaxRp1/BomberIF/commit/58573384f58b52b54825122d5e1d70e27626bbd3). As referências abaixo sobre PR #14 "em rascunho", "sem merge", "Laboratório fixo" ou "modo de testes ativo" descrevem **etapas históricas do desenvolvimento**, não o comportamento atual.

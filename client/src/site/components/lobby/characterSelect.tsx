@@ -10,6 +10,7 @@ import {
 } from './characterSelectStyle'
 
 const LABELS: Record<number, { name: string; ability: string }> = {
+  4: { name: 'Arthur', ability: 'Cola de Prova: revela discretamente os power-ups escondidos em blocos próximos (até 2 casas), sem mostrar se a mutação é boa ou ruim.' },
   2: { name: 'Proença', ability: 'Explosão acelerada e visão do alcance das bombas.' },
   8: { name: 'Mamedes', ability: 'Projétil que atordoa outro jogador por 2 segundos.' },
   10: { name: 'Frank', ability: 'Sobrevive à primeira explosão fatal da rodada.' },
